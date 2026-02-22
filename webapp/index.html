@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Гадание на Таро</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.max.ru/js/max-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🔮 Гадание на Таро</h1>
+
+        <div id="question-box" class="question-box hidden"></div>
+
+        <p class="subtitle">Выберите 3 карты для гадания:</p>
+        <p class="counter">Выбрано: <span id="count">0</span>/3</p>
+
+        <div id="cards-grid" class="cards-grid"></div>
+
+        <button id="confirm-btn" class="confirm-btn" disabled>
+            🔮 Получить гадание
+        </button>
+
+        <button id="reset-btn" class="reset-btn hidden">
+            🔄 Выбрать заново
+        </button>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Отправляю карты...</p>
+        </div>
+
+        <div id="success" class="success hidden">
+            <p>✅ Карты отправлены!</p>
+            <p class="hint">Загляните в чат — там будет толкование 🔮</p>
+        </div>
+
+        <div id="error" class="error-msg hidden">
+            <p>❌ Произошла ошибка</p>
+            <p class="hint" id="error-text"></p>
+            <button class="retry-btn" onclick="location.reload()">Попробовать снова</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

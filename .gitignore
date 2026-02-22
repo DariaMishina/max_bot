@@ -1,0 +1,13 @@
+poetry.lock
+passwords.txt
+*.log
+webapp_logs/
+**/__pycache__/
+venv/*
+myenv/*
+htmlcov/*
+.env
+.pytest_cache/*
+.coverage
+.DS_Store
+.env.test
