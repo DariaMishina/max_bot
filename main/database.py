@@ -691,3 +691,60 @@ async def update_user_daily_card_subscription(user_id: int, subscribed: bool) ->
         logging.error(f"Error updating daily card subscription for user {user_id}: {e}", exc_info=True)
         return False
 
+
+# ==================== Pending Questions (for WebApp) ====================
+
+async def ensure_pending_questions_table():
+    """Создать таблицу pending_questions если не существует"""
+    table = get_table_name("pending_questions")
+    query = f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            user_id BIGINT PRIMARY KEY,
+            question TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    try:
+        await Database.execute_query(query)
+    except Exception as e:
+        logging.error(f"Error creating pending_questions table: {e}", exc_info=True)
+
+
+async def save_pending_question(user_id: int, question: str) -> bool:
+    """Сохранить вопрос пользователя перед открытием WebApp"""
+    table = get_table_name("pending_questions")
+    try:
+        await ensure_pending_questions_table()
+        query = f"""
+            INSERT INTO {table} (user_id, question, created_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET question = $2, created_at = NOW()
+        """
+        await Database.execute_query(query, user_id, question)
+        return True
+    except Exception as e:
+        logging.error(f"Error saving pending question for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def get_pending_question(user_id: int) -> Optional[str]:
+    """Получить сохранённый вопрос пользователя"""
+    table = get_table_name("pending_questions")
+    try:
+        await ensure_pending_questions_table()
+        query = f"SELECT question FROM {table} WHERE user_id = $1"
+        return await Database.fetchval(query, user_id)
+    except Exception as e:
+        logging.error(f"Error getting pending question for user {user_id}: {e}", exc_info=True)
+        return None
+
+
+async def delete_pending_question(user_id: int):
+    """Удалить pending question после обработки"""
+    table = get_table_name("pending_questions")
+    try:
+        query = f"DELETE FROM {table} WHERE user_id = $1"
+        await Database.execute_query(query, user_id)
+    except Exception as e:
+        logging.error(f"Error deleting pending question for user {user_id}: {e}", exc_info=True)
+

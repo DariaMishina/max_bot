@@ -19,7 +19,8 @@ from handlers.pay import PAYMENT_PACKAGES
 from keyboards.main_menu import make_back_to_menu_kb
 from main.database import (
     update_payment_status, process_successful_payment as db_process_successful_payment,
-    Database, can_user_divinate, use_divination, save_divination, get_user_balance
+    Database, can_user_divinate, use_divination, save_divination, get_user_balance,
+    get_pending_question, delete_pending_question
 )
 from main.metrika_mp import send_conversion_event
 from main.conversions import save_conversion
@@ -185,10 +186,7 @@ async def webapp_cards_handler(request: Request) -> Response:
         user_id = int(user_id)
         logging.info(f"WebApp card selection: user_id={user_id}, cards={selected_cards}")
 
-        cursor = bot.storage.get_cursor(user_id)
-        fsm_data = cursor.get_data() or {}
-        question = fsm_data.get('question', '')
-
+        question = await get_pending_question(user_id)
         if not question:
             return _json_error("No question found. Start a divination first.", 400)
 
@@ -196,7 +194,7 @@ async def webapp_cards_handler(request: Request) -> Response:
         if not can_div:
             return _json_error("No divinations remaining", 403)
 
-        asyncio.ensure_future(_process_webapp_divination(user_id, question, selected_cards, cursor, fsm_data))
+        asyncio.ensure_future(_process_webapp_divination(user_id, question, selected_cards))
 
         return web.json_response({"status": "ok"})
 
@@ -204,16 +202,13 @@ async def webapp_cards_handler(request: Request) -> Response:
         return _json_error("Invalid JSON", 400)
     except Exception as e:
         logging.error(f"Error in webapp_cards_handler: {e}", exc_info=True)
-        return _json_error("Internal error", 500)
+        return _json_error(f"Internal error: {type(e).__name__}: {e}", 500)
 
 
-async def _process_webapp_divination(user_id: int, question: str, card_ids: list, cursor, fsm_data: dict):
+async def _process_webapp_divination(user_id: int, question: str, card_ids: list):
     """Фоновая обработка гадания по картам из мини-приложения"""
     from handlers.tarot_cards import get_card_info, send_card_images
-    from handlers.divination import (
-        get_chatgpt_response_with_prompt, format_interpretation_with_bold,
-        STATE_CHATTING, FOLLOW_UP_LIMIT_FREE, FOLLOW_UP_LIMIT_PAID
-    )
+    from handlers.divination import get_chatgpt_response_with_prompt
 
     try:
         chat_id = user_id
@@ -248,7 +243,6 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
                 "❌ Ошибка при списании гадания.",
                 user_id=user_id, keyboard=make_back_to_menu_kb()
             )
-            cursor.clear()
             return
 
         divination_id = await save_divination(
@@ -266,17 +260,7 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             except Exception as e:
                 logging.error(f"Error saving conversion: {e}", exc_info=True)
 
-        conversation_history = [
-            {"role": "user", "content": f"Мой вопрос: {question}"},
-            {"role": "assistant", "content": chatgpt_response}
-        ]
-
-        fsm_data.update({
-            'divination_id': divination_id, 'is_free_divination': is_free,
-            'follow_up_count': 0, 'conversation_history': conversation_history,
-            'original_interpretation': chatgpt_response
-        })
-        cursor.change_data(fsm_data)
+        await delete_pending_question(user_id)
 
         cards_names = [get_card_info(cid)['name'] for cid in card_ids]
         await bot.send_message(
@@ -284,12 +268,10 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
             f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
-            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
             "🔮 Новый расклад — нажми ◀ В меню",
             user_id=user_id, keyboard=make_back_to_menu_kb(), format='html'
         )
 
-        cursor.change_state(STATE_CHATTING)
         logging.info(f"WebApp divination completed for user {user_id}")
 
     except Exception as e:
@@ -299,7 +281,6 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
                 "❌ Ошибка при гадании. Попробуйте ещё раз.",
                 user_id=user_id, keyboard=make_back_to_menu_kb()
             )
-            cursor.clear()
         except Exception:
             pass
 

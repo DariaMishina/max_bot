@@ -27,7 +27,7 @@ from handlers.hexagrams import (
     get_all_available_hexagrams, get_hexagram_image_path,
     send_hexagram_image, get_hexagram_info, HEXAGRAMS
 )
-from main.database import can_user_divinate, use_divination, save_divination, get_user_balance, update_divination_interpretation
+from main.database import can_user_divinate, use_divination, save_divination, get_user_balance, update_divination_interpretation, save_pending_question
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
 
@@ -434,6 +434,15 @@ async def handle_tarot_choose(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         bot_ref = None
 
     if bot_ref:
+        question = data.get('question', '')
+        if question:
+            try:
+                uid = cb.user.user_id
+                await save_pending_question(uid, question)
+                logging.info(f"Saved pending question for user {uid}")
+            except Exception as e:
+                logging.warning(f"Could not save pending question: {e}")
+
         kb = buttons.KeyboardBuilder()
         kb.row(buttons.WebAppButton("🃏 Открыть карты", bot_ref))
         kb.row(buttons.CallbackButton("📝 Выбрать кнопками", "tarot_choose_buttons", intent='default'))

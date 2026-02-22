@@ -1,7 +1,4 @@
 const API_URL = 'https://max-bot-awtw.onrender.com';
-const IMAGES_LOCAL = '/static/images';
-const IMAGES_REMOTE = 'https://courageous-khapse-7547fa.netlify.app/static/images';
-let IMAGES_BASE = IMAGES_LOCAL;
 const REQUIRED_CARDS = 3;
 const DISPLAYED_CARDS = 9;
 
@@ -168,35 +165,21 @@ function renderCards() {
     const grid = document.getElementById('cards-grid');
     grid.innerHTML = '';
 
-    let styleEl = document.getElementById('card-styles');
-    if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = 'card-styles';
-        document.head.appendChild(styleEl);
-    }
-
-    let css = '';
     availableCards.forEach((cardId, idx) => {
         const slot = document.createElement('div');
         slot.className = 'card-slot';
         slot.dataset.cardId = cardId;
         slot.dataset.index = idx;
 
-        const cls = 'cimg-' + idx;
-        const imgUrl = IMAGES_REMOTE + '/' + cardId + '.png';
-        css += '.' + cls + '{background-image:url(' + imgUrl + ')}\n';
-
         slot.innerHTML = `
             <div class="card-face card-back"></div>
-            <div class="card-face card-front ${cls}"></div>
+            <div class="card-face card-front card-${cardId}"></div>
             <div class="card-check">✓</div>
         `;
 
         slot.addEventListener('click', () => onCardClick(slot, cardId));
         grid.appendChild(slot);
     });
-
-    styleEl.textContent = css;
 }
 
 function onCardClick(slot, cardId) {
