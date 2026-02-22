@@ -291,19 +291,28 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
 # ==================== Таро ====================
 
 async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, question: str, user_id: int):
-    """Гадание на Таро — случайный расклад + 2 кнопки выбора метода"""
-    from main.botdef import bot
-    
+    """Гадание на Таро — случайный расклад или WebApp для выбора карт"""
+    from main.botdef import bot as bot_instance
+
+    await save_pending_question(user_id, question)
+
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.CallbackButton("🔮 Карты покажут сами", "tarot_random"))
-    kb.row(buttons.CallbackButton("🃏 Выбрать карты самой", "tarot_choose"))
-    
+
+    try:
+        me = await bot_instance.get_me()
+        bot_ref = getattr(me, 'username', None) or getattr(me, 'user_id', None)
+        if bot_ref:
+            kb.row(buttons.WebAppButton("🃏 Выбрать карты самой", bot_ref))
+    except Exception as e:
+        logging.warning(f"Could not create WebAppButton: {e}")
+
     await message.reply(
         f"🃏 <b>Гадание на Таро</b>\n\n"
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
         "Выберите способ гадания:\n"
         "• <b>🔮 Карты покажут сами</b> — случайный расклад\n"
-        "• <b>🃏 Выбрать карты самой</b> — выберите 3 карты из предложенных",
+        "• <b>🃏 Выбрать карты самой</b> — красивый интерфейс выбора",
         keyboard=kb,
         format='html'
     )
@@ -417,68 +426,6 @@ async def handle_tarot_random(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             chat_id=cb.message.recipient.chat_id, keyboard=make_back_to_menu_kb()
         )
         cursor.clear()
-
-
-@router.on_button_callback(lambda data: data.payload == 'tarot_choose')
-async def handle_tarot_choose(cb: aiomax.Callback, cursor: fsm.FSMCursor):
-    """Самостоятельный выбор карт Таро — WebApp или fallback на кнопки"""
-    from main.botdef import bot as bot_instance
-
-    data = cursor.get_data() or {}
-
-    try:
-        me = await bot_instance.get_me()
-        bot_ref = getattr(me, 'username', None) or getattr(me, 'user_id', None)
-    except Exception as e:
-        logging.warning(f"Could not get bot info for WebAppButton: {e}")
-        bot_ref = None
-
-    if bot_ref:
-        question = data.get('question', '')
-        if question:
-            try:
-                uid = cb.user.user_id
-                await save_pending_question(uid, question)
-                logging.info(f"Saved pending question for user {uid}")
-            except Exception as e:
-                logging.warning(f"Could not save pending question: {e}")
-
-        kb = buttons.KeyboardBuilder()
-        kb.row(buttons.WebAppButton("🃏 Открыть карты", bot_ref))
-        kb.row(buttons.CallbackButton("📝 Выбрать кнопками", "tarot_choose_buttons", intent='default'))
-        kb.row(buttons.CallbackButton("❌ Отмена", "cancel_cards", intent='negative'))
-
-        await cb.answer(
-            "🃏 <b>Выберите способ:</b>\n\n"
-            "• <b>🃏 Открыть карты</b> — красивый интерфейс выбора\n"
-            "• <b>📝 Выбрать кнопками</b> — выбрать из списка",
-            keyboard=kb
-        )
-    else:
-        data['selected_cards'] = []
-        data['available_cards'] = get_random_cards(8)
-        cursor.change_data(data)
-
-        kb = _build_card_selection_kb(data['available_cards'], [])
-        await cb.answer(
-            "🃏 Выберите 3 карты из предложенных. Нажмите на карту, чтобы выбрать её.",
-            keyboard=kb
-        )
-
-
-@router.on_button_callback(lambda data: data.payload == 'tarot_choose_buttons')
-async def handle_tarot_choose_buttons(cb: aiomax.Callback, cursor: fsm.FSMCursor):
-    """Fallback: выбор карт через кнопки (без WebApp)"""
-    data = cursor.get_data() or {}
-    data['selected_cards'] = []
-    data['available_cards'] = get_random_cards(8)
-    cursor.change_data(data)
-
-    kb = _build_card_selection_kb(data['available_cards'], [])
-    await cb.answer(
-        "🃏 Выберите 3 карты из предложенных. Нажмите на карту, чтобы выбрать её.",
-        keyboard=kb
-    )
 
 
 @router.on_button_callback(lambda data: data.payload.startswith('select_card_'))

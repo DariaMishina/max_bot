@@ -161,9 +161,19 @@ function _showDebug() {
     document.body.appendChild(d);
 }
 
+function preloadCardImages() {
+    const base = 'https://courageous-khapse-7547fa.netlify.app/static/images';
+    availableCards.forEach(function(cardId) {
+        var img = new Image();
+        img.src = base + '/' + cardId + '.png';
+    });
+}
+
 function renderCards() {
     const grid = document.getElementById('cards-grid');
     grid.innerHTML = '';
+
+    preloadCardImages();
 
     availableCards.forEach((cardId, idx) => {
         const slot = document.createElement('div');
