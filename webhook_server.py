@@ -340,7 +340,14 @@ async def root_handler(request: Request) -> Response:
 
 async def cors_preflight(request: Request) -> Response:
     """Обработчик CORS preflight (OPTIONS)"""
-    return web.Response(status=204)
+    return web.Response(
+        status=204,
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        }
+    )
 
 
 def create_webhook_app() -> web.Application:
@@ -391,7 +398,7 @@ async def start_webhook_server(port: int = None):
         except Exception as e:
             process_time = time.time() - start_time
             logging.error(f"{request.method} {request.path} - ERROR after {process_time:.3f}s: {e}", exc_info=True)
-            raise
+            response = web.json_response({"error": "Internal server error"}, status=500)
         if request.path.startswith('/api/'):
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'

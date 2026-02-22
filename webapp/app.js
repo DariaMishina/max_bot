@@ -1,13 +1,7 @@
-// =====================================================
-// КОНФИГУРАЦИЯ
-// =====================================================
-// URL бэкенда Max-бота (webhook_server.py)
-// TODO: заменить на реальный URL после деплоя Max-бота
-const API_URL = 'https://max-bot-xxxx.onrender.com';
-
-// URL, где лежат картинки карт (существующий Netlify-сайт)
-const IMAGES_BASE = 'https://courageous-khapse-7547fa.netlify.app/static/images';
-
+const API_URL = 'https://max-bot-awtw.onrender.com';
+const IMAGES_LOCAL = '/static/images';
+const IMAGES_REMOTE = 'https://courageous-khapse-7547fa.netlify.app/static/images';
+let IMAGES_BASE = IMAGES_LOCAL;
 const REQUIRED_CARDS = 3;
 const DISPLAYED_CARDS = 9;
 
@@ -77,47 +71,132 @@ function pickRandomCards(count) {
     return shuffleArray(allIds).slice(0, count);
 }
 
-function initWebApp() {
+function _decodeWebAppData(raw) {
     try {
-        if (window.WebApp) {
-            const wa = window.WebApp;
-            wa.ready();
+        let decoded = decodeURIComponent(raw);
+        const params = new URLSearchParams(decoded);
 
-            if (wa.initDataUnsafe && wa.initDataUnsafe.user) {
-                userId = wa.initDataUnsafe.user.id;
-            }
-            initData = wa.initData || '';
+        let userStr = params.get('user');
+        if (userStr) {
+            try { userStr = decodeURIComponent(userStr); } catch (_) {}
+            const user = JSON.parse(userStr);
+            if (user && user.id) return { userId: user.id, initData: decoded };
+        }
 
-            if (wa.HapticFeedback) {
-                window._haptic = wa.HapticFeedback;
+        let chatStr = params.get('chat');
+        if (chatStr) {
+            try { chatStr = decodeURIComponent(chatStr); } catch (_) {}
+            const chat = JSON.parse(chatStr);
+            if (chat && chat.type === 'DIALOG' && chat.id) {
+                return { userId: chat.id, initData: decoded };
             }
         }
+    } catch (_) {}
+    return null;
+}
+
+function initWebApp() {
+    try {
+        const wa = window.WebApp;
+        if (wa) {
+            wa.ready();
+            initData = wa.initData || '';
+            if (wa.initDataUnsafe && wa.initDataUnsafe.user && wa.initDataUnsafe.user.id) {
+                userId = wa.initDataUnsafe.user.id;
+            }
+            if (!userId && initData) {
+                const r = _decodeWebAppData(initData);
+                if (r) userId = r.userId;
+            }
+            if (wa.HapticFeedback) window._haptic = wa.HapticFeedback;
+        }
     } catch (e) {
-        console.warn('MAX Bridge not available:', e);
+        console.warn('MAX Bridge init error:', e);
     }
+
+    if (!userId) {
+        try {
+            const hash = window.location.hash.substring(1);
+            if (hash) {
+                const hp = new URLSearchParams(hash);
+                const webAppData = hp.get('WebAppData') || hp.get('tgWebAppData');
+                if (webAppData) {
+                    const r = _decodeWebAppData(webAppData);
+                    if (r) { userId = r.userId; if (!initData) initData = r.initData; }
+                }
+                if (!userId) {
+                    const r = _decodeWebAppData(hash);
+                    if (r) { userId = r.userId; if (!initData) initData = r.initData; }
+                }
+            }
+        } catch (_) {}
+    }
+
+    if (!userId) {
+        try {
+            const sp = new URLSearchParams(window.location.search);
+            const uid = sp.get('user_id') || sp.get('userId');
+            if (uid) userId = parseInt(uid, 10);
+        } catch (_) {}
+    }
+
+    console.log('[MAX WebApp] userId:', userId);
+    _showDebug();
+}
+
+function _showDebug() {
+    const info = [];
+    info.push('WA: ' + !!window.WebApp + ' | uid: ' + userId);
+
+    let hashDecoded = '';
+    try {
+        const hash = window.location.hash.substring(1);
+        const hp = new URLSearchParams(hash);
+        const wd = hp.get('WebAppData') || hp.get('tgWebAppData') || '';
+        hashDecoded = decodeURIComponent(wd).substring(0, 300);
+    } catch (_) {}
+    info.push('data: ' + (hashDecoded || 'none'));
+
+    const d = document.createElement('div');
+    d.id = 'debug-panel';
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.92);color:#0f0;font:10px/1.3 monospace;padding:6px;max-height:35vh;overflow:auto;z-index:9999;word-break:break-all;';
+    d.textContent = info.join('\n');
+    document.body.appendChild(d);
 }
 
 function renderCards() {
     const grid = document.getElementById('cards-grid');
     grid.innerHTML = '';
 
+    let styleEl = document.getElementById('card-styles');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'card-styles';
+        document.head.appendChild(styleEl);
+    }
+
+    let css = '';
     availableCards.forEach((cardId, idx) => {
         const slot = document.createElement('div');
         slot.className = 'card-slot';
         slot.dataset.cardId = cardId;
         slot.dataset.index = idx;
 
+        const cls = 'cimg-' + idx;
+        const imgUrl = IMAGES_REMOTE + '/' + cardId + '.png';
+        css += '.' + cls + '{background-image:url(' + imgUrl + ')}\n';
+
         slot.innerHTML = `
             <div class="card-face card-back"></div>
-            <div class="card-face card-front">
-                <img src="${IMAGES_BASE}/${cardId}.png" alt="${TAROT_CARDS[cardId]}" loading="lazy">
-            </div>
+            <div class="card-face card-front ${cls}"></div>
             <div class="card-check">✓</div>
         `;
 
         slot.addEventListener('click', () => onCardClick(slot, cardId));
         grid.appendChild(slot);
     });
+
+    styleEl.textContent = css;
 }
 
 function onCardClick(slot, cardId) {
@@ -127,9 +206,7 @@ function onCardClick(slot, cardId) {
     const isSelected = slot.classList.contains('selected');
 
     if (!isFlipped) {
-        // Flip the card
         slot.classList.add('flipped');
-
         if (selectedCards.length < REQUIRED_CARDS) {
             slot.classList.add('selected');
             selectedCards.push(cardId);
@@ -192,6 +269,14 @@ function resetSelection() {
 async function confirmSelection() {
     if (selectedCards.length !== REQUIRED_CARDS) return;
 
+    if (!userId) {
+        document.getElementById('error').classList.remove('hidden');
+        document.getElementById('error-text').textContent =
+            'Не удалось определить пользователя. Откройте приложение через бота в MAX.';
+        hapticFeedback('error');
+        return;
+    }
+
     const confirmBtn = document.getElementById('confirm-btn');
     const resetBtn = document.getElementById('reset-btn');
     const loading = document.getElementById('loading');
@@ -203,7 +288,15 @@ async function confirmSelection() {
 
     hapticFeedback('medium');
 
+    const loadingText = loading.querySelector('p');
+    const wakeTimer = setTimeout(() => {
+        if (loadingText) loadingText.textContent = 'Сервер просыпается, подождите...';
+    }, 5000);
+
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+
         const response = await fetch(`${API_URL}/api/webapp/cards`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -211,8 +304,12 @@ async function confirmSelection() {
                 user_id: userId,
                 selected_cards: selectedCards,
                 init_data: initData
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeout);
+        clearTimeout(wakeTimer);
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
@@ -229,13 +326,20 @@ async function confirmSelection() {
 
         setTimeout(() => {
             try { window.WebApp.close(); } catch (_) {}
-        }, 2000);
+        }, 2500);
 
     } catch (err) {
+        clearTimeout(wakeTimer);
         console.error('Error sending cards:', err);
         loading.classList.add('hidden');
+
+        const isTimeout = err.name === 'AbortError';
         document.getElementById('error').classList.remove('hidden');
-        document.getElementById('error-text').textContent = err.message;
+        document.getElementById('error-text').textContent = isTimeout
+            ? 'Сервер не ответил за 60 секунд. Попробуйте ещё раз.'
+            : err.message;
+        confirmBtn.classList.remove('hidden');
+        resetBtn.classList.remove('hidden');
         hapticFeedback('error');
     }
 }
@@ -250,8 +354,6 @@ function hapticFeedback(type) {
         }
     } catch (_) {}
 }
-
-// ===== Init =====
 
 document.addEventListener('DOMContentLoaded', () => {
     initWebApp();
