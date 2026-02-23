@@ -1,67 +1,80 @@
-name: Deploy to Server
+name: Deploy to Google Cloud
 
 on:
   push:
     branches:
-      - main
+      - main  # Измените на вашу основную ветку, если она называется иначе
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v3
+      
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            set -e
-
+            set -e  # Остановка при ошибке
+            
             echo "🚀 Начинаем деплой..."
-
+            
+            # Определяем путь к проекту
             PROJECT_DIR="$HOME/max_bot"
             if [ ! -d "$PROJECT_DIR" ]; then
               PROJECT_DIR="/home/${{ secrets.SSH_USER }}/max_bot"
             fi
-
+            
             if [ ! -d "$PROJECT_DIR" ]; then
               echo "❌ Директория проекта не найдена!"
               exit 1
             fi
-
+            
             cd "$PROJECT_DIR"
             echo "📂 Рабочая директория: $(pwd)"
-
+            
+            # Активируем виртуальное окружение
             if [ ! -d "venv" ]; then
               echo "📦 Создаем виртуальное окружение..."
               python3 -m venv venv
             fi
             source venv/bin/activate
-
+            
+            # Настраиваем Git для неинтерактивного использования
+            echo "⚙️ Настраиваем Git..."
+            git config --global credential.helper store
+            git config --global user.name "GitHub Actions"
+            git config --global user.email "actions@github.com"
+            
+            # Получаем последние изменения
             echo "🔄 Получаем последние изменения из Git..."
+            # Credential helper уже настроен на сервере, токен сохранен
             git fetch origin
             git reset --hard origin/main
-
+            
+            # Обновляем зависимости
             echo "📥 Обновляем зависимости..."
             pip install --upgrade pip --quiet
             pip install -r requirements.txt --quiet
-
+            
+            # Перезапускаем сервис
             echo "🔄 Перезапускаем сервис..."
             sudo systemctl restart max-bot.service
-
+            
+            # Проверяем статус
             echo "⏳ Ждем 3 секунды..."
             sleep 3
-
+            
             echo "✅ Проверяем статус сервиса..."
             sudo systemctl status max-bot.service --no-pager -l || true
-
+            
             echo "📋 Последние строки лога:"
             tail -n 20 bot.log 2>/dev/null || echo "Лог файл пока пуст"
-
+            
             echo "✅ Деплой завершен успешно!"
