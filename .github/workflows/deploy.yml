@@ -1,0 +1,67 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            echo "🚀 Начинаем деплой..."
+
+            PROJECT_DIR="$HOME/max_bot"
+            if [ ! -d "$PROJECT_DIR" ]; then
+              PROJECT_DIR="/home/${{ secrets.SSH_USER }}/max_bot"
+            fi
+
+            if [ ! -d "$PROJECT_DIR" ]; then
+              echo "❌ Директория проекта не найдена!"
+              exit 1
+            fi
+
+            cd "$PROJECT_DIR"
+            echo "📂 Рабочая директория: $(pwd)"
+
+            if [ ! -d "venv" ]; then
+              echo "📦 Создаем виртуальное окружение..."
+              python3 -m venv venv
+            fi
+            source venv/bin/activate
+
+            echo "🔄 Получаем последние изменения из Git..."
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "📥 Обновляем зависимости..."
+            pip install --upgrade pip --quiet
+            pip install -r requirements.txt --quiet
+
+            echo "🔄 Перезапускаем сервис..."
+            sudo systemctl restart max-bot.service
+
+            echo "⏳ Ждем 3 секунды..."
+            sleep 3
+
+            echo "✅ Проверяем статус сервиса..."
+            sudo systemctl status max-bot.service --no-pager -l || true
+
+            echo "📋 Последние строки лога:"
+            tail -n 20 bot.log 2>/dev/null || echo "Лог файл пока пуст"
+
+            echo "✅ Деплой завершен успешно!"

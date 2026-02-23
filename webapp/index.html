@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Гадание на Таро</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://max.ru/js/max-web-app.js"></script>
+    <script src="https://max.ru/js/max-web-app.js" async></script>
 </head>
 <body>
     <div class="container">
@@ -16,7 +16,9 @@
         <p class="subtitle">Выберите 3 карты для гадания:</p>
         <p class="counter">Выбрано: <span id="count">0</span>/3</p>
 
-        <div id="cards-grid" class="cards-grid"></div>
+        <div id="cards-grid" class="cards-grid">
+            <p id="grid-loader" style="grid-column:1/-1;text-align:center;color:#b0b0d0;padding:40px 0;">Загрузка карт…</p>
+        </div>
 
         <button id="confirm-btn" class="confirm-btn" disabled>
             🔮 Получить гадание
@@ -43,6 +45,7 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="card-data.js" defer></script>
+    <script src="app.js" defer></script>
 </body>
 </html>

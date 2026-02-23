@@ -1,4 +1,6 @@
 const API_URL = 'https://max-bot-awtw.onrender.com';
+const IMG_BASE = '/static/images';
+const IMG_VER = 'v=2';
 const REQUIRED_CARDS = 3;
 const DISPLAYED_CARDS = 9;
 
@@ -142,54 +144,90 @@ function initWebApp() {
 }
 
 function _showDebug() {
-    const info = [];
-    info.push('WA: ' + !!window.WebApp + ' | uid: ' + userId);
-
-    let hashDecoded = '';
-    try {
-        const hash = window.location.hash.substring(1);
-        const hp = new URLSearchParams(hash);
-        const wd = hp.get('WebAppData') || hp.get('tgWebAppData') || '';
-        hashDecoded = decodeURIComponent(wd).substring(0, 300);
-    } catch (_) {}
-    info.push('data: ' + (hashDecoded || 'none'));
-
-    const d = document.createElement('div');
+    var d = document.createElement('div');
     d.id = 'debug-panel';
-    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.92);color:#0f0;font:10px/1.3 monospace;padding:6px;max-height:35vh;overflow:auto;z-index:9999;word-break:break-all;';
-    d.textContent = info.join('\n');
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.92);color:#0f0;font:10px/1.3 monospace;padding:6px;max-height:40vh;overflow:auto;z-index:9999;word-break:break-all;';
     document.body.appendChild(d);
+    _dbg('uid:' + userId + ' | WA:' + !!window.WebApp + ' | loc:' + location.hostname);
+
+    var testUrl = IMG_BASE + '/CardBacks.png?' + IMG_VER;
+    var t0 = Date.now();
+
+    _dbg('T1-fetch start');
+    fetch(testUrl).then(function(r) {
+        _dbg('T1-fetch status:' + r.status + ' ' + (Date.now()-t0) + 'ms');
+        return r.blob();
+    }).then(function(blob) {
+        _dbg('T1-fetch OK blob:' + blob.size + 'B ' + (Date.now()-t0) + 'ms');
+    }).catch(function(e) {
+        _dbg('T1-fetch FAIL: ' + e.message);
+    });
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', testUrl, true);
+    xhr.responseType = 'blob';
+    xhr.onload = function() { _dbg('T2-xhr OK status:' + xhr.status + ' size:' + xhr.response.size + ' ' + (Date.now()-t0) + 'ms'); };
+    xhr.onerror = function() { _dbg('T2-xhr FAIL ' + (Date.now()-t0) + 'ms'); };
+    xhr.ontimeout = function() { _dbg('T2-xhr TIMEOUT'); };
+    xhr.send();
+    _dbg('T2-xhr start');
+
+    var di = new Image();
+    di.onload = function() { _dbg('T3-datauri OK'); };
+    di.onerror = function() { _dbg('T3-datauri FAIL'); };
+    di.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/58BHgAI/AL+hc2rNAAAAABJRU5ErkJggg==';
+    _dbg('T3-datauri start');
 }
 
-function preloadCardImages() {
-    const base = 'https://courageous-khapse-7547fa.netlify.app/static/images';
-    availableCards.forEach(function(cardId) {
-        var img = new Image();
-        img.src = base + '/' + cardId + '.png';
-    });
+function _dbg(msg) {
+    var d = document.getElementById('debug-panel');
+    if (!d) return;
+    var line = document.createElement('div');
+    var ts = new Date();
+    line.textContent = ts.getMinutes() + ':' + String(ts.getSeconds()).padStart(2,'0') + '.' + String(ts.getMilliseconds()).padStart(3,'0') + ' ' + msg;
+    d.appendChild(line);
+    d.scrollTop = d.scrollHeight;
+}
+
+function cardDataUri(cardId) {
+    return (typeof CARD_DATA !== 'undefined' && CARD_DATA[cardId]) ? CARD_DATA[cardId] : '';
 }
 
 function renderCards() {
-    const grid = document.getElementById('cards-grid');
+    var grid = document.getElementById('cards-grid');
     grid.innerHTML = '';
+    var hasData = typeof CARD_DATA !== 'undefined';
+    _dbg('renderCards: ' + availableCards.length + ' cards, CARD_DATA:' + hasData);
 
-    preloadCardImages();
+    var backUri = hasData ? CARD_DATA['CardBacks'] : '';
 
-    availableCards.forEach((cardId, idx) => {
-        const slot = document.createElement('div');
+    availableCards.forEach(function(cardId, idx) {
+        var slot = document.createElement('div');
         slot.className = 'card-slot';
         slot.dataset.cardId = cardId;
         slot.dataset.index = idx;
 
-        slot.innerHTML = `
-            <div class="card-face card-back"></div>
-            <div class="card-face card-front card-${cardId}"></div>
-            <div class="card-check">✓</div>
-        `;
+        var back = document.createElement('div');
+        back.className = 'card-face card-back';
+        if (backUri) back.style.backgroundImage = "url('" + backUri + "')";
 
-        slot.addEventListener('click', () => onCardClick(slot, cardId));
+        var front = document.createElement('div');
+        front.className = 'card-face card-front';
+        var frontUri = cardDataUri(cardId);
+        if (frontUri) front.style.backgroundImage = "url('" + frontUri + "')";
+
+        var check = document.createElement('div');
+        check.className = 'card-check';
+        check.textContent = '✓';
+
+        slot.appendChild(front);
+        slot.appendChild(back);
+        slot.appendChild(check);
+        slot.addEventListener('click', function() { onCardClick(slot, cardId); });
         grid.appendChild(slot);
     });
+
+    _dbg('DOM built, cards rendered');
 }
 
 function onCardClick(slot, cardId) {
@@ -249,11 +287,6 @@ function updateUI() {
 function resetSelection() {
     selectedCards = [];
     availableCards = pickRandomCards(DISPLAYED_CARDS);
-
-    document.querySelectorAll('.card-slot').forEach(slot => {
-        slot.classList.remove('flipped', 'selected', 'disabled');
-    });
-
     renderCards();
     updateUI();
     hapticFeedback('medium');
@@ -348,7 +381,7 @@ function hapticFeedback(type) {
     } catch (_) {}
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     initWebApp();
     availableCards = pickRandomCards(DISPLAYED_CARDS);
     renderCards();
