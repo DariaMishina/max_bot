@@ -148,54 +148,6 @@ function initWebApp() {
         } catch (_) {}
     }
 
-    console.log('[MAX WebApp] userId:', userId);
-    _showDebug();
-}
-
-function _showDebug() {
-    var d = document.createElement('div');
-    d.id = 'debug-panel';
-    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.92);color:#0f0;font:10px/1.3 monospace;padding:6px;max-height:40vh;overflow:auto;z-index:9999;word-break:break-all;';
-    document.body.appendChild(d);
-    _dbg('uid:' + userId + ' | WA:' + !!window.WebApp + ' | loc:' + location.hostname);
-
-    // Проверяем доступность бэкенда (на GitHub Pages /static/ нет — 404), карты из card-data.js
-    var apiHealthUrl = API_URL + '/health';
-    var t0 = Date.now();
-
-    _dbg('T1-fetch start');
-    fetch(apiHealthUrl).then(function(r) {
-        _dbg('T1-fetch status:' + r.status + ' ' + (Date.now()-t0) + 'ms');
-        return r.text();
-    }).then(function() {
-        _dbg('T1-fetch OK backend reachable ' + (Date.now()-t0) + 'ms');
-    }).catch(function(e) {
-        _dbg('T1-fetch FAIL: ' + e.message);
-    });
-
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', apiHealthUrl, true);
-    xhr.onload = function() { _dbg('T2-xhr status:' + xhr.status + ' ' + (Date.now()-t0) + 'ms'); };
-    xhr.onerror = function() { _dbg('T2-xhr FAIL ' + (Date.now()-t0) + 'ms'); };
-    xhr.ontimeout = function() { _dbg('T2-xhr TIMEOUT'); };
-    xhr.send();
-    _dbg('T2-xhr start');
-
-    var di = new Image();
-    di.onload = function() { _dbg('T3-datauri OK'); };
-    di.onerror = function() { _dbg('T3-datauri FAIL'); };
-    di.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/58BHgAI/AL+hc2rNAAAAABJRU5ErkJggg==';
-    _dbg('T3-datauri start');
-}
-
-function _dbg(msg) {
-    var d = document.getElementById('debug-panel');
-    if (!d) return;
-    var line = document.createElement('div');
-    var ts = new Date();
-    line.textContent = ts.getMinutes() + ':' + String(ts.getSeconds()).padStart(2,'0') + '.' + String(ts.getMilliseconds()).padStart(3,'0') + ' ' + msg;
-    d.appendChild(line);
-    d.scrollTop = d.scrollHeight;
 }
 
 function cardDataUri(cardId) {
@@ -206,7 +158,6 @@ function renderCards() {
     var grid = document.getElementById('cards-grid');
     grid.innerHTML = '';
     var hasData = typeof CARD_DATA !== 'undefined';
-    _dbg('renderCards: ' + availableCards.length + ' cards, CARD_DATA:' + hasData);
 
     var backUri = hasData ? CARD_DATA['CardBacks'] : '';
 
@@ -235,8 +186,6 @@ function renderCards() {
         slot.addEventListener('click', function() { onCardClick(slot, cardId); });
         grid.appendChild(slot);
     });
-
-    _dbg('DOM built, cards rendered');
 }
 
 function onCardClick(slot, cardId) {
