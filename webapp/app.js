@@ -1,4 +1,13 @@
-const API_URL = 'https://max-bot-awtw.onrender.com';
+// Бэкенд: 1) window.WEBAPP_API_URL, 2) query ?api=..., 3) иначе Render
+(function() {
+    var u = typeof window.WEBAPP_API_URL !== 'undefined' && window.WEBAPP_API_URL;
+    if (!u && typeof window.location !== 'undefined') {
+        var m = window.location.search.match(/[?&]api=([^&]+)/);
+        if (m) u = decodeURIComponent(m[1].replace(/\+/g, ' '));
+    }
+    window.__WEBAPP_API_URL__ = u || 'https://max-bot-awtw.onrender.com';
+})();
+const API_URL = window.__WEBAPP_API_URL__;
 const IMG_BASE = '/static/images';
 const IMG_VER = 'v=2';
 const REQUIRED_CARDS = 3;

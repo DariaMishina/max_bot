@@ -653,6 +653,24 @@ ss -tlnp | grep 8080
 ss -tlnp | grep 8081
 ```
 
+### Почему «нет сообщений» после отправки карт в веб-приложении
+
+Веб-приложение (GitHub Pages) по умолчанию шлёт запросы на **Render** (`https://max-bot-awtw.onrender.com`), а не на вашу VM. Поэтому в логах на сервере нет строк вида `WebApp card selection` или `POST /api/webapp/cards` — запросы доходят только до Render.
+
+- Если Render «спит» (free tier) или недоступен с телефона — в консоли будут `T1-fetch FAIL`, `T2-xhr FAIL`, запрос отправки карт может не дойти или упасть по таймауту.
+- Если запрос до Render дошёл и вернул 200, но толкование в чат не пришло — смотреть логи и переменные окружения на **Render** (OpenAI, БД, ошибки в `_process_webapp_divination`).
+
+**Чтобы запросы шли на вашу VM** (где вебхук уже слушает 8081):
+
+1. Нужен **HTTPS** до этой VM: браузер с `https://dariamishina.github.io` не разрешает запросы на `http://35.234.89.2:8081` (mixed content). Варианты:
+   - домен, указывающий на VM, и nginx/caddy с Let's Encrypt;
+   - туннель (ngrok, Cloudflare Tunnel) с HTTPS.
+2. После появления HTTPS-URL вашей VM задать его в веб-приложении: в `index.html` перед подключением `app.js` добавить, например:
+   ```html
+   <script>window.WEBAPP_API_URL = 'https://ваш-домен-или-туннель';</script>
+   ```
+   Тогда отправка карт пойдёт на VM, в логах появятся `WebApp card selection` и сообщение в чат будет слать уже этот сервер.
+
 ### Настройка firewall для webhook
 
 Если вебхук max_bot доступен снаружи с этого сервера (не через Render):

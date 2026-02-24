@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudflare Tunnel to max_bot webhook (port 8081)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dariamishina
+ExecStart=/usr/bin/cloudflared tunnel --url http://127.0.0.1:8081
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared-tunnel
+
+[Install]
+WantedBy=multi-user.target
