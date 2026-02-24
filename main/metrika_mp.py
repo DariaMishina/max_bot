@@ -17,6 +17,7 @@ from typing import Optional
 from urllib.parse import quote, urlencode
 
 import aiohttp
+import asyncpg
 
 from main.config_reader import config
 from main.database import Database, get_table_name
@@ -160,6 +161,8 @@ async def get_user_metrika_client_id(user_id: int) -> Optional[str]:
     """
     Получает metrika_client_id пользователя из БД.
     Возвращает None если пользователь не из директ-кампании.
+    Если колонки metrika_client_id ещё нет (миграция не применена) — возвращаем None без ошибки,
+    как в tg_bot (там колонку добавляют миграцией, см. CONVERSIONS.md).
     """
     try:
         users_table = get_table_name("users")
@@ -167,6 +170,12 @@ async def get_user_metrika_client_id(user_id: int) -> Optional[str]:
         result = await Database.fetch_one(query, user_id)
         if result and result['metrika_client_id']:
             return result['metrika_client_id']
+        return None
+    except asyncpg.exceptions.UndefinedColumnError:
+        logger.debug(
+            "Column metrika_client_id missing in %s (run migration for MP).",
+            get_table_name("users"),
+        )
         return None
     except Exception as e:
         logger.error(f"Error getting metrika_client_id for user {user_id}: {e}", exc_info=True)

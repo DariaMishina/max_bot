@@ -135,6 +135,13 @@ CREATE INDEX IF NOT EXISTS idx_max_conversions_exported      ON max_conversions(
 CREATE INDEX IF NOT EXISTS idx_max_conversions_user_datetime ON max_conversions(user_id, conversion_datetime);
 
 
+-- Миграция для Яндекс Метрики Measurement Protocol (как в tg_bot, см. CONVERSIONS.md)
+-- Добавляет колонки для кампании «Директ → бот». Без них get_user_metrika_client_id возвращает None.
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS yclid VARCHAR(255) NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS metrika_client_id VARCHAR(255) NULL;
+CREATE INDEX IF NOT EXISTS idx_max_users_yclid ON max_users(yclid);
+
+
 -- Готово!
 -- Все таблицы создаются с IF NOT EXISTS — скрипт идемпотентен, можно запускать повторно.
 -- Таблицы: max_users, max_user_balances, max_payments, max_subscriptions, max_divinations, max_conversions
