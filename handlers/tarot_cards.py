@@ -8,7 +8,7 @@
 import random
 import os
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 import aiomax
 from aiomax import buttons
@@ -200,25 +200,30 @@ def combine_cards_image(card_ids: List[str]) -> str:
     return temp_path
 
 
-async def send_card_images(bot: aiomax.Bot, chat_id: int, card_ids: List[str], as_media_group: bool = False) -> None:
-    """Отправить изображения карт в боте Max
-    
-    Args:
-        bot: Экземпляр aiomax.Bot
-        chat_id: ID чата для отправки
-        card_ids: Список ID карт для отправки
-        as_media_group: Если True, объединяет карты в одно изображение
+async def send_card_images(
+    bot: aiomax.Bot,
+    chat_id: Optional[int],
+    card_ids: List[str],
+    as_media_group: bool = False,
+    user_id: Optional[int] = None,
+) -> None:
+    """Отправить изображения карт в боте Max.
+    В Max для личного диалога передают user_id=, не chat_id= (иначе ChatNotFound).
     """
     if not card_ids:
         return
-    
+    send_kw: dict = {}
+    if user_id is not None:
+        send_kw["user_id"] = user_id
+    else:
+        send_kw["chat_id"] = chat_id
+
     if as_media_group:
         combined_image_path = combine_cards_image(card_ids)
-        
         if combined_image_path and os.path.exists(combined_image_path):
             try:
                 attachment = await bot.upload_image(combined_image_path)
-                await bot.send_message(None, chat_id=chat_id, attachments=attachment)
+                await bot.send_message(None, attachments=attachment, **send_kw)
             finally:
                 try:
                     os.unlink(combined_image_path)
@@ -231,7 +236,7 @@ async def send_card_images(bot: aiomax.Bot, chat_id: int, card_ids: List[str], a
             image_path = get_card_image_path(card_id)
             if os.path.exists(image_path):
                 attachment = await bot.upload_image(image_path)
-                await bot.send_message(None, chat_id=chat_id, attachments=attachment)
+                await bot.send_message(None, attachments=attachment, **send_kw)
             else:
                 logging.warning(f"Изображение карты {card_id} не найдено по пути {image_path}")
 

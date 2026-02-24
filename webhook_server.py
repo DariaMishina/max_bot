@@ -211,8 +211,7 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
     from handlers.divination import get_chatgpt_response_with_prompt
 
     try:
-        chat_id = user_id
-        await send_card_images(bot, chat_id, card_ids, as_media_group=True)
+        await send_card_images(bot, None, card_ids, as_media_group=True, user_id=user_id)
 
         cards_info = []
         positions = ["Прошлое", "Настоящее", "Будущее"]
