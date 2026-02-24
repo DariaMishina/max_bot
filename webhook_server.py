@@ -346,11 +346,11 @@ def create_webhook_app() -> web.Application:
 
 
 async def start_webhook_server(port: int = None):
-    """Запуск webhook сервера"""
+    """Запуск webhook сервера. Порт из PORT (по умолчанию 8081, чтобы не конфликтовать с tg_bot на 8080)."""
     import os
 
     if port is None:
-        port = int(os.environ.get('PORT', 8080))
+        port = int(os.environ.get('PORT', 8081))
 
     service_url = os.environ.get('SERVICE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://max-bot.onrender.com'
 

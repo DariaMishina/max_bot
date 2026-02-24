@@ -81,7 +81,7 @@ async def main():
         from main.config_reader import config
         from webhook_server import start_webhook_server
         if config.yookassa_shop_id and config.yookassa_secret_key:
-            port = int(os.environ.get('PORT', 8080))
+            port = int(os.environ.get('PORT', 8081))
             webhook_runner = await start_webhook_server(port)
             logging.info(f"Webhook server started for YooKassa notifications on port {port}")
         else:
