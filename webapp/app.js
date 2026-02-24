@@ -150,23 +150,23 @@ function _showDebug() {
     document.body.appendChild(d);
     _dbg('uid:' + userId + ' | WA:' + !!window.WebApp + ' | loc:' + location.hostname);
 
-    var testUrl = IMG_BASE + '/CardBacks.png?' + IMG_VER;
+    // Проверяем доступность бэкенда (на GitHub Pages /static/ нет — 404), карты из card-data.js
+    var apiHealthUrl = API_URL + '/health';
     var t0 = Date.now();
 
     _dbg('T1-fetch start');
-    fetch(testUrl).then(function(r) {
+    fetch(apiHealthUrl).then(function(r) {
         _dbg('T1-fetch status:' + r.status + ' ' + (Date.now()-t0) + 'ms');
-        return r.blob();
-    }).then(function(blob) {
-        _dbg('T1-fetch OK blob:' + blob.size + 'B ' + (Date.now()-t0) + 'ms');
+        return r.text();
+    }).then(function() {
+        _dbg('T1-fetch OK backend reachable ' + (Date.now()-t0) + 'ms');
     }).catch(function(e) {
         _dbg('T1-fetch FAIL: ' + e.message);
     });
 
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', testUrl, true);
-    xhr.responseType = 'blob';
-    xhr.onload = function() { _dbg('T2-xhr OK status:' + xhr.status + ' size:' + xhr.response.size + ' ' + (Date.now()-t0) + 'ms'); };
+    xhr.open('GET', apiHealthUrl, true);
+    xhr.onload = function() { _dbg('T2-xhr status:' + xhr.status + ' ' + (Date.now()-t0) + 'ms'); };
     xhr.onerror = function() { _dbg('T2-xhr FAIL ' + (Date.now()-t0) + 'ms'); };
     xhr.ontimeout = function() { _dbg('T2-xhr TIMEOUT'); };
     xhr.send();
@@ -337,9 +337,16 @@ async function confirmSelection() {
         clearTimeout(timeout);
         clearTimeout(wakeTimer);
 
+        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || `Ошибка сервера: ${response.status}`);
+            const msg = data.error || ('Ошибка сервера: ' + response.status);
+            if (msg.indexOf('question') !== -1 || msg.indexOf('вопрос') !== -1 || msg.indexOf('No question') !== -1) {
+                throw new Error('Начните гадание в чате с ботом: напишите вопрос → Таро → Выбрать карты самой.');
+            }
+            throw new Error(msg);
+        }
+        if (data.status !== 'ok') {
+            throw new Error(data.error || 'Сервер вернул неожиданный ответ.');
         }
 
         loading.classList.add('hidden');
