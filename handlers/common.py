@@ -18,7 +18,7 @@ import aiomax
 from aiomax import fsm, filters
 
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
-from main.database import create_or_update_user, get_user_balance, can_user_divinate, create_user_balance
+from main.database import create_or_update_user, get_user_balance, can_user_divinate, create_user_balance, get_and_delete_webapp_follow_up_context
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import generate_metrika_client_id, send_pageview, send_conversion_event
 
@@ -123,8 +123,10 @@ async def daily_card_button(message: aiomax.Message, cursor: fsm.FSMCursor):
 
 @router.on_button_callback(lambda data: data.payload == 'back_to_menu')
 async def handle_back_to_menu(cb: aiomax.Callback, cursor: fsm.FSMCursor):
-    """Кнопка «◀ В меню» — показывает полное меню"""
+    """Кнопка «◀ В меню» — показывает полное меню и сбрасывает контекст уточнений WebApp."""
     cursor.clear()
+    user_id = cb.user.user_id
+    await get_and_delete_webapp_follow_up_context(user_id)
     await cb.send(
         "🪬 Выбери действие или просто напиши свой вопрос в чат 👇",
         keyboard=make_main_menu()
