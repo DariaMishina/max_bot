@@ -29,6 +29,49 @@ h1 {
     background-clip: text;
 }
 
+.step-question {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.step-label {
+    font-size: 15px;
+    color: #b0b0d0;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.question-input {
+    width: 100%;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    border-radius: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 15px;
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+}
+
+.question-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.question-input:focus {
+    outline: none;
+    border-color: rgba(255, 215, 0, 0.5);
+}
+
+.question-next-btn {
+    margin-top: 0;
+}
+
+.loading-pending {
+    margin-top: 24px;
+}
+
 .question-box {
     background: rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);

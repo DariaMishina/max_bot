@@ -166,8 +166,24 @@ async def yookassa_webhook_handler(request: Request) -> Response:
         return web.Response(text="OK", status=200)
 
 
+async def webapp_pending_question_handler(request: Request) -> Response:
+    """GET: есть ли у пользователя сохранённый вопрос (из чата перед открытием WebApp)."""
+    try:
+        user_id_str = request.query.get('user_id')
+        if not user_id_str:
+            return _json_error("user_id is required", 400)
+        user_id = int(user_id_str)
+        question = await get_pending_question(user_id)
+        return web.json_response({"question": question if question else None})
+    except ValueError:
+        return _json_error("Invalid user_id", 400)
+    except Exception as e:
+        logging.error(f"Error in webapp_pending_question_handler: {e}", exc_info=True)
+        return _json_error(f"Internal error: {type(e).__name__}: {e}", 500)
+
+
 async def webapp_cards_handler(request: Request) -> Response:
-    """Обработчик выбора карт из мини-приложения (WebApp)"""
+    """Обработчик выбора карт из мини-приложения (WebApp). Вопрос: из body или из сохранённого в чате."""
     try:
         body = await request.read()
         if not body:
@@ -176,6 +192,9 @@ async def webapp_cards_handler(request: Request) -> Response:
         data = json.loads(body.decode('utf-8'))
         user_id = data.get('user_id')
         selected_cards = data.get('selected_cards', [])
+        question_from_body = data.get('question')
+        if question_from_body is not None and isinstance(question_from_body, str):
+            question_from_body = question_from_body.strip() or None
 
         if not user_id:
             return _json_error("user_id is required", 400)
@@ -185,10 +204,10 @@ async def webapp_cards_handler(request: Request) -> Response:
         user_id = int(user_id)
         logging.info(f"WebApp card selection: user_id={user_id}, cards={selected_cards}")
 
-        question = await get_pending_question(user_id)
+        question = question_from_body if question_from_body else await get_pending_question(user_id)
         if not question:
-            logging.info(f"WebApp cards 400: no pending question for user_id={user_id}")
-            return _json_error("No question found. Start a divination first.", 400)
+            logging.info(f"WebApp cards 400: no question for user_id={user_id} (no body, no pending)")
+            return _json_error("No question found. Enter your question in the app or start a divination in chat first.", 400)
 
         can_div, access_type = await can_user_divinate(user_id)
         if not can_div:
@@ -357,6 +376,8 @@ def create_webhook_app() -> web.Application:
     app = web.Application()
 
     app.router.add_post('/webhook/yookassa', yookassa_webhook_handler)
+    app.router.add_get('/api/webapp/pending-question', webapp_pending_question_handler)
+    app.router.add_options('/api/webapp/pending-question', cors_preflight)
     app.router.add_post('/api/webapp/cards', webapp_cards_handler)
     app.router.add_options('/api/webapp/cards', cors_preflight)
     app.router.add_get('/health', health_check)

@@ -64,6 +64,10 @@ let selectedCards = [];
 let availableCards = [];
 let userId = null;
 let initData = null;
+/** Вопрос из чата (есть сохранённый перед открытием WebApp) — повторно не спрашиваем */
+let pendingQuestion = null;
+/** Вопрос, введённый в webapp (заход из кнопки меню) — отправляем в body */
+let userEnteredQuestion = null;
 
 function shuffleArray(arr) {
     const a = [...arr];
@@ -281,14 +285,19 @@ async function confirmSelection() {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 60000);
 
+        const body = {
+            user_id: userId,
+            selected_cards: selectedCards,
+            init_data: initData
+        };
+        if (userEnteredQuestion) {
+            body.question = userEnteredQuestion;
+        }
+
         const response = await fetch(`${API_URL}/api/webapp/cards`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: userId,
-                selected_cards: selectedCards,
-                init_data: initData
-            }),
+            body: JSON.stringify(body),
             signal: controller.signal
         });
 
@@ -299,7 +308,7 @@ async function confirmSelection() {
         if (!response.ok) {
             const msg = data.error || ('Ошибка сервера: ' + response.status);
             if (msg.indexOf('question') !== -1 || msg.indexOf('вопрос') !== -1 || msg.indexOf('No question') !== -1) {
-                throw new Error('Начните гадание в чате с ботом: напишите вопрос → Таро → Выбрать карты самой.');
+                throw new Error('Введите вопрос выше или начните гадание в чате: вопрос → Таро → Выбрать карты самой.');
             }
             throw new Error(msg);
         }
@@ -346,11 +355,82 @@ function hapticFeedback(type) {
     } catch (_) {}
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    initWebApp();
+function showEl(id, show) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (show) el.classList.remove('hidden'); else el.classList.add('hidden');
+}
+
+function showStepQuestion() {
+    showEl('loading-pending', false);
+    showEl('step-question', true);
+    showEl('question-box', false);
+    showEl('step-cards', false);
+}
+
+function showStepCards(withPendingQuestionText) {
+    showEl('loading-pending', false);
+    showEl('step-question', false);
+    if (withPendingQuestionText && pendingQuestion) {
+        var qb = document.getElementById('question-box');
+        qb.textContent = 'Ваш вопрос: «' + pendingQuestion + '»';
+        qb.classList.remove('hidden');
+    } else {
+        showEl('question-box', false);
+    }
+    showEl('step-cards', true);
+}
+
+async function initFlow() {
+    var loadingPending = document.getElementById('loading-pending');
+    var stepQuestion = document.getElementById('step-question');
+    var stepCards = document.getElementById('step-cards');
+
+    showEl('step-question', false);
+    showEl('step-cards', false);
+    showEl('question-box', false);
+
+    if (userId) {
+        loadingPending.classList.remove('hidden');
+        try {
+            var resp = await fetch(API_URL + '/api/webapp/pending-question?user_id=' + encodeURIComponent(userId));
+            var data = await resp.json().catch(function() { return {}; });
+            if (data.question && typeof data.question === 'string' && data.question.trim()) {
+                pendingQuestion = data.question.trim();
+                showStepCards(true);
+            } else {
+                showStepQuestion();
+            }
+        } catch (e) {
+            console.warn('Failed to fetch pending question:', e);
+            showStepQuestion();
+        }
+    } else {
+        showStepQuestion();
+    }
+
     availableCards = pickRandomCards(DISPLAYED_CARDS);
     renderCards();
+    updateUI();
+
+    document.getElementById('question-next-btn').addEventListener('click', function() {
+        var input = document.getElementById('question-input');
+        var q = (input && input.value) ? input.value.trim() : '';
+        if (!q) {
+            hapticFeedback('warning');
+            if (input) input.placeholder = 'Введите вопрос';
+            return;
+        }
+        userEnteredQuestion = q;
+        showStepCards(false);
+        hapticFeedback('medium');
+    });
 
     document.getElementById('confirm-btn').addEventListener('click', confirmSelection);
     document.getElementById('reset-btn').addEventListener('click', resetSelection);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initWebApp();
+    initFlow();
 });
