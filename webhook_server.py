@@ -22,6 +22,7 @@ from main.database import (
     Database, can_user_divinate, use_divination, save_divination, get_user_balance,
     get_pending_question, delete_pending_question
 )
+from handlers.divination import STATE_CHATTING
 from main.metrika_mp import send_conversion_event
 from main.conversions import save_conversion
 
@@ -188,6 +189,7 @@ async def webapp_cards_handler(request: Request) -> Response:
 
         question = await get_pending_question(user_id)
         if not question:
+            logging.info(f"WebApp cards 400: no pending question for user_id={user_id}")
             return _json_error("No question found. Start a divination first.", 400)
 
         can_div, access_type = await can_user_divinate(user_id)
@@ -267,9 +269,28 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
             f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
+            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
             "🔮 Новый расклад — нажми ◀ В меню",
             user_id=user_id, keyboard=make_back_to_menu_kb(), format='html'
         )
+
+        # Включаем режим уточняющих вопросов (как в divination.handle_confirm_cards)
+        conversation_history = [
+            {"role": "user", "content": f"Мой вопрос: {question}"},
+            {"role": "assistant", "content": chatgpt_response}
+        ]
+        try:
+            cursor = bot.storage.get_cursor(user_id)
+            cursor.change_data({
+                'divination_id': divination_id,
+                'is_free_divination': is_free,
+                'follow_up_count': 0,
+                'conversation_history': conversation_history,
+                'original_interpretation': chatgpt_response
+            })
+            cursor.change_state(STATE_CHATTING)
+        except Exception as e:
+            logging.error(f"Could not set FSM state for follow-ups after webapp divination: {e}", exc_info=True)
 
         logging.info(f"WebApp divination completed for user {user_id}")
 
