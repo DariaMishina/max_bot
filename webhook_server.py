@@ -122,10 +122,9 @@ async def yookassa_webhook_handler(request: Request) -> Response:
 
             # Очищаем FSM состояние пользователя после успешной оплаты
             try:
-                cursor = bot.storage.get_cursor(user_id)
-                current_state = cursor.get_state()
+                current_state = bot.storage.get_state(user_id)
                 logging.info(f"Current FSM state for user {user_id} before clear: {current_state}")
-                cursor.clear()
+                bot.storage.clear(user_id)
                 logging.info(f"FSM state cleared for user {user_id} after successful payment")
             except Exception as e:
                 logging.error(f"Could not clear FSM state for user {user_id}: {e}", exc_info=True)
@@ -289,8 +288,7 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
         # Сбрасываем FSM-состояние (осталось selecting_cards), чтобы
         # handle_free_text_question мог подхватить уточняющий вопрос из БД
         try:
-            cursor = bot.storage.get_cursor(user_id)
-            cursor.clear()
+            bot.storage.clear(user_id)
             logging.info(f"FSM state cleared for user {user_id} after WebApp divination")
         except Exception as e:
             logging.error(f"Could not clear FSM state for user {user_id}: {e}", exc_info=True)
