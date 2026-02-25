@@ -748,3 +748,78 @@ async def delete_pending_question(user_id: int):
     except Exception as e:
         logging.error(f"Error deleting pending question for user {user_id}: {e}", exc_info=True)
 
+
+# ==================== Контекст уточняющих вопросов после WebApp-гадания ====================
+
+async def ensure_webapp_follow_up_context_table():
+    """Создать таблицу webapp_follow_up_context если не существует"""
+    table = get_table_name("webapp_follow_up_context")
+    query = f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            user_id BIGINT PRIMARY KEY,
+            divination_id INTEGER NOT NULL,
+            conversation_history JSONB NOT NULL,
+            follow_up_count INTEGER NOT NULL DEFAULT 0,
+            is_free BOOLEAN NOT NULL DEFAULT TRUE,
+            original_interpretation TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    try:
+        await Database.execute_query(query)
+    except Exception as e:
+        logging.error(f"Error creating webapp_follow_up_context table: {e}", exc_info=True)
+
+
+async def save_webapp_follow_up_context(
+    user_id: int,
+    divination_id: int,
+    conversation_history: List[Dict[str, Any]],
+    is_free: bool,
+    original_interpretation: str
+) -> bool:
+    """Сохранить контекст для уточняющих вопросов после WebApp-гадания (FSM недоступен из HTTP)"""
+    table = get_table_name("webapp_follow_up_context")
+    try:
+        await ensure_webapp_follow_up_context_table()
+        history_json = json.dumps(conversation_history, ensure_ascii=False)
+        query = f"""
+            INSERT INTO {table} (user_id, divination_id, conversation_history, follow_up_count, is_free, original_interpretation, created_at)
+            VALUES ($1, $2, $3::jsonb, 0, $4, $5, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                divination_id = $2, conversation_history = $3::jsonb, follow_up_count = 0, is_free = $4,
+                original_interpretation = $5, created_at = NOW()
+        """
+        await Database.execute_query(query, user_id, divination_id, history_json, is_free, original_interpretation)
+        return True
+    except Exception as e:
+        logging.error(f"Error saving webapp follow-up context for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def get_and_delete_webapp_follow_up_context(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Получить контекст уточняющих вопросов после WebApp-гадания и удалить запись.
+    Возвращает dict: divination_id, conversation_history, follow_up_count, is_free_divination, original_interpretation.
+    """
+    table = get_table_name("webapp_follow_up_context")
+    try:
+        await ensure_webapp_follow_up_context_table()
+        query = f"""
+            DELETE FROM {table} WHERE user_id = $1
+            RETURNING divination_id, conversation_history, follow_up_count, is_free, original_interpretation
+        """
+        row = await Database.fetch_one(query, user_id)
+        if not row:
+            return None
+        return {
+            "divination_id": row["divination_id"],
+            "conversation_history": row["conversation_history"] if isinstance(row["conversation_history"], list) else json.loads(row["conversation_history"]),
+            "follow_up_count": row["follow_up_count"],
+            "is_free_divination": row["is_free"],
+            "original_interpretation": row["original_interpretation"],
+        }
+    except Exception as e:
+        logging.error(f"Error getting webapp follow-up context for user {user_id}: {e}", exc_info=True)
+        return None
+

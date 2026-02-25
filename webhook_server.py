@@ -20,9 +20,8 @@ from keyboards.main_menu import make_back_to_menu_kb
 from main.database import (
     update_payment_status, process_successful_payment as db_process_successful_payment,
     Database, can_user_divinate, use_divination, save_divination, get_user_balance,
-    get_pending_question, delete_pending_question
+    get_pending_question, delete_pending_question, save_webapp_follow_up_context
 )
-from handlers.divination import STATE_CHATTING
 from main.metrika_mp import send_conversion_event
 from main.conversions import save_conversion
 
@@ -274,23 +273,18 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             user_id=user_id, keyboard=make_back_to_menu_kb(), format='html'
         )
 
-        # Включаем режим уточняющих вопросов (как в divination.handle_confirm_cards)
+        # Контекст уточняющих вопросов сохраняем в БД (FSM недоступен из HTTP)
         conversation_history = [
             {"role": "user", "content": f"Мой вопрос: {question}"},
             {"role": "assistant", "content": chatgpt_response}
         ]
-        try:
-            cursor = bot.storage.get_cursor(user_id)
-            cursor.change_data({
-                'divination_id': divination_id,
-                'is_free_divination': is_free,
-                'follow_up_count': 0,
-                'conversation_history': conversation_history,
-                'original_interpretation': chatgpt_response
-            })
-            cursor.change_state(STATE_CHATTING)
-        except Exception as e:
-            logging.error(f"Could not set FSM state for follow-ups after webapp divination: {e}", exc_info=True)
+        await save_webapp_follow_up_context(
+            user_id=user_id,
+            divination_id=divination_id,
+            conversation_history=conversation_history,
+            is_free=is_free,
+            original_interpretation=chatgpt_response
+        )
 
         logging.info(f"WebApp divination completed for user {user_id}")
 

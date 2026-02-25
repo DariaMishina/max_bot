@@ -27,7 +27,7 @@ from handlers.hexagrams import (
     get_all_available_hexagrams, get_hexagram_image_path,
     send_hexagram_image, get_hexagram_info, HEXAGRAMS
 )
-from main.database import can_user_divinate, use_divination, save_divination, get_user_balance, update_divination_interpretation, save_pending_question
+from main.database import can_user_divinate, use_divination, save_divination, get_user_balance, update_divination_interpretation, save_pending_question, get_and_delete_webapp_follow_up_context
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
 
@@ -562,9 +562,11 @@ async def handle_cancel_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
 # ==================== Уточняющие вопросы (chatting) ====================
 
-@router.on_message(filters.state(STATE_CHATTING))
-async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
-    """Обработка уточняющих вопросов после расклада"""
+async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """
+    Обработать одно сообщение как уточняющий вопрос по раскладу.
+    Используется из handle_follow_up и при первом уточнении после WebApp-гадания.
+    """
     text = (message.content or "").strip()
     
     if text.startswith("/"):
@@ -573,9 +575,7 @@ async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
             await message.reply("Вы вернулись в главное меню.", keyboard=make_back_to_menu_kb())
         return
     
-    user_id = message.sender.user_id
     data = cursor.get_data() or {}
-    
     follow_up_count = data.get('follow_up_count', 0)
     is_free = data.get('is_free_divination', True)
     follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
@@ -608,7 +608,6 @@ async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
         cursor.change_data(data)
         
         remaining = follow_up_limit - follow_up_count - 1
-        
         if remaining > 0:
             footer = f"\n\n💬 Осталось уточняющих вопросов: {remaining}"
         else:
@@ -616,7 +615,6 @@ async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
         
         await message.reply(response + footer, keyboard=make_back_to_menu_kb(), format='html')
         
-        # Обновляем толкование в БД
         divination_id = data.get('divination_id')
         if divination_id:
             full_interpretation = data.get('original_interpretation', '') + f"\n\n---\n💬 Уточнение: {text}\n{response}"
@@ -627,13 +625,19 @@ async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
         await message.reply("❌ Ошибка при обработке вопроса. Попробуйте ещё раз.", keyboard=make_back_to_menu_kb())
 
 
+@router.on_message(filters.state(STATE_CHATTING))
+async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Обработка уточняющих вопросов после расклада"""
+    await _process_follow_up_message(message, cursor)
+
+
 # ==================== Свободный текст как новый вопрос ====================
 
 @router.on_message()
 async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCursor):
     """
     Ловит любой текст без активного состояния FSM — считает его вопросом для нового гадания.
-    Это аналог прямого ввода вопроса в Telegram-версии.
+    Если есть сохранённый контекст после WebApp-гадания — обрабатывает как уточняющий вопрос.
     """
     text = (message.content or "").strip()
     
@@ -647,6 +651,15 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
         return
     
     user_id = message.sender.user_id
+    
+    # Уточняющий вопрос после WebApp-гадания (контекст в БД, т.к. FSM недоступен из HTTP)
+    ctx = await get_and_delete_webapp_follow_up_context(user_id)
+    if ctx is not None:
+        cursor.change_data(ctx)
+        cursor.change_state(STATE_CHATTING)
+        await _process_follow_up_message(message, cursor)
+        return
+    
     logging.info(f"Free text question from user {user_id}: {text[:50]}")
     
     # Сохраняем вопрос и предлагаем выбрать тип гадания

@@ -142,6 +142,18 @@ ALTER TABLE max_users ADD COLUMN IF NOT EXISTS metrika_client_id VARCHAR(255) NU
 CREATE INDEX IF NOT EXISTS idx_max_users_yclid ON max_users(yclid);
 
 
+-- 7. max_webapp_follow_up_context — контекст уточняющих вопросов после WebApp-гадания (FSM недоступен из HTTP)
+CREATE TABLE IF NOT EXISTS max_webapp_follow_up_context (
+    user_id                   BIGINT PRIMARY KEY,
+    divination_id             INTEGER NOT NULL,
+    conversation_history      JSONB NOT NULL,
+    follow_up_count           INTEGER NOT NULL DEFAULT 0,
+    is_free                   BOOLEAN NOT NULL DEFAULT TRUE,
+    original_interpretation   TEXT NOT NULL,
+    created_at                TIMESTAMP DEFAULT NOW()
+);
+
+
 -- Готово!
 -- Все таблицы создаются с IF NOT EXISTS — скрипт идемпотентен, можно запускать повторно.
 -- Таблицы: max_users, max_user_balances, max_payments, max_subscriptions, max_divinations, max_conversions
