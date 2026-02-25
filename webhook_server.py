@@ -286,6 +286,15 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             original_interpretation=chatgpt_response
         )
 
+        # Сбрасываем FSM-состояние (осталось selecting_cards), чтобы
+        # handle_free_text_question мог подхватить уточняющий вопрос из БД
+        try:
+            cursor = bot.storage.get_cursor(user_id)
+            cursor.clear()
+            logging.info(f"FSM state cleared for user {user_id} after WebApp divination")
+        except Exception as e:
+            logging.error(f"Could not clear FSM state for user {user_id}: {e}", exc_info=True)
+
         logging.info(f"WebApp divination completed for user {user_id}")
 
     except Exception as e:
