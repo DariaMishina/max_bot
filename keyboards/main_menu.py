@@ -11,6 +11,7 @@ from aiomax import buttons
 def make_main_menu() -> buttons.KeyboardBuilder:
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.MessageButton("Новый расклад 🃏"))
+    kb.row(buttons.MessageButton("Карта дня ✨"))
     kb.row(buttons.MessageButton("Мои гадания 🔮"))
     kb.row(buttons.MessageButton("Купить расклады 💎"))
     return kb

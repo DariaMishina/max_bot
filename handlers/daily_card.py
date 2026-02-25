@@ -16,6 +16,7 @@ from typing import List, Optional
 import aiomax
 from aiomax import buttons
 
+from keyboards.main_menu import make_back_to_menu_kb
 from main.botdef import bot
 from main.database import (
     get_all_users,
@@ -134,19 +135,27 @@ async def handle_daily_card_choice(cb: aiomax.Callback):
         except Exception as e:
             logging.warning(f"Не удалось отправить изображение карты: {e}")
     
-    await cb.answer(
+    # Текст карты — в чат, а не во всплывающее окно
+    card_text = (
         f"🃏 <b>Твоя карта дня: {card_info['name']}</b>\n\n"
         f"✨ <b>Значение:</b> {card_info['meaning']}\n\n"
         "Пусть этот день будет наполнен мудростью этой карты! 🌟\n\n"
-        "💬 Хочешь узнать больше? Напиши свой вопрос и выбери тип гадания.",
+        "💬 Хочешь узнать больше? Напиши свой вопрос и выбери тип гадания."
+    )
+    await bot.send_message(
+        card_text,
+        chat_id=chat_id,
+        keyboard=make_back_to_menu_kb(),
         format='html'
     )
+    await cb.answer()
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_check_balance')
 async def handle_daily_card_balance(cb: aiomax.Callback):
     """Проверка баланса из карты дня"""
     user_id = cb.user.user_id
+    chat_id = cb.message.recipient.chat_id
     balance = await get_user_balance(user_id)
     
     if balance:
@@ -159,7 +168,8 @@ async def handle_daily_card_balance(cb: aiomax.Callback):
     else:
         text = "🔮 Баланс не найден. Напишите боту, чтобы зарегистрироваться."
     
-    await cb.answer(text, format='html')
+    await bot.send_message(text, chat_id=chat_id, keyboard=make_back_to_menu_kb(), format='html')
+    await cb.answer()
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_pay')
@@ -167,32 +177,45 @@ async def handle_daily_card_pay(cb: aiomax.Callback):
     """Переход к оплате из карты дня"""
     from keyboards.pay import make_payment_kb
     
-    await cb.answer(
+    chat_id = cb.message.recipient.chat_id
+    await bot.send_message(
         "💎 Выберите пакет для покупки:",
+        chat_id=chat_id,
         keyboard=make_payment_kb()
     )
+    await cb.answer()
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_unsubscribe')
 async def handle_daily_card_unsubscribe(cb: aiomax.Callback):
     """Отписка от карты дня"""
     user_id = cb.user.user_id
+    chat_id = cb.message.recipient.chat_id
     await update_user_daily_card_subscription(user_id, False)
     
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.CallbackButton("🔄 Подписаться обратно", "daily_card_resubscribe"))
+    kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     
-    await cb.answer(
+    await bot.send_message(
         "❌ Вы отписались от ежедневной карты дня.\n\n"
         "Чтобы подписаться обратно, нажмите кнопку ниже.",
+        chat_id=chat_id,
         keyboard=kb
     )
+    await cb.answer()
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_resubscribe')
 async def handle_daily_card_resubscribe(cb: aiomax.Callback):
     """Повторная подписка на карту дня"""
     user_id = cb.user.user_id
+    chat_id = cb.message.recipient.chat_id
     await update_user_daily_card_subscription(user_id, True)
     
-    await cb.answer("✅ Вы снова подписаны на ежедневную карту дня! 🌅")
+    await bot.send_message(
+        "✅ Вы снова подписаны на ежедневную карту дня! 🌅",
+        chat_id=chat_id,
+        keyboard=make_back_to_menu_kb()
+    )
+    await cb.answer()

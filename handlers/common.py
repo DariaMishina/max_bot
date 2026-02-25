@@ -106,6 +106,21 @@ async def buy_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     await cmd_pay_internal(message)
 
 
+@router.on_message(filters.equals("Карта дня ✨"))
+async def daily_card_button(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Кнопка «Карта дня ✨» — показать выбор карты дня"""
+    from handlers.daily_card import create_daily_card_keyboard
+    cursor.clear()
+    user_id = message.sender.user_id
+    kb = await create_daily_card_keyboard(user_id)
+    await message.reply(
+        "🃏 <b>Выбери свою карту дня</b>\n\n"
+        "Нажми на одну из карт, чтобы узнать послание дня ✨",
+        keyboard=kb,
+        format='html'
+    )
+
+
 @router.on_button_callback(lambda data: data.payload == 'back_to_menu')
 async def handle_back_to_menu(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Кнопка «◀ В меню» — показывает полное меню"""
