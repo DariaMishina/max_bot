@@ -121,8 +121,10 @@ async def handle_payment_selection(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         )
     else:
         cursor.change_state(STATE_WAITING_EMAIL)
-        await cb.answer(
+        await bot.send_message(
             "📧 Введите ваш email для получения чека об оплате:",
+            user_id=user_id,
+            keyboard=make_back_to_menu_kb()
         )
 
 
@@ -241,7 +243,11 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 async def handle_email_edit(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Исправление email"""
     cursor.change_state(STATE_WAITING_EMAIL)
-    await cb.answer("📧 Введите новый email:")
+    await bot.send_message(
+        "📧 Введите новый email:",
+        user_id=cb.user.user_id,
+        keyboard=make_back_to_menu_kb()
+    )
 
 
 @router.on_button_callback(lambda data: data.payload == 'check_payment')

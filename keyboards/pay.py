@@ -16,6 +16,7 @@ def make_payment_kb() -> buttons.KeyboardBuilder:
     kb.row(buttons.CallbackButton("🌟 20 раскладов — 249₽", "pay_20_spreads"))
     kb.row(buttons.CallbackButton("💫 10 раскладов — 149₽", "pay_10_spreads"))
     kb.row(buttons.CallbackButton("🌙 3 расклада — 69₽", "pay_3_spreads"))
+    kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     return kb
 
 
