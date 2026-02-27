@@ -48,6 +48,8 @@ PACKAGES = {
     'pay_unlimited': {'id': 'unlimited', 'name': 'Безлимит на месяц', 'amount': 49900, 'amount_rub': 499.0, 'divinations': -1},
 }
 PAYMENT_PACKAGES = PACKAGES
+# Для webhook: поиск пакета по id из metadata (там приходит '3_spreads', а не 'pay_3_spreads')
+PACKAGES_BY_ID = {p['id']: p for p in PACKAGES.values()}
 
 
 _PAY_TEXT = (
@@ -161,16 +163,24 @@ async def handle_email_input(message: aiomax.Message, cursor: fsm.FSMCursor):
 @router.on_button_callback(lambda data: data.payload == 'email_confirm')
 async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Подтверждение email — создаём платёж в ЮKassa"""
+    if not config.yookassa_shop_id or not config.yookassa_secret_key:
+        await cb.answer(
+            "Оплата временно недоступна (не настроены ключи ЮKassa).",
+            keyboard=make_back_to_menu_kb()
+        )
+        cursor.clear()
+        return
+
     data = cursor.get_data() or {}
     email = data.get('email')
     package = data.get('package')
     user_id = cb.user.user_id
-    
+
     if not email or not package:
         await cb.answer("Ошибка. Нажмите ◀ В меню и попробуйте снова.")
         cursor.clear()
         return
-    
+
     # Сохраняем email
     await update_user_email(user_id, email)
     
@@ -212,7 +222,7 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             f"Сумма: <b>{package['amount_rub']:.0f}₽</b>\n"
             f"Email для чека: {email}\n\n"
             "👇 Нажмите кнопку для перехода к оплате:",
-            chat_id=cb.message.recipient.chat_id,
+            user_id=user_id,
             keyboard=kb,
             format='html'
         )
@@ -221,7 +231,7 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         logging.error(f"Error creating payment: {e}", exc_info=True)
         await bot.send_message(
             "❌ Ошибка при создании платежа. Попробуйте позже.",
-            chat_id=cb.message.recipient.chat_id,
+            user_id=user_id,
             keyboard=make_back_to_menu_kb()
         )
         cursor.clear()
@@ -323,7 +333,7 @@ async def create_yookassa_payment(
         },
         "confirmation": {
             "type": "redirect",
-            "return_url": "https://max.ru"  # TODO: обновить на актуальный URL
+            "return_url": config.service_url or "https://max-bot-awtw.onrender.com"
         },
         "capture": True,
         "description": description,
@@ -345,7 +355,8 @@ async def create_yookassa_payment(
         },
         "metadata": {
             "user_id": str(user_id),
-            "package_id": package_id
+            "package_id": package_id,
+            "email": email
         }
     }
     

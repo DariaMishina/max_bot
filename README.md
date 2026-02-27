@@ -201,8 +201,8 @@ psql -U max_bot_user -d max_bot_db -h localhost -f init_db.sql
 
 | Параметр | Значение |
 |---|---|
-| URL | `https://ваш-render-url.onrender.com/webhook/yookassa` |
-| Событие | `payment.succeeded` |
+| URL | `https://max-bot-awtw.onrender.com/webhook/yookassa` |
+| Событие | `payment.succeeded` (обязательно), `payment.canceled` (рекомендуется) |
 
 ### 3. Прописать в `.env`
 
@@ -270,19 +270,19 @@ DB_PASSWORD=пароль
 
 ```bash
 # Health check
-curl https://your-render-url.onrender.com/health
+curl https://max-bot-awtw.onrender.com/health
 # Должно вернуть: OK
 
-# Webhook endpoint
-# POST https://your-render-url.onrender.com/webhook/yookassa
+# Webhook endpoint для ЮKassa
+# POST https://max-bot-awtw.onrender.com/webhook/yookassa
 ```
 
-### Обновить URL в ЮKassa
+### URL в ЮKassa
 
-После деплоя скопируйте URL сервиса (вида `https://max-bot-xxxx.onrender.com`) и пропишите его в настройках ЮKassa:
+В настройках ЮKassa (Настройки → HTTP-уведомления) укажите:
 
 ```
-https://max-bot-xxxx.onrender.com/webhook/yookassa
+https://max-bot-awtw.onrender.com/webhook/yookassa
 ```
 
 ---

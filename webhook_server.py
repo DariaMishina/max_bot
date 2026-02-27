@@ -15,7 +15,7 @@ from aiohttp.web_response import Response
 
 from main.botdef import bot
 from main.config_reader import config
-from handlers.pay import PAYMENT_PACKAGES
+from handlers.pay import PAYMENT_PACKAGES, PACKAGES_BY_ID
 from keyboards.main_menu import make_back_to_menu_kb
 from main.database import (
     update_payment_status, process_successful_payment as db_process_successful_payment,
@@ -96,8 +96,8 @@ async def yookassa_webhook_handler(request: Request) -> Response:
         user_id = int(user_id)
 
         package = None
-        if package_id and package_id in PAYMENT_PACKAGES:
-            package = PAYMENT_PACKAGES[package_id]
+        if package_id:
+            package = PACKAGES_BY_ID.get(package_id)
 
         # Отправляем уведомление пользователю
         try:
@@ -394,7 +394,7 @@ async def start_webhook_server(port: int = None):
     if port is None:
         port = int(os.environ.get('PORT', 8081))
 
-    service_url = os.environ.get('SERVICE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://max-bot.onrender.com'
+    service_url = os.environ.get('SERVICE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://max-bot-awtw.onrender.com'
 
     logging.info(f"Starting webhook server on port {port}")
 
