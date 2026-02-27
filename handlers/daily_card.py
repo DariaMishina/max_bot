@@ -51,6 +51,7 @@ async def create_daily_card_keyboard(user_id: int) -> buttons.KeyboardBuilder:
         kb.row(buttons.CallbackButton("💳 Оплатить", "daily_card_pay"))
     
     kb.row(buttons.CallbackButton("❌ Отписаться от карты дня", "daily_card_unsubscribe"))
+    kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     
     return kb
 

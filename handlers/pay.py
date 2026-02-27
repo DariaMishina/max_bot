@@ -114,17 +114,20 @@ async def handle_payment_selection(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     if saved_email:
         cursor.change_data({'package': package, 'email': saved_email})
         cursor.change_state(STATE_CONFIRMING_EMAIL)
-        await cb.answer(
+        await bot.send_message(
             f"📧 Для чека используем этот email?\n\n<b>{saved_email}</b>",
+            user_id=user_id,
             keyboard=make_email_confirmation_kb(),
             format='html'
         )
     else:
         cursor.change_state(STATE_WAITING_EMAIL)
         await bot.send_message(
-            "📧 Введите ваш email для получения чека об оплате:",
+            "📧 <b>Нужен email для чека</b>\n\n"
+            "Напишите ваш email <b>сюда в чат</b> (в поле сообщения внизу) и нажмите отправить — на него придёт чек после оплаты.",
             user_id=user_id,
-            keyboard=make_back_to_menu_kb()
+            keyboard=make_back_to_menu_kb(),
+            format='html'
         )
 
 
@@ -166,8 +169,9 @@ async def handle_email_input(message: aiomax.Message, cursor: fsm.FSMCursor):
 async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Подтверждение email — создаём платёж в ЮKassa"""
     if not config.yookassa_shop_id or not config.yookassa_secret_key:
-        await cb.answer(
+        await bot.send_message(
             "Оплата временно недоступна (не настроены ключи ЮKassa).",
+            user_id=cb.user.user_id,
             keyboard=make_back_to_menu_kb()
         )
         cursor.clear()
@@ -179,14 +183,18 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     user_id = cb.user.user_id
 
     if not email or not package:
-        await cb.answer("Ошибка. Нажмите ◀ В меню и попробуйте снова.")
+        await bot.send_message(
+            "Ошибка. Нажмите ◀ В меню и попробуйте снова.",
+            user_id=cb.user.user_id,
+            keyboard=make_back_to_menu_kb()
+        )
         cursor.clear()
         return
 
     # Сохраняем email
     await update_user_email(user_id, email)
     
-    await cb.answer("⏳ Создаю ссылку на оплату...")
+    await bot.send_message("⏳ Создаю ссылку на оплату...", user_id=user_id)
     
     try:
         payment_info = await create_yookassa_payment(
@@ -223,7 +231,8 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             f"💳 <b>Оплата: {package['name']}</b>\n\n"
             f"Сумма: <b>{package['amount_rub']:.0f}₽</b>\n"
             f"Email для чека: {email}\n\n"
-            "👇 Нажмите кнопку для перехода к оплате:",
+            "👇 Нажмите <b>«Перейти к оплате»</b> — откроется страница оплаты.\n\n"
+            "Если вы уже оплатили — нажмите <b>«Я оплатила»</b>: бот проверит платёж и активирует пакет (иногда уведомление от банка приходит с задержкой).",
             user_id=user_id,
             keyboard=kb,
             format='html'
@@ -244,7 +253,7 @@ async def handle_email_edit(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Исправление email"""
     cursor.change_state(STATE_WAITING_EMAIL)
     await bot.send_message(
-        "📧 Введите новый email:",
+        "📧 Напишите новый email сюда в чат и нажмите отправить:",
         user_id=cb.user.user_id,
         keyboard=make_back_to_menu_kb()
     )
@@ -252,12 +261,20 @@ async def handle_email_edit(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
 @router.on_button_callback(lambda data: data.payload == 'check_payment')
 async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
-    """Проверка статуса платежа"""
+    """
+    Ручная проверка статуса платежа.
+    Запрашиваем у API ЮKassa реальный статус по payment_id (который мы создали и храним в FSM).
+    Пакет активируется только при status == 'succeeded' от ЮKassa — пользователь не может обмануть.
+    """
     data = cursor.get_data() or {}
     payment_id = data.get('payment_id')
     
     if not payment_id:
-        await cb.answer("Платёж не найден. Нажмите ◀ В меню и попробуйте снова.")
+        await bot.send_message(
+            "Платёж не найден. Нажмите ◀ В меню и попробуйте снова.",
+            user_id=cb.user.user_id,
+            keyboard=make_back_to_menu_kb()
+        )
         cursor.clear()
         return
     
@@ -284,35 +301,56 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             except Exception as e:
                 logging.error(f"Error saving purchase conversion: {e}", exc_info=True)
             
-            await cb.answer(
+            await bot.send_message(
                 f"✅ <b>Оплата прошла успешно!</b>\n\n"
                 f"Пакет «{package.get('name', '')}» активирован.\n\n"
                 "Можешь продолжать гадать! Напиши свой вопрос в чат.",
+                user_id=cb.user.user_id,
                 keyboard=make_back_to_menu_kb(),
                 format='html'
             )
             cursor.clear()
             
         elif status == 'pending' or status == 'waiting_for_capture':
-            await cb.answer("⏳ Платёж ещё обрабатывается. Подождите немного и попробуйте снова.")
+            await bot.send_message(
+                "⏳ Платёж ещё обрабатывается. Подождите немного и нажмите «Я оплатила» снова.",
+                user_id=cb.user.user_id,
+                keyboard=make_back_to_menu_kb()
+            )
             
         elif status == 'canceled':
-            await cb.answer("❌ Платёж отменён.", keyboard=make_back_to_menu_kb())
+            await bot.send_message(
+                "❌ Платёж отменён.",
+                user_id=cb.user.user_id,
+                keyboard=make_back_to_menu_kb()
+            )
             cursor.clear()
             
         else:
-            await cb.answer(f"Статус платежа: {status}. Подождите и попробуйте снова.")
+            await bot.send_message(
+                f"Статус платежа: {status}. Подождите и нажмите «Я оплатила» снова.",
+                user_id=cb.user.user_id,
+                keyboard=make_back_to_menu_kb()
+            )
             
     except Exception as e:
         logging.error(f"Error checking payment: {e}", exc_info=True)
-        await cb.answer("❌ Ошибка при проверке платежа. Попробуйте позже.")
+        await bot.send_message(
+            "❌ Ошибка при проверке платежа. Попробуйте позже.",
+            user_id=cb.user.user_id,
+            keyboard=make_back_to_menu_kb()
+        )
 
 
 @router.on_button_callback(lambda data: data.payload == 'cancel_payment')
 async def handle_cancel_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Отмена платежа"""
     cursor.clear()
-    await cb.answer("❌ Оплата отменена.", keyboard=make_back_to_menu_kb())
+    await bot.send_message(
+        "❌ Оплата отменена.",
+        user_id=cb.user.user_id,
+        keyboard=make_back_to_menu_kb()
+    )
 
 
 # ==================== ЮKassa API ====================
