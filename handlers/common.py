@@ -10,9 +10,13 @@
 - message.reply(text) / message.send(text) вместо message.answer(text)
 - FSMCursor вместо FSMContext с StatesGroup
 - keyboard=kb вместо reply_markup=kb
+
+Кампания Директ → лендинг → бот: start-параметр с лендинга в формате
+__client_id__XXX__camp_YYY (client_id Метрики и utm_campaign) парсится и сохраняется в БД.
 """
 import asyncio
 import logging
+from typing import Optional, Tuple
 
 import aiomax
 from aiomax import fsm, filters
@@ -25,17 +29,58 @@ from main.metrika_mp import generate_metrika_client_id, send_pageview, send_conv
 router = aiomax.Router()
 
 
+def _parse_start_param_from_landing(start_param: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Парсит start-параметр с лендинга (формат как в TG: __client_id__XXX__camp_YYY).
+    Возвращает (client_id, utm_campaign).
+    """
+    if not start_param or not isinstance(start_param, str):
+        return None, None
+    s = start_param.strip()
+    if not s or "__client_id__" not in s:
+        return None, None
+    parts = s.split("__client_id__")
+    if len(parts) < 2:
+        return None, None
+    client_id_part = parts[1]
+    client_id = None
+    utm_campaign = None
+    if "__" in client_id_part:
+        segs = client_id_part.split("__")
+        client_id = segs[0] if segs else None
+        for seg in segs[1:]:
+            if seg.startswith("camp_"):
+                utm_campaign = seg[5:]
+                break
+    else:
+        client_id = client_id_part
+    return client_id or None, utm_campaign or None
+
+
 @router.on_bot_start()
 async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
     """
     Обработка старта бота (аналог /start в Telegram).
     В Max мессенджере вызывается при первом обращении к боту.
+    Поддерживается start-параметр с лендинга: __client_id__XXX__camp_YYY.
     """
-    logging.info(f"cmd_start: user_id={payload.user.user_id}, name={payload.user.name}")
-    
+    start_param = getattr(payload, "start_param", None) or getattr(payload, "start_parameter", None)
+    logging.info(f"cmd_start: user_id={payload.user.user_id}, name={payload.user.name}, start_param={start_param!r}")
+
+    client_id = None
+    utm_campaign = None
+    if start_param:
+        client_id, utm_campaign = _parse_start_param_from_landing(start_param)
+        if client_id:
+            logging.info(f"Parsed landing start param: client_id={client_id}, utm_campaign={utm_campaign}")
+
     # Очищаем состояние
     cursor.clear()
-    
+
+    source = "landing" if client_id else "organic"
+    if client_id and not utm_campaign:
+        utm_campaign = None
+
     # Сохраняем/обновляем пользователя в БД
     try:
         is_new = await create_or_update_user(
@@ -45,16 +90,21 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
             last_name=None,
             language_code=None,
             is_premium=False,
+            client_id=client_id,
+            utm_source="landing" if client_id else None,
+            utm_campaign=utm_campaign,
         )
         if is_new:
-            logging.info(f"New user registered: {payload.user.user_id}")
-            
+            logging.info(f"New user registered: {payload.user.user_id} with source={source}")
+
             # Сохраняем конверсию регистрации
             try:
                 await save_conversion(
                     user_id=payload.user.user_id,
-                    conversion_type='registration',
-                    source='organic',
+                    conversion_type="registration",
+                    source=source,
+                    client_id=client_id,
+                    campaign_id=utm_campaign,
                 )
             except Exception as e:
                 logging.error(f"Error saving registration conversion: {e}", exc_info=True)
