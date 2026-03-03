@@ -64,7 +64,8 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
     В Max мессенджере вызывается при первом обращении к боту.
     Поддерживается start-параметр с лендинга: __client_id__XXX__camp_YYY.
     """
-    start_param = getattr(payload, "start_param", None) or getattr(payload, "start_parameter", None)
+    # В aiomax start-параметр из URL (?start=XXX) приходит в BotStartPayload.payload
+    start_param = payload.payload
     logging.info(f"cmd_start: user_id={payload.user.user_id}, name={payload.user.name}, start_param={start_param!r}")
 
     client_id = None
