@@ -24,6 +24,7 @@
 #   4. Проверка балансов гаданий (пользователи с нулевым балансом)
 #   5. Анализ источников пейволла
 #   6. Список пользователей, которые не заблокировали бота
+#   7. Количество гаданий за последние 3 дня (с разбивкой по источникам)
 #
 # Все отчеты исключают пользователей: 3260473, 129045679, 200748988
 # Таблицы: max_users, max_conversions, max_payments, max_user_balances, max_divinations
@@ -518,6 +519,48 @@ if [ $? -eq 0 ]; then
 else
     print_error "Ошибка при выполнении запроса"
 fi
+
+# 7. Количество гаданий за последние 3 дня с разбивкой по источникам
+print_header "7. Гадания за последние 3 дня (кроме нас)"
+
+QUERY7_TOTAL="
+SELECT 
+    TO_CHAR(DATE(d.created_at), 'DD.MM.YY') as \"Дата\",
+    COUNT(*) as \"Всего гаданий\",
+    COUNT(DISTINCT d.user_id) as \"Уникальных пользователей\",
+    ROUND(COUNT(*)::numeric / NULLIF(COUNT(DISTINCT d.user_id), 0), 2) as \"Гаданий на чел.\"
+FROM max_divinations d
+WHERE d.user_id NOT IN $EXCLUDE_USERS
+    AND d.created_at >= CURRENT_DATE - INTERVAL '2 days'
+GROUP BY DATE(d.created_at)
+ORDER BY DATE(d.created_at) DESC;
+"
+
+QUERY7_BY_SOURCE="
+SELECT 
+    TO_CHAR(DATE(d.created_at), 'DD.MM.YY') as \"Дата\",
+    CASE 
+        WHEN u.yclid IS NOT NULL AND u.yclid != '' THEN 'Директ → бот'
+        WHEN u.client_id IS NOT NULL AND u.client_id != '' THEN 'Лендинг'
+        ELSE 'Органика'
+    END as \"Источник\",
+    COUNT(*) as \"Гаданий\",
+    COUNT(DISTINCT d.user_id) as \"Пользователей\"
+FROM max_divinations d
+JOIN max_users u ON d.user_id = u.user_id
+WHERE d.user_id NOT IN $EXCLUDE_USERS
+    AND d.created_at >= CURRENT_DATE - INTERVAL '2 days'
+GROUP BY DATE(d.created_at),
+    CASE 
+        WHEN u.yclid IS NOT NULL AND u.yclid != '' THEN 'Директ → бот'
+        WHEN u.client_id IS NOT NULL AND u.client_id != '' THEN 'Лендинг'
+        ELSE 'Органика'
+    END
+ORDER BY DATE(d.created_at) DESC, \"Источник\";
+"
+
+execute_query "$QUERY7_TOTAL" "7.1. Общее количество гаданий по дням (последние 3 дня)"
+execute_query "$QUERY7_BY_SOURCE" "7.2. Гадания по источникам (последние 3 дня)"
 
 # Итоговое сообщение
 print_header "Отчет завершен"

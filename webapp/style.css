@@ -107,7 +107,7 @@ h1 {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
-    margin-bottom: 20px;
+    margin-bottom: 8px;
     perspective: 800px;
 }
 
@@ -177,6 +177,16 @@ h1 {
 
 .card-slot.selected .card-check {
     display: flex;
+}
+
+/* ===== Sticky bottom bar ===== */
+
+.bottom-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    padding: 16px 0 4px;
+    background: linear-gradient(to top, #0d0d2b 50%, rgba(13, 13, 43, 0.95) 75%, transparent);
 }
 
 /* ===== Buttons ===== */

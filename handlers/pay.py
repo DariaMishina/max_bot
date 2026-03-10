@@ -93,6 +93,23 @@ async def cmd_pay(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     await cmd_pay_internal(ctx)
 
 
+@router.on_button_callback(lambda data: data.payload == 'remind_pay')
+async def handle_remind_pay(cb: aiomax.Callback, cursor: fsm.FSMCursor):
+    """Кнопка «Оплатить» из напоминания (send_message.py --payment-reminder)"""
+    cursor.clear()
+    user_id = cb.user.user_id
+    logging.info(f"remind_pay callback from user {user_id}")
+
+    try:
+        await save_paywall_conversion(user_id=user_id, paywall_source="remind_pay")
+        import asyncio
+        asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+    except Exception as e:
+        logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+    await cb.send(_PAY_TEXT, keyboard=make_payment_kb(), format='html')
+
+
 @router.on_button_callback(lambda data: data.payload.startswith('pay_'))
 async def handle_payment_selection(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Обработка выбора пакета оплаты"""

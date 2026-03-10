@@ -149,7 +149,7 @@ async def handle_daily_card_choice(cb: aiomax.Callback):
         keyboard=make_back_to_menu_kb(),
         format='html'
     )
-    await cb.answer()
+    await cb.answer(notification="🃏")
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_check_balance')
@@ -170,7 +170,7 @@ async def handle_daily_card_balance(cb: aiomax.Callback):
         text = "🔮 Баланс не найден. Напишите боту, чтобы зарегистрироваться."
     
     await bot.send_message(text, chat_id=chat_id, keyboard=make_back_to_menu_kb(), format='html')
-    await cb.answer()
+    await cb.answer(notification="🔮")
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_pay')
@@ -184,7 +184,7 @@ async def handle_daily_card_pay(cb: aiomax.Callback):
         chat_id=chat_id,
         keyboard=make_payment_kb()
     )
-    await cb.answer()
+    await cb.answer(notification="💎")
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_unsubscribe')
@@ -204,7 +204,7 @@ async def handle_daily_card_unsubscribe(cb: aiomax.Callback):
         chat_id=chat_id,
         keyboard=kb
     )
-    await cb.answer()
+    await cb.answer(notification="❌")
 
 
 @router.on_button_callback(lambda data: data.payload == 'daily_card_resubscribe')
@@ -219,4 +219,4 @@ async def handle_daily_card_resubscribe(cb: aiomax.Callback):
         chat_id=chat_id,
         keyboard=make_back_to_menu_kb()
     )
-    await cb.answer()
+    await cb.answer(notification="✅")
