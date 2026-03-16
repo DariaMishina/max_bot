@@ -15,7 +15,7 @@ import sys
 import aiohttp
 from aiomax import buttons
 from main.botdef import bot
-from main.database import Database, update_user_blocked_status, get_all_users
+from main.database import Database, update_user_blocked_status, get_all_users, is_send_blocked_error
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,8 +55,8 @@ async def send_message_to_user(
         error_msg = str(e).lower()
         if "chat not found" in error_msg or "user not found" in error_msg:
             print(f"❌ Пользователь {user_id} не найден или не начинал диалог с ботом")
-        elif "blocked" in error_msg or "forbidden" in error_msg:
-            print(f"❌ Пользователь {user_id} заблокировал бота")
+        elif is_send_blocked_error(e):
+            print(f"❌ Пользователь {user_id} заблокировал бота или диалог приостановлен")
             try:
                 await update_user_blocked_status(user_id, True)
                 print(f"   Статус блокировки обновлен в БД: is_blocked=True")
@@ -209,13 +209,62 @@ async def send_bot_restored(user_id: int):
     return await send_message_to_user(user_id, text)
 
 
+async def send_friday13_promo(user_id: int):
+    """Промо-рассылка: Пятница 13 — удвоение пакетов гаданий"""
+    from keyboards.pay import make_payment_kb
+    from main.conversions import save_paywall_conversion
+
+    promo_text = (
+        "🌑 <b>Пятница, 13-е… Карты говорят громче обычного.</b>\n\n"
+        "Мы видим: в этот день ты особенно чувствуешь связь с Таро. "
+        "И это не случайность — тринадцатый аркан не зря считается картой трансформации.\n\n"
+        "Сегодня мы хотим поддержать твой путь ✨\n\n"
+        "🔮 <b>Только до конца дня: купи любой пакет раскладов — и мы удвоим его.</b>\n\n"
+        "А если ты уже купила пакет сегодня — <b>проверь свой баланс</b>. "
+        "Мы уже всё удвоили 🪄"
+    )
+    payment_text = (
+        "Выбирай свой пакет — удвоение произойдёт автоматически:\n\n"
+        "<b>🔥 Самый популярный вариант</b>\n"
+        "👑 Безлимит на месяц — 499₽\n"
+        "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
+        "Или выбери пакет:\n"
+        "🔥 30 → <b>60 раскладов</b> — 349₽\n"
+        "🌟 20 → <b>40 раскладов</b> — 249₽\n"
+        "💫 10 → <b>20 раскладов</b> — 149₽\n"
+        "🌙 3 → <b>6 раскладов</b> — 69₽\n\n"
+        "⏳ Предложение действует до полуночи"
+    )
+
+    print(f"📤 Отправляю промо «Пятница 13» пользователю {user_id}...")
+    try:
+        try:
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="friday13_promo",
+                metadata={'reminder_type': 'friday13_promo', 'sent_via': 'send_message_script'}
+            )
+            from main.metrika_mp import send_conversion_event
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+        await bot.send_message(promo_text, user_id=user_id, format='html')
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        print(f"✅ Промо «Пятница 13» отправлено пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, "промо «Пятница 13»")
+        return False
+
+
 def _handle_send_error(user_id: int, error: Exception, action_desc: str):
     """Общая обработка ошибок отправки — логирование и обновление статуса блокировки."""
     error_msg = str(error).lower()
     if "chat not found" in error_msg or "user not found" in error_msg:
         print(f"❌ Пользователь {user_id} не найден или не начинал диалог с ботом")
-    elif "blocked" in error_msg or "forbidden" in error_msg:
-        print(f"❌ Пользователь {user_id} заблокировал бота")
+    elif is_send_blocked_error(error):
+        print(f"❌ Пользователь {user_id} заблокировал бота или диалог приостановлен")
         try:
             asyncio.get_event_loop().run_until_complete(update_user_blocked_status(user_id, True))
         except Exception:
@@ -258,6 +307,10 @@ async def main():
     parser.add_argument(
         '--restored', action='store_true',
         help='Сообщение о восстановлении работы бота'
+    )
+    parser.add_argument(
+        '--friday13', action='store_true',
+        help='Промо «Пятница 13»: удвоение пакетов гаданий (+ меню оплаты)'
     )
     parser.add_argument(
         '--broadcast', action='store_true',
@@ -303,11 +356,17 @@ async def main():
                 await send_bot_restored(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.friday13:
+            print(f"🌑 Отправка промо «Пятница 13» для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_friday13_promo(uid)
+                await asyncio.sleep(0.05)
+
         else:
             if not args.text:
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
-                    "--payment-reminder / --no-divinations / --discussion / --restored"
+                    "--payment-reminder / --no-divinations / --discussion / --restored / --friday13"
                 )
                 return
 

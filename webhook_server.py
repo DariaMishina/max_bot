@@ -20,7 +20,8 @@ from keyboards.main_menu import make_back_to_menu_kb
 from main.database import (
     update_payment_status, process_successful_payment as db_process_successful_payment,
     Database, can_user_divinate, use_divination, save_divination, get_user_balance,
-    get_pending_question, delete_pending_question, save_webapp_follow_up_context
+    get_pending_question, delete_pending_question, save_webapp_follow_up_context,
+    update_user_blocked_status, is_send_blocked_error
 )
 from main.metrika_mp import send_conversion_event
 from main.conversions import save_conversion
@@ -147,6 +148,9 @@ async def yookassa_webhook_handler(request: Request) -> Response:
 
         except Exception as e:
             logging.error(f"Error sending payment notification to user {user_id}: {e}", exc_info=True)
+            if is_send_blocked_error(e):
+                await update_user_blocked_status(user_id, True)
+                logging.info(f"User {user_id} blocked the bot, updated status after payment notification")
 
         return web.Response(text="OK", status=200)
 
@@ -316,13 +320,17 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
 
     except Exception as e:
         logging.error(f"Error processing webapp divination for user {user_id}: {e}", exc_info=True)
-        try:
-            await bot.send_message(
-                "❌ Ошибка при гадании. Попробуйте ещё раз.",
-                user_id=user_id, keyboard=make_back_to_menu_kb()
-            )
-        except Exception:
-            pass
+        if is_send_blocked_error(e):
+            await update_user_blocked_status(user_id, True)
+            logging.info(f"User {user_id} blocked the bot, updated status after webapp divination")
+        else:
+            try:
+                await bot.send_message(
+                    "❌ Ошибка при гадании. Попробуйте ещё раз.",
+                    user_id=user_id, keyboard=make_back_to_menu_kb()
+                )
+            except Exception:
+                pass
 
 
 def _json_error(message: str, status: int) -> Response:
