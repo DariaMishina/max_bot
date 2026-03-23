@@ -241,7 +241,7 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         
         kb = buttons.KeyboardBuilder()
         kb.row(buttons.LinkButton("💳 Перейти к оплате", payment_url))
-        kb.row(buttons.CallbackButton("✅ Я оплатила", "check_payment"))
+        kb.row(buttons.CallbackButton("✅ Я оплатил(а)", "check_payment"))
         kb.row(buttons.CallbackButton("❌ Отмена", "cancel_payment"))
         
         await bot.send_message(
@@ -249,7 +249,7 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             f"Сумма: <b>{package['amount_rub']:.0f}₽</b>\n"
             f"Email для чека: {email}\n\n"
             "👇 Нажмите <b>«Перейти к оплате»</b> — откроется страница оплаты.\n\n"
-            "Если вы уже оплатили — нажмите <b>«Я оплатила»</b>: бот проверит платёж и активирует пакет (иногда уведомление от банка приходит с задержкой).",
+            "Если вы уже оплатили — нажмите <b>«Я оплатил(а)»</b>: бот проверит платёж и активирует пакет (иногда уведомление от банка приходит с задержкой).",
             user_id=user_id,
             keyboard=kb,
             format='html'
@@ -344,7 +344,7 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
         elif status == 'pending' or status == 'waiting_for_capture':
             await bot.send_message(
-                "⏳ Платёж ещё обрабатывается. Подождите немного и нажмите «Я оплатила» снова.",
+                "⏳ Платёж ещё обрабатывается. Подождите немного и нажмите «Я оплатил(а)» снова.",
                 user_id=user_id,
                 keyboard=make_back_to_menu_kb()
             )
@@ -359,7 +359,7 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
         else:
             await bot.send_message(
-                f"Статус платежа: {status}. Подождите и нажмите «Я оплатила» снова.",
+                f"Статус платежа: {status}. Подождите и нажмите «Я оплатил(а)» снова.",
                 user_id=user_id,
                 keyboard=make_back_to_menu_kb()
             )
