@@ -9,6 +9,7 @@ Webhook сервер для приема уведомлений от ЮKassa —
 import asyncio
 import logging
 import json
+import aiohttp
 from aiohttp import web
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response
@@ -28,6 +29,15 @@ from main.conversions import save_conversion
 
 # Хранилище обработанных платежей для защиты от дубликатов
 processed_payments = set()
+
+
+async def _ensure_bot_session():
+    """Инициализирует HTTP-сессию бота, если она ещё не создана.
+    bot.send_message() требует self.session, которая создаётся внутри
+    start_polling(). Webhook-сервер стартует раньше — сессии нет."""
+    if not getattr(bot, 'session', None) or bot.session.closed:
+        bot.session = aiohttp.ClientSession()
+        logging.info("Created aiohttp session for bot in webhook context")
 
 
 async def yookassa_webhook_handler(request: Request) -> Response:
@@ -100,8 +110,35 @@ async def yookassa_webhook_handler(request: Request) -> Response:
         if package_id:
             package = PACKAGES_BY_ID.get(package_id)
 
-        # Отправляем уведомление пользователю
+        # === 1. КРИТИЧНО: сначала обновляем БД ===
+        db_updated = False
         try:
+            await update_payment_status(payment_id, 'succeeded', payment_object)
+            await db_process_successful_payment(payment_id)
+            db_updated = True
+            logging.info(f"Payment {payment_id} processed successfully in database")
+        except Exception as e:
+            logging.error(f"CRITICAL: Failed to process payment {payment_id} in database: {e}", exc_info=True)
+
+        if not db_updated:
+            logging.error(f"Returning 500 for payment {payment_id} so YooKassa retries")
+            return web.Response(text="DB processing failed", status=500)
+
+        processed_payments.add(payment_id)
+        if len(processed_payments) > 1000:
+            processed_payments.clear()
+            processed_payments.add(payment_id)
+
+        # === 2. Аналитика (fire-and-forget) ===
+        try:
+            asyncio.create_task(send_conversion_event(user_id, 'purchase'))
+        except Exception:
+            pass
+
+        # === 3. Уведомление пользователю (best-effort, не влияет на статус) ===
+        try:
+            await _ensure_bot_session()
+
             package_description = package.get('description', 'раскладам') if package else 'раскладам'
             email_text = f"Чек отправлен на email: {email}\n\n" if email else ""
 
@@ -118,56 +155,27 @@ async def yookassa_webhook_handler(request: Request) -> Response:
                 keyboard=make_back_to_menu_kb(),
                 format='html'
             )
-
             logging.info(f"Payment notification sent to user {user_id}")
-
-            # Очищаем FSM состояние пользователя после успешной оплаты
-            try:
-                current_state = bot.storage.get_state(user_id)
-                logging.info(f"Current FSM state for user {user_id} before clear: {current_state}")
-                bot.storage.clear(user_id)
-                logging.info(f"FSM state cleared for user {user_id} after successful payment")
-            except Exception as e:
-                logging.error(f"Could not clear FSM state for user {user_id}: {e}", exc_info=True)
-
-            # Обрабатываем успешный платеж в БД
-            try:
-                await update_payment_status(payment_id, 'succeeded', payment_object)
-                await db_process_successful_payment(payment_id)
-                logging.info(f"Payment {payment_id} processed successfully in database")
-
-                asyncio.create_task(send_conversion_event(user_id, 'purchase'))
-            except Exception as e:
-                logging.error(f"Error processing payment {payment_id} in database: {e}", exc_info=True)
-
-            processed_payments.add(payment_id)
-
-            if len(processed_payments) > 1000:
-                processed_payments.clear()
-                processed_payments.add(payment_id)
-
         except Exception as e:
-            logging.error(f"Error sending payment notification to user {user_id}: {e}", exc_info=True)
+            logging.warning(f"Could not send payment notification to user {user_id}: {e}")
             if is_send_blocked_error(e):
                 await update_user_blocked_status(user_id, True)
-                logging.info(f"User {user_id} blocked the bot, updated status after payment notification")
+
+        # === 4. Очистка FSM (best-effort) ===
+        try:
+            bot.storage.clear(user_id)
+            logging.info(f"FSM state cleared for user {user_id} after successful payment")
+        except Exception as e:
+            logging.warning(f"Could not clear FSM state for user {user_id}: {e}")
 
         return web.Response(text="OK", status=200)
 
     except json.JSONDecodeError as e:
         logging.error(f"Invalid JSON in webhook: {e}")
-        try:
-            request_body = await request.read()
-            if request_body:
-                logging.error(f"Request body (first 500 chars): {request_body.decode('utf-8', errors='ignore')[:500]}")
-        except Exception:
-            pass
         return web.Response(text="Invalid JSON", status=400)
     except Exception as e:
         logging.error(f"Error processing webhook: {e}", exc_info=True)
-        import traceback
-        logging.error(f"Traceback: {traceback.format_exc()}")
-        return web.Response(text="OK", status=200)
+        return web.Response(text="Internal error", status=500)
 
 
 async def webapp_pending_question_handler(request: Request) -> Response:
@@ -234,6 +242,7 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
     from handlers.divination import get_chatgpt_response_with_prompt
 
     try:
+        await _ensure_bot_session()
         await send_card_images(bot, None, card_ids, as_media_group=True, user_id=user_id)
 
         cards_info = []

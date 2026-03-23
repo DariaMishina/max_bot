@@ -15,6 +15,7 @@ from typing import Optional, List
 import aiomax
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from handlers import common, feedback, divination, pay, daily_card
 from main.botdef import bot
@@ -72,8 +73,54 @@ async def main():
         replace_existing=True
     )
 
+    async def reconcile_pending_payments_job():
+        """Сверка pending-платежей с ЮKassa: если оплачен — зачисляем баланс."""
+        try:
+            from main.config_reader import config as cfg
+            if not cfg.yookassa_shop_id or not cfg.yookassa_secret_key:
+                return
+
+            from main.database import (
+                get_stale_pending_payments,
+                update_payment_status,
+                process_successful_payment as db_process,
+            )
+            from handlers.pay import check_payment_status, PACKAGES_BY_ID
+
+            stale = await get_stale_pending_payments(minutes=15)
+            if not stale:
+                return
+
+            logging.info(f"Reconciliation: checking {len(stale)} stale pending payment(s)")
+            for p in stale:
+                pid = p['payment_id']
+                try:
+                    info = await check_payment_status(pid)
+                    actual_status = info.get('status')
+
+                    if actual_status == 'succeeded':
+                        await update_payment_status(pid, 'succeeded', info)
+                        await db_process(pid)
+                        logging.info(f"Reconciliation: payment {pid} -> succeeded, balance updated")
+                    elif actual_status == 'canceled':
+                        await update_payment_status(pid, 'canceled')
+                        logging.info(f"Reconciliation: payment {pid} -> canceled")
+                except Exception as e:
+                    logging.error(f"Reconciliation error for {pid}: {e}", exc_info=True)
+        except Exception as e:
+            logging.error(f"Error in reconcile_pending_payments_job: {e}", exc_info=True)
+
+    scheduler.add_job(
+        reconcile_pending_payments_job,
+        trigger=IntervalTrigger(minutes=10),
+        id='reconcile_pending_payments',
+        name='Сверка pending-платежей с ЮKassa',
+        replace_existing=True
+    )
+
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
+    logging.info("APScheduler: pending payments reconciliation every 10 minutes")
 
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
     webhook_runner = None

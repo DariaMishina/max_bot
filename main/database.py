@@ -565,6 +565,58 @@ async def get_payment_by_id(payment_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_latest_pending_payment(user_id: int) -> Optional[Dict[str, Any]]:
+    """Получить последний pending-платёж пользователя (fallback, если FSM потерял payment_id)"""
+    try:
+        payments_table = get_table_name("payments")
+        query = f"""
+            SELECT payment_id, package_id, amount_rub
+            FROM {payments_table}
+            WHERE user_id = $1 AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        result = await Database.fetch_one(query, user_id)
+        if result:
+            return {
+                'payment_id': result['payment_id'],
+                'package_id': result['package_id'],
+                'amount_rub': result['amount_rub'],
+            }
+        return None
+    except Exception as e:
+        logging.error(f"Error getting latest pending payment for user {user_id}: {e}", exc_info=True)
+        return None
+
+
+async def get_stale_pending_payments(minutes: int = 15) -> List[Dict[str, Any]]:
+    """Получить все pending-платежи старше N минут для сверки с ЮKassa"""
+    try:
+        payments_table = get_table_name("payments")
+        query = f"""
+            SELECT payment_id, user_id, package_id, amount_rub, email, created_at
+            FROM {payments_table}
+            WHERE status = 'pending'
+              AND created_at < NOW() - INTERVAL '{int(minutes)} minutes'
+            ORDER BY created_at ASC
+        """
+        results = await Database.fetch_all(query)
+        return [
+            {
+                'payment_id': r['payment_id'],
+                'user_id': r['user_id'],
+                'package_id': r['package_id'],
+                'amount_rub': r['amount_rub'],
+                'email': r['email'],
+                'created_at': r['created_at'],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logging.error(f"Error getting stale pending payments: {e}", exc_info=True)
+        return []
+
+
 async def get_user_email(user_id: int) -> Optional[str]:
     """Получить email пользователя"""
     try:

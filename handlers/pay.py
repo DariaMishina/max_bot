@@ -27,7 +27,7 @@ from main.botdef import bot
 from main.config_reader import config
 from main.database import (
     create_payment, process_successful_payment as db_process_successful_payment,
-    update_payment_status, update_user_email, get_user_email
+    update_payment_status, update_user_email, get_user_email, get_latest_pending_payment
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
@@ -280,31 +280,38 @@ async def handle_email_edit(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """
     Ручная проверка статуса платежа.
-    Запрашиваем у API ЮKassa реальный статус по payment_id (который мы создали и храним в FSM).
-    Пакет активируется только при status == 'succeeded' от ЮKassa — пользователь не может обмануть.
+    Запрашиваем у API ЮKassa реальный статус по payment_id.
+    Если FSM потерял payment_id (рестарт бота) — ищем последний pending-платёж в БД.
     """
     data = cursor.get_data() or {}
     payment_id = data.get('payment_id')
-    
+    user_id = cb.user.user_id
+
+    # Fallback: если FSM пустой после рестарта — берём из БД
     if not payment_id:
-        await bot.send_message(
-            "Платёж не найден. Нажмите ◀ В меню и попробуйте снова.",
-            user_id=cb.user.user_id,
-            keyboard=make_back_to_menu_kb()
-        )
-        cursor.clear()
-        return
-    
+        logging.info(f"No payment_id in FSM for user {user_id}, checking DB")
+        pending = await get_latest_pending_payment(user_id)
+        if pending:
+            payment_id = pending['payment_id']
+            logging.info(f"Found pending payment {payment_id} in DB for user {user_id}")
+        else:
+            await bot.send_message(
+                "Платёж не найден. Нажмите ◀ В меню и попробуйте снова.",
+                user_id=user_id,
+                keyboard=make_back_to_menu_kb()
+            )
+            cursor.clear()
+            return
+
     try:
         payment_info = await check_payment_status(payment_id)
         status = payment_info.get('status')
-        
+
         if status == 'succeeded':
             await db_process_successful_payment(payment_id)
-            
+
             package = data.get('package', {})
-            user_id = cb.user.user_id
-            
+
             try:
                 await save_conversion(
                     user_id=user_id,
@@ -317,44 +324,51 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
                 asyncio.create_task(send_conversion_event(user_id, 'purchase'))
             except Exception as e:
                 logging.error(f"Error saving purchase conversion: {e}", exc_info=True)
-            
+
+            package_name = package.get('name', '')
+            if not package_name:
+                from handlers.pay import PACKAGES_BY_ID as _pkgs
+                pkg_id = payment_info.get('metadata', {}).get('package_id', '')
+                pkg = _pkgs.get(pkg_id)
+                package_name = pkg['name'] if pkg else ''
+
             await bot.send_message(
                 f"✅ <b>Оплата прошла успешно!</b>\n\n"
-                f"Пакет «{package.get('name', '')}» активирован.\n\n"
+                f"Пакет «{package_name}» активирован.\n\n"
                 "Можешь продолжать гадать! Напиши свой вопрос в чат.",
-                user_id=cb.user.user_id,
+                user_id=user_id,
                 keyboard=make_back_to_menu_kb(),
                 format='html'
             )
             cursor.clear()
-            
+
         elif status == 'pending' or status == 'waiting_for_capture':
             await bot.send_message(
                 "⏳ Платёж ещё обрабатывается. Подождите немного и нажмите «Я оплатила» снова.",
-                user_id=cb.user.user_id,
+                user_id=user_id,
                 keyboard=make_back_to_menu_kb()
             )
-            
+
         elif status == 'canceled':
             await bot.send_message(
                 "❌ Платёж отменён.",
-                user_id=cb.user.user_id,
+                user_id=user_id,
                 keyboard=make_back_to_menu_kb()
             )
             cursor.clear()
-            
+
         else:
             await bot.send_message(
                 f"Статус платежа: {status}. Подождите и нажмите «Я оплатила» снова.",
-                user_id=cb.user.user_id,
+                user_id=user_id,
                 keyboard=make_back_to_menu_kb()
             )
-            
+
     except Exception as e:
         logging.error(f"Error checking payment: {e}", exc_info=True)
         await bot.send_message(
             "❌ Ошибка при проверке платежа. Попробуйте позже.",
-            user_id=cb.user.user_id,
+            user_id=user_id,
             keyboard=make_back_to_menu_kb()
         )
 
