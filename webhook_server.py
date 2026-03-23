@@ -31,13 +31,38 @@ from main.conversions import save_conversion
 processed_payments = set()
 
 
-async def _ensure_bot_session():
-    """Инициализирует HTTP-сессию бота, если она ещё не создана.
-    bot.send_message() требует self.session, которая создаётся внутри
-    start_polling(). Webhook-сервер стартует раньше — сессии нет."""
-    if not getattr(bot, 'session', None) or bot.session.closed:
-        bot.session = aiohttp.ClientSession()
-        logging.info("Created aiohttp session for bot in webhook context")
+async def _send_message_direct(user_id: int, text: str, keyboard=None):
+    """Отправить сообщение через Max API напрямую, минуя bot.session.
+    bot.send_message() зависит от сессии, которая создаётся внутри
+    start_polling(). При cold start на Render вебхук приходит раньше —
+    сессии нет. Эта функция работает всегда."""
+    token = config.effective_bot_token.get_secret_value()
+    url = "https://platform-api.max.ru/messages"
+    params = {"access_token": token, "user_id": user_id}
+
+    body = {"text": text, "format": "html", "notify": True}
+    if keyboard:
+        from aiomax import buttons as btn
+        if isinstance(keyboard, btn.KeyboardBuilder):
+            keyboard = keyboard.to_list()
+        body["attachments"] = [{
+            "type": "inline_keyboard",
+            "payload": {
+                "buttons": [
+                    [b.to_json() if hasattr(b, 'to_json') else b for b in row]
+                    for row in keyboard
+                ]
+            },
+        }]
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, params=params, json=body) as resp:
+            if resp.status in range(200, 300):
+                logging.info(f"Direct API: message sent to user {user_id}")
+                return True
+            error = await resp.text()
+            logging.error(f"Direct API: failed to send to user {user_id}: {resp.status} - {error}")
+            return False
 
 
 async def yookassa_webhook_handler(request: Request) -> Response:
@@ -137,8 +162,6 @@ async def yookassa_webhook_handler(request: Request) -> Response:
 
         # === 3. Уведомление пользователю (best-effort, не влияет на статус) ===
         try:
-            await _ensure_bot_session()
-
             package_description = package.get('description', 'раскладам') if package else 'раскладам'
             email_text = f"Чек отправлен на email: {email}\n\n" if email else ""
 
@@ -149,13 +172,7 @@ async def yookassa_webhook_handler(request: Request) -> Response:
                 f"🔮 Можешь начинать гадать! Используй команду /divination или выбери гадание из меню."
             )
 
-            await bot.send_message(
-                success_text,
-                user_id=user_id,
-                keyboard=make_back_to_menu_kb(),
-                format='html'
-            )
-            logging.info(f"Payment notification sent to user {user_id}")
+            await _send_message_direct(user_id, success_text, keyboard=make_back_to_menu_kb())
         except Exception as e:
             logging.warning(f"Could not send payment notification to user {user_id}: {e}")
             if is_send_blocked_error(e):
@@ -242,7 +259,6 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
     from handlers.divination import get_chatgpt_response_with_prompt
 
     try:
-        await _ensure_bot_session()
         await send_card_images(bot, None, card_ids, as_media_group=True, user_id=user_id)
 
         cards_info = []
