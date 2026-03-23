@@ -11,11 +11,11 @@ def make_payment_kb() -> buttons.KeyboardBuilder:
     Используем CallbackButton чтобы получать payload при нажатии.
     """
     kb = buttons.KeyboardBuilder()
-    kb.row(buttons.CallbackButton("👑 Безлимит на месяц — 499₽", "pay_unlimited"))
-    kb.row(buttons.CallbackButton("🔥 30 раскладов — 349₽", "pay_30_spreads"))
-    kb.row(buttons.CallbackButton("🌟 20 раскладов — 249₽", "pay_20_spreads"))
-    kb.row(buttons.CallbackButton("💫 10 раскладов — 149₽", "pay_10_spreads"))
-    kb.row(buttons.CallbackButton("🌙 3 расклада — 69₽", "pay_3_spreads"))
+    kb.row(buttons.CallbackButton("👑 Безлимит на месяц — 599₽", "pay_unlimited"))
+    kb.row(buttons.CallbackButton("🔥 30 раскладов — 399₽", "pay_30_spreads"))
+    kb.row(buttons.CallbackButton("🌟 20 раскладов — 289₽", "pay_20_spreads"))
+    kb.row(buttons.CallbackButton("💫 10 раскладов — 179₽", "pay_10_spreads"))
+    kb.row(buttons.CallbackButton("🌙 3 расклада — 99₽", "pay_3_spreads"))
     kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     return kb
 

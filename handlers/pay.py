@@ -41,11 +41,11 @@ STATE_WAITING_PAYMENT = 'waiting_for_payment'
 
 # Пакеты оплаты
 PACKAGES = {
-    'pay_3_spreads': {'id': '3_spreads', 'name': '3 расклада', 'amount': 6900, 'amount_rub': 69.0, 'divinations': 3},
-    'pay_10_spreads': {'id': '10_spreads', 'name': '10 раскладов', 'amount': 14900, 'amount_rub': 149.0, 'divinations': 10},
-    'pay_20_spreads': {'id': '20_spreads', 'name': '20 раскладов', 'amount': 24900, 'amount_rub': 249.0, 'divinations': 20},
-    'pay_30_spreads': {'id': '30_spreads', 'name': '30 раскладов', 'amount': 34900, 'amount_rub': 349.0, 'divinations': 30},
-    'pay_unlimited': {'id': 'unlimited', 'name': 'Безлимит на месяц', 'amount': 49900, 'amount_rub': 499.0, 'divinations': -1},
+    'pay_3_spreads': {'id': '3_spreads', 'name': '3 расклада', 'amount': 9900, 'amount_rub': 99.0, 'divinations': 3},
+    'pay_10_spreads': {'id': '10_spreads', 'name': '10 раскладов', 'amount': 17900, 'amount_rub': 179.0, 'divinations': 10},
+    'pay_20_spreads': {'id': '20_spreads', 'name': '20 раскладов', 'amount': 28900, 'amount_rub': 289.0, 'divinations': 20},
+    'pay_30_spreads': {'id': '30_spreads', 'name': '30 раскладов', 'amount': 39900, 'amount_rub': 399.0, 'divinations': 30},
+    'pay_unlimited': {'id': 'unlimited', 'name': 'Безлимит на месяц', 'amount': 59900, 'amount_rub': 599.0, 'divinations': -1},
 }
 PAYMENT_PACKAGES = PACKAGES
 # Для webhook: поиск пакета по id из metadata (там приходит '3_spreads', а не 'pay_3_spreads')
@@ -58,13 +58,13 @@ _PAY_TEXT = (
     "✨ <b>Хочешь продолжить гадать, когда нужен ответ?</b>\n"
     "Перед встречей, в отношениях, когда тревожно — бот всегда с тобой.\n\n"
     "<b>🔥 Самый популярный вариант</b>\n"
-    "👑 Безлимит на месяц — 499₽\n"
+    "👑 Безлимит на месяц — 599₽\n"
     "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
     "Или выбери пакет:\n"
-    "🔥 30 раскладов — 349₽\n"
-    "🌟 20 раскладов — 249₽\n"
-    "💫 10 раскладов — 149₽\n"
-    "🌙 3 расклада — 69₽"
+    "🔥 30 раскладов — 399₽\n"
+    "🌟 20 раскладов — 289₽\n"
+    "💫 10 раскладов — 179₽\n"
+    "🌙 3 расклада — 99₽"
 )
 
 
