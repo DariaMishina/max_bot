@@ -38,7 +38,8 @@ async def _send_message_direct(user_id: int, text: str, keyboard=None):
     сессии нет. Эта функция работает всегда."""
     token = config.effective_bot_token.get_secret_value()
     url = "https://platform-api.max.ru/messages"
-    params = {"access_token": token, "user_id": user_id}
+    params = {"user_id": user_id}
+    headers = {"Authorization": token}
 
     body = {"text": text, "format": "html", "notify": True}
     if keyboard:
@@ -56,7 +57,7 @@ async def _send_message_direct(user_id: int, text: str, keyboard=None):
         }]
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, params=params, json=body) as resp:
+        async with session.post(url, params=params, headers=headers, json=body) as resp:
             if resp.status in range(200, 300):
                 logging.info(f"Direct API: message sent to user {user_id}")
                 return True
