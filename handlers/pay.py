@@ -249,7 +249,8 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             f"Сумма: <b>{package['amount_rub']:.0f}₽</b>\n"
             f"Email для чека: {email}\n\n"
             "👇 Нажмите <b>«Перейти к оплате»</b> — откроется страница оплаты.\n\n"
-            "Если вы уже оплатили — нажмите <b>«Я оплатил(а)»</b>: бот проверит платёж и активирует пакет (иногда уведомление от банка приходит с задержкой).",
+            "Если вы уже оплатили — нажмите <b>«Я оплатил(а)»</b>: бот проверит платёж и активирует пакет (иногда уведомление от банка приходит с задержкой).\n\n"
+            "🔗 <a href='https://teletype.in/@gadanie_aibot_max/CaTVNlNBYZR'>Условия сервиса</a>",
             user_id=user_id,
             keyboard=kb,
             format='html'
