@@ -65,17 +65,17 @@ def _parse_start_param_from_landing(start_param: Optional[str]) -> Tuple[Optiona
 # ==================== Проверка подписки на канал ====================
 
 def _make_channel_sub_kb() -> buttons.KeyboardBuilder:
-    """Клавиатура с кнопками «Подписаться» и «Я подписалась»."""
+    """Клавиатура с кнопками «Подписаться» и «Проверить подписку»."""
     kb = buttons.KeyboardBuilder()
     if config.channel_url:
         kb.row(buttons.LinkButton("📢 Подписаться на канал", config.channel_url))
-    kb.row(buttons.CallbackButton("✅ Я подписалась", "check_channel_sub"))
+    kb.row(buttons.CallbackButton("✅ Подписка оформлена", "check_channel_sub"))
     return kb
 
 
 CHANNEL_SUB_TEXT = (
-    "📢 <b>Для использования бота подпишись на наш канал:</b>\n\n"
-    "👉 {url}\n\n"
+    '📢 <b>Для использования бота подпишись на наш '
+    '<a href="{url}">канал</a>:</b>\n\n'
     "После подписки нажми кнопку ниже 👇"
 )
 
@@ -142,9 +142,9 @@ async def handle_check_channel_sub(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     else:
         url = config.channel_url or "канал"
         await cb.send(
-            f"❌ Ты ещё не подписана на канал.\n\n"
-            f"Подпишись: {url}\n"
-            "И нажми кнопку ещё раз 👇",
+            "❌ Подписка на канал не найдена.\n\n"
+            f'Подпишись на <a href="{url}">канал</a> '
+            "и нажми кнопку ещё раз 👇",
             keyboard=_make_channel_sub_kb(),
             format='html',
         )
@@ -218,7 +218,8 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
             "2️⃣ Выбираешь тип гадания — Таро или И-Цзин\n"
             "3️⃣ Бот выдает карты или гексаграмму\n"
             "💬 Бот сразу покажет толкование и комментарий именно под твой вопрос.\n\n"
-            "<b>📢 Чтобы начать — подпишись на наш канал и нажми кнопку ниже 👇</b>",
+            '<b>📢 Чтобы начать — подпишись на наш '
+            f'<a href="{config.channel_url}">канал</a> и нажми кнопку ниже 👇</b>',
             keyboard=_make_channel_sub_kb(),
             format='html',
         )
