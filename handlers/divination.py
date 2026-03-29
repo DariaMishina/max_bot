@@ -336,11 +336,11 @@ async def handle_tarot_random(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     question = data.get('question', '')
     
     if not question:
-        await cb.answer("Пожалуйста, начните гадание заново.")
+        await cb.answer("Пожалуйста, начните гадание заново.", text="Пожалуйста, начните гадание заново.", keyboard=[])
         cursor.clear()
         return
     
-    await cb.answer("🔮 Тяну карты...")
+    await cb.answer("🔮 Тяну карты...", text="🔮 Тяну карты...", keyboard=[])
     
     try:
         # Выбираем 3 случайные карты
