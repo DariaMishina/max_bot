@@ -49,7 +49,14 @@ router = aiomax.Router()
 @router.on_command('divination')
 async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     """Команда /divination - начинает новое гадание"""
-    logging.info(f"cmd_divination: user_id={ctx.sender.user_id}")
+    from handlers.common import check_channel_subscription, send_channel_sub_prompt
+    user_id = ctx.sender.user_id
+    logging.info(f"cmd_divination: user_id={user_id}")
+
+    if not await check_channel_subscription(user_id):
+        await send_channel_sub_prompt(ctx)
+        return
+
     cursor.clear()
     
     await ctx.reply(
@@ -660,6 +667,12 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
         await _process_follow_up_message(message, cursor)
         return
     
+    # Проверяем подписку на канал (для новых пользователей)
+    from handlers.common import check_channel_subscription, send_channel_sub_prompt
+    if not await check_channel_subscription(user_id):
+        await send_channel_sub_prompt(message)
+        return
+
     logging.info(f"Free text question from user {user_id}: {text[:50]}")
     
     # Сохраняем вопрос и предлагаем выбрать тип гадания

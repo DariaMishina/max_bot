@@ -30,11 +30,14 @@ class Settings(BaseSettings):
     metrika_mp_token: Optional[str] = None
     # URL вебхук-сервера (для мини-приложений и платежей)
     service_url: Optional[str] = None
+    # Канал, на который должны подписаться новые пользователи
+    channel_chat_id: Optional[int] = None
+    channel_url: Optional[str] = None
     # Куда пересылать обратную связь (Max user_id админа)
     admin_chat_id: Optional[int] = None
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
 
-    @field_validator("metrika_mp_counter_id", "admin_chat_id", mode="before")
+    @field_validator("metrika_mp_counter_id", "admin_chat_id", "channel_chat_id", mode="before")
     @classmethod
     def empty_str_to_none(cls, v):
         if isinstance(v, str) and v.strip() == "":

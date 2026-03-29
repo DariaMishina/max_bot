@@ -758,6 +758,36 @@ async def update_user_daily_card_subscription(user_id: int, subscribed: bool) ->
         return False
 
 
+# ==================== Подписка на канал ====================
+
+async def is_channel_subscription_confirmed(user_id: int) -> bool:
+    """
+    Проверить, подтверждена ли подписка на канал.
+    Возвращает True если channel_subscribed_at IS NOT NULL (старый пользователь или уже подтвердил).
+    """
+    try:
+        users_table = get_table_name("users")
+        query = f"SELECT channel_subscribed_at IS NOT NULL AS confirmed FROM {users_table} WHERE user_id = $1"
+        result = await Database.fetchval(query, user_id)
+        return bool(result)
+    except Exception as e:
+        logging.error(f"Error checking channel subscription for user {user_id}: {e}", exc_info=True)
+        return True  # fail open
+
+
+async def mark_channel_subscribed(user_id: int) -> bool:
+    """Записать, что пользователь подтвердил подписку на канал."""
+    try:
+        users_table = get_table_name("users")
+        query = f"UPDATE {users_table} SET channel_subscribed_at = NOW() WHERE user_id = $1"
+        await Database.execute_query(query, user_id)
+        logging.info(f"Channel subscription confirmed for user {user_id}")
+        return True
+    except Exception as e:
+        logging.error(f"Error marking channel subscription for user {user_id}: {e}", exc_info=True)
+        return False
+
+
 # ==================== Pending Questions (for WebApp) ====================
 
 async def ensure_pending_questions_table():

@@ -135,6 +135,9 @@ CREATE INDEX IF NOT EXISTS idx_max_conversions_exported      ON max_conversions(
 CREATE INDEX IF NOT EXISTS idx_max_conversions_user_datetime ON max_conversions(user_id, conversion_datetime);
 
 
+-- Миграция: подписка на канал (обязательна для новых пользователей)
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS channel_subscribed_at TIMESTAMP NULL;
+
 -- Миграция для Яндекс Метрики Measurement Protocol (как в tg_bot, см. CONVERSIONS.md)
 -- Добавляет колонки для кампании «Директ → бот». Без них get_user_metrika_client_id возвращает None.
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS yclid VARCHAR(255) NULL;

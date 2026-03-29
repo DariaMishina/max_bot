@@ -19,12 +19,17 @@ import logging
 from typing import Optional, Tuple
 
 import aiomax
-from aiomax import fsm, filters
+from aiomax import fsm, filters, buttons
 
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
-from main.database import create_or_update_user, get_user_balance, can_user_divinate, create_user_balance, get_and_delete_webapp_follow_up_context
+from main.database import (
+    create_or_update_user, get_user_balance, can_user_divinate,
+    create_user_balance, get_and_delete_webapp_follow_up_context,
+    is_channel_subscription_confirmed, mark_channel_subscribed,
+)
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import generate_metrika_client_id, send_pageview, send_conversion_event
+from main.config_reader import config
 
 router = aiomax.Router()
 
@@ -57,6 +62,94 @@ def _parse_start_param_from_landing(start_param: Optional[str]) -> Tuple[Optiona
     return client_id or None, utm_campaign or None
 
 
+# ==================== Проверка подписки на канал ====================
+
+def _make_channel_sub_kb() -> buttons.KeyboardBuilder:
+    """Клавиатура с кнопками «Подписаться» и «Я подписалась»."""
+    kb = buttons.KeyboardBuilder()
+    if config.channel_url:
+        kb.row(buttons.LinkButton("📢 Подписаться на канал", config.channel_url))
+    kb.row(buttons.CallbackButton("✅ Я подписалась", "check_channel_sub"))
+    return kb
+
+
+CHANNEL_SUB_TEXT = (
+    "📢 <b>Для использования бота подпишись на наш канал:</b>\n\n"
+    "👉 {url}\n\n"
+    "После подписки нажми кнопку ниже 👇"
+)
+
+
+async def check_channel_subscription(user_id: int) -> bool:
+    """
+    Проверить, нужно ли блокировать пользователя из-за отсутствия подписки на канал.
+    Возвращает True если пользователь может продолжать, False если нужно показать гейт.
+    """
+    if not config.channel_chat_id:
+        return True
+
+    if await is_channel_subscription_confirmed(user_id):
+        return True
+
+    from main.botdef import bot
+    try:
+        member = await bot.get_memberships(config.channel_chat_id, user_id)
+        if member is not None:
+            await mark_channel_subscribed(user_id)
+            return True
+    except Exception as e:
+        logging.error(f"Error checking channel membership for user {user_id}: {e}", exc_info=True)
+        return True  # fail open
+
+    return False
+
+
+async def send_channel_sub_prompt(msg) -> None:
+    """Отправить сообщение с просьбой подписаться на канал."""
+    url = config.channel_url or "канал"
+    text = CHANNEL_SUB_TEXT.format(url=url)
+    if hasattr(msg, 'reply'):
+        await msg.reply(text, keyboard=_make_channel_sub_kb(), format='html')
+    else:
+        await msg.send(text, keyboard=_make_channel_sub_kb(), format='html')
+
+
+@router.on_button_callback(lambda data: data.payload == 'check_channel_sub')
+async def handle_check_channel_sub(cb: aiomax.Callback, cursor: fsm.FSMCursor):
+    """Кнопка «Я подписалась» — повторно проверяем подписку на канал через API."""
+    user_id = cb.user.user_id
+
+    if not config.channel_chat_id:
+        await cb.answer("Проверка подписки не настроена.")
+        return
+
+    from main.botdef import bot
+    try:
+        member = await bot.get_memberships(config.channel_chat_id, user_id)
+    except Exception as e:
+        logging.error(f"Error checking channel membership on callback for {user_id}: {e}", exc_info=True)
+        await cb.answer("Произошла ошибка, попробуй ещё раз.")
+        return
+
+    if member is not None:
+        await mark_channel_subscribed(user_id)
+        await cb.send(
+            "🎉 <b>Отлично, подписка подтверждена!</b>\n\n"
+            "Теперь напиши свой вопрос в чат 🔮",
+            keyboard=make_main_menu(),
+            format='html',
+        )
+    else:
+        url = config.channel_url or "канал"
+        await cb.send(
+            f"❌ Ты ещё не подписана на канал.\n\n"
+            f"Подпишись: {url}\n"
+            "И нажми кнопку ещё раз 👇",
+            keyboard=_make_channel_sub_kb(),
+            format='html',
+        )
+
+
 @router.on_bot_start()
 async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
     """
@@ -83,6 +176,7 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
         utm_campaign = None
 
     # Сохраняем/обновляем пользователя в БД
+    is_new = False
     try:
         is_new = await create_or_update_user(
             user_id=payload.user.user_id,
@@ -112,19 +206,36 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
     except Exception as e:
         logging.error(f"Error saving user to database: {e}", exc_info=True)
 
-    await payload.send(
-        "🪬 Тревожно? Не знаешь, как поступить?\n\n"
-        "Не с кем посоветоваться, а онлайн-расклады — пустые слова.\n\n"
-        "🕯 Сделай расклад — и получи мгновенное толкование Таро и И-Цзин с помощью ИИ.\n\n"
-        "📌 Как работает:\n\n"
-        "1️⃣ Пишешь свой вопрос\n"
-        "2️⃣ Выбираешь тип гадания — Таро или И-Цзин\n"
-        "3️⃣ Бот выдает карты или гексаграмму\n"
-        "💬 Бот сразу покажет толкование и комментарий именно под твой вопрос.\n\n"
-        "<b>💫 Чтобы начать — напиши свой вопрос в чат. У тебя есть 3 бесплатных гадания 👇</b>",
-        keyboard=make_main_menu(),
-        format='html',
-    )
+    is_subscribed = await check_channel_subscription(payload.user.user_id)
+
+    if is_new and not is_subscribed:
+        await payload.send(
+            "🪬 Тревожно? Не знаешь, как поступить?\n\n"
+            "Не с кем посоветоваться, а онлайн-расклады — пустые слова.\n\n"
+            "🕯 Сделай расклад — и получи мгновенное толкование Таро и И-Цзин с помощью ИИ.\n\n"
+            "📌 Как работает:\n\n"
+            "1️⃣ Пишешь свой вопрос\n"
+            "2️⃣ Выбираешь тип гадания — Таро или И-Цзин\n"
+            "3️⃣ Бот выдает карты или гексаграмму\n"
+            "💬 Бот сразу покажет толкование и комментарий именно под твой вопрос.\n\n"
+            "<b>📢 Чтобы начать — подпишись на наш канал и нажми кнопку ниже 👇</b>",
+            keyboard=_make_channel_sub_kb(),
+            format='html',
+        )
+    else:
+        await payload.send(
+            "🪬 Тревожно? Не знаешь, как поступить?\n\n"
+            "Не с кем посоветоваться, а онлайн-расклады — пустые слова.\n\n"
+            "🕯 Сделай расклад — и получи мгновенное толкование Таро и И-Цзин с помощью ИИ.\n\n"
+            "📌 Как работает:\n\n"
+            "1️⃣ Пишешь свой вопрос\n"
+            "2️⃣ Выбираешь тип гадания — Таро или И-Цзин\n"
+            "3️⃣ Бот выдает карты или гексаграмму\n"
+            "💬 Бот сразу покажет толкование и комментарий именно под твой вопрос.\n\n"
+            "<b>💫 Чтобы начать — напиши свой вопрос в чат. У тебя есть 3 бесплатных гадания 👇</b>",
+            keyboard=make_main_menu(),
+            format='html',
+        )
 
 
 @router.on_command('balance')
