@@ -313,7 +313,7 @@ async def main():
         help='Промо «Пятница 13»: удвоение пакетов гаданий (+ меню оплаты)'
     )
     parser.add_argument(
-        '', action='store_true',
+        '--broadcast', action='store_true',
         help='Рассылать всем пользователям из БД (исключая заблокированных)'
     )
 

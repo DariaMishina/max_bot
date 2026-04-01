@@ -25,7 +25,7 @@ from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
 from main.database import (
     create_or_update_user, get_user_balance, can_user_divinate,
     create_user_balance, get_and_delete_webapp_follow_up_context,
-    is_channel_subscription_confirmed, mark_channel_subscribed,
+    has_paid_access, mark_channel_subscribed, clear_channel_subscribed,
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import generate_metrika_client_id, send_pageview, send_conversion_event
@@ -84,11 +84,14 @@ async def check_channel_subscription(user_id: int) -> bool:
     """
     Проверить, нужно ли блокировать пользователя из-за отсутствия подписки на канал.
     Возвращает True если пользователь может продолжать, False если нужно показать гейт.
+
+    Платящие пользователи (безлимит / платные гадания) — проверка пропускается.
+    Остальные — проверяются через MAX API при каждом обращении.
     """
     if not config.channel_chat_id:
         return True
 
-    if await is_channel_subscription_confirmed(user_id):
+    if await has_paid_access(user_id):
         return True
 
     from main.botdef import bot
@@ -97,6 +100,8 @@ async def check_channel_subscription(user_id: int) -> bool:
         if member is not None:
             await mark_channel_subscribed(user_id)
             return True
+        else:
+            await clear_channel_subscribed(user_id)
     except Exception as e:
         logging.error(f"Error checking channel membership for user {user_id}: {e}", exc_info=True)
         return True  # fail open
