@@ -99,8 +99,7 @@ async def main():
                     actual_status = info.get('status')
 
                     if actual_status == 'succeeded':
-                        await update_payment_status(pid, 'succeeded', info)
-                        await db_process(pid)
+                        await db_process(pid, yookassa_metadata=info)
                         logging.info(f"Reconciliation: payment {pid} -> succeeded, balance updated")
                     elif actual_status == 'canceled':
                         await update_payment_status(pid, 'canceled')

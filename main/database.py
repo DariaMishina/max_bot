@@ -454,10 +454,10 @@ async def update_payment_status(
         return False
 
 
-async def process_successful_payment(payment_id: str) -> bool:
+async def process_successful_payment(payment_id: str, yookassa_metadata: Optional[Dict[str, Any]] = None) -> bool:
     """
-    Обработать успешный платеж:
-    1. Обновить статус платежа
+    Обработать успешный платеж (идемпотентно):
+    1. Атомарно перевести статус pending → succeeded (если уже succeeded — пропустить)
     2. Обновить баланс пользователя (добавить гадания или создать подписку)
     """
     try:
@@ -467,38 +467,48 @@ async def process_successful_payment(payment_id: str) -> bool:
                 payments_table = get_table_name("payments")
                 subscriptions_table = get_table_name("subscriptions")
                 balances_table = get_table_name("user_balances")
-                
-                # Получаем информацию о платеже
-                payment_query = f"""
-                    SELECT user_id, package_id, amount, amount_rub
-                    FROM {payments_table}
-                    WHERE payment_id = $1
+
+                # Атомарно: обновляем статус и получаем данные платежа ТОЛЬКО если
+                # он ещё не был обработан (status != 'succeeded').
+                # FOR UPDATE блокирует строку от параллельных транзакций.
+                claim_query = f"""
+                    UPDATE {payments_table}
+                    SET status = 'succeeded',
+                        updated_at = NOW(),
+                        completed_at = NOW(),
+                        yookassa_metadata = COALESCE($2::jsonb, yookassa_metadata)
+                    WHERE payment_id = $1 AND status != 'succeeded'
+                    RETURNING user_id, package_id, amount, amount_rub
                 """
-                payment = await conn.fetchrow(payment_query, payment_id)
-                
+                metadata_json = json.dumps(yookassa_metadata) if yookassa_metadata else None
+                payment = await conn.fetchrow(claim_query, payment_id, metadata_json)
+
                 if not payment:
+                    existing = await conn.fetchval(
+                        f"SELECT status FROM {payments_table} WHERE payment_id = $1",
+                        payment_id
+                    )
+                    if existing == 'succeeded':
+                        logging.info(f"Payment {payment_id} already processed, skipping")
+                        return True
                     logging.error(f"Payment not found: {payment_id}")
                     return False
-                
+
                 user_id = payment['user_id']
                 package_id = payment['package_id']
-                
-                # Обновляем статус платежа
-                await update_payment_status(payment_id, 'succeeded')
-                
-                # Обновляем баланс в зависимости от пакета
+
+                logging.info(f"Payment status updated: {payment_id} -> succeeded")
+
                 if package_id == 'unlimited':
-                    # Создаем подписку на 30 дней
                     expires_at = datetime.now() + timedelta(days=30)
-                    
+
                     subscription_query = f"""
                         INSERT INTO {subscriptions_table} (user_id, payment_id, started_at, expires_at, is_active, created_at)
                         VALUES ($1, $2, NOW(), $3, TRUE, NOW())
                         ON CONFLICT DO NOTHING
                     """
                     await conn.execute(subscription_query, user_id, payment_id, expires_at)
-                    
-                    # Обновляем unlimited_until в балансе
+
                     balance_query = f"""
                         UPDATE {balances_table}
                         SET unlimited_until = $1,
@@ -506,10 +516,9 @@ async def process_successful_payment(payment_id: str) -> bool:
                         WHERE user_id = $2
                     """
                     await conn.execute(balance_query, expires_at, user_id)
-                    
+
                     logging.info(f"Unlimited subscription activated for user {user_id} until {expires_at}")
                 else:
-                    # Добавляем платные гадания
                     divinations_by_package = {
                         '3_spreads': 3,
                         '10_spreads': 10,
@@ -517,7 +526,7 @@ async def process_successful_payment(payment_id: str) -> bool:
                         '30_spreads': 30,
                     }
                     divinations_to_add = divinations_by_package.get(package_id, 0)
-                    
+
                     if divinations_to_add > 0:
                         balance_query = f"""
                             UPDATE {balances_table}
@@ -527,7 +536,7 @@ async def process_successful_payment(payment_id: str) -> bool:
                         """
                         await conn.execute(balance_query, divinations_to_add, user_id)
                         logging.info(f"Added {divinations_to_add} paid divinations for user {user_id}")
-                
+
                 return True
     except Exception as e:
         logging.error(f"Error processing successful payment {payment_id}: {e}", exc_info=True)

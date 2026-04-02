@@ -258,6 +258,54 @@ async def send_friday13_promo(user_id: int):
         return False
 
 
+async def send_full_moon_promo(user_id: int):
+    """Промо-рассылка: полнолуние — удвоение пакетов раскладов"""
+    from keyboards.pay import make_payment_kb
+    from main.conversions import save_paywall_conversion
+
+    promo_text = (
+        "🌕 <b>Полнолуние — время ясности и силы.</b>\n\n"
+        "В такие ночи граница между вопросом и ответом тоньше обычного. "
+        "Мы хотим, чтобы у тебя было больше пространства для раскладов ✨\n\n"
+        "🔮 <b>Сегодня: купи любой пакет раскладов — и мы удвоим его в честь полнолуния.</b>\n\n"
+        "А если ты оплатил(а) <b>вчера или сегодня</b> — <b>проверь баланс</b>: "
+        "мы уже удвоили твои расклады 🪄"
+    )
+    payment_text = (
+        "Выбирай пакет — удвоение произойдёт автоматически:\n\n"
+        "<b>🔥 Самый популярный вариант</b>\n"
+        "👑 Безлимит на месяц — 599₽\n"
+        "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
+        "Или выбери пакет:\n"
+        "🔥 30 → <b>60 раскладов</b> — 399₽\n"
+        "🌟 20 → <b>40 раскладов</b> — 289₽\n"
+        "💫 10 → <b>20 раскладов</b> — 179₽\n"
+        "🌙 3 → <b>6 раскладов</b> — 99₽\n\n"
+        "⏳ Предложение действует до полуночи"
+    )
+
+    print(f"📤 Отправляю промо «Полнолуние» пользователю {user_id}...")
+    try:
+        try:
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="full_moon_promo",
+                metadata={'reminder_type': 'full_moon_promo', 'sent_via': 'send_message_script'}
+            )
+            from main.metrika_mp import send_conversion_event
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+        await bot.send_message(promo_text, user_id=user_id, format='html')
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        print(f"✅ Промо «Полнолуние» отправлено пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, "промо «Полнолуние»")
+        return False
+
+
 def _handle_send_error(user_id: int, error: Exception, action_desc: str):
     """Общая обработка ошибок отправки — логирование и обновление статуса блокировки."""
     error_msg = str(error).lower()
@@ -313,6 +361,10 @@ async def main():
         help='Промо «Пятница 13»: удвоение пакетов гаданий (+ меню оплаты)'
     )
     parser.add_argument(
+        '--fullmoon', action='store_true',
+        help='Промо «Полнолуние»: удвоение пакетов раскладов (+ меню оплаты)'
+    )
+    parser.add_argument(
         '--broadcast', action='store_true',
         help='Рассылать всем пользователям из БД (исключая заблокированных)'
     )
@@ -362,11 +414,18 @@ async def main():
                 await send_friday13_promo(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.fullmoon:
+            print(f"🌕 Отправка промо «Полнолуние» для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_full_moon_promo(uid)
+                await asyncio.sleep(0.05)
+
         else:
             if not args.text:
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
-                    "--payment-reminder / --no-divinations / --discussion / --restored / --friday13"
+                    "--payment-reminder / --no-divinations / --discussion / --restored / "
+                    "--friday13 / --fullmoon"
                 )
                 return
 

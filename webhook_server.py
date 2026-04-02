@@ -19,7 +19,7 @@ from main.config_reader import config
 from handlers.pay import PAYMENT_PACKAGES, PACKAGES_BY_ID
 from keyboards.main_menu import make_back_to_menu_kb
 from main.database import (
-    update_payment_status, process_successful_payment as db_process_successful_payment,
+    process_successful_payment as db_process_successful_payment,
     Database, can_user_divinate, use_divination, save_divination, get_user_balance,
     get_pending_question, delete_pending_question, save_webapp_follow_up_context,
     update_user_blocked_status, is_send_blocked_error
@@ -139,10 +139,9 @@ async def yookassa_webhook_handler(request: Request) -> Response:
         # === 1. КРИТИЧНО: сначала обновляем БД ===
         db_updated = False
         try:
-            await update_payment_status(payment_id, 'succeeded', payment_object)
-            await db_process_successful_payment(payment_id)
-            db_updated = True
-            logging.info(f"Payment {payment_id} processed successfully in database")
+            db_updated = await db_process_successful_payment(payment_id, yookassa_metadata=payment_object)
+            if db_updated:
+                logging.info(f"Payment {payment_id} processed successfully in database")
         except Exception as e:
             logging.error(f"CRITICAL: Failed to process payment {payment_id} in database: {e}", exc_info=True)
 
