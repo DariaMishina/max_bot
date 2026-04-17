@@ -150,6 +150,30 @@ async def send_no_divinations_reminder(user_id: int):
         return False
 
 
+async def send_no_divinations_broadcast() -> dict:
+    """Рассылка напоминаний о закончившихся гаданиях всем незаблокированным пользователям."""
+    results = {'sent': 0, 'failed': 0, 'blocked': 0}
+
+    all_users = await get_all_users(include_blocked=False)
+    logging.info(f"No-divinations broadcast: {len(all_users)} users")
+
+    for user in all_users:
+        uid = user['user_id']
+        try:
+            success = await send_no_divinations_reminder(uid)
+            if success:
+                results['sent'] += 1
+            else:
+                results['blocked'] += 1
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            logging.error(f"Error in no-divinations broadcast for user {uid}: {e}", exc_info=True)
+            results['failed'] += 1
+
+    logging.info(f"No-divinations broadcast results: {results}")
+    return results
+
+
 async def send_discussion_announcement(user_id: int):
     """Объявление о функции обсуждения расклада + меню оплаты"""
     from keyboards.pay import make_payment_kb

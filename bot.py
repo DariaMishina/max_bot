@@ -109,6 +109,33 @@ async def main():
         except Exception as e:
             logging.error(f"Error in reconcile_pending_payments_job: {e}", exc_info=True)
 
+    # ==================== РАССЫЛКА --no-divinations ====================
+    NO_DIV_BROADCAST_HOUR = 16
+    NO_DIV_BROADCAST_MINUTE = 30
+    # ===================================================================
+
+    async def no_divinations_broadcast_job():
+        """Задача для рассылки напоминаний о закончившихся гаданиях"""
+        try:
+            from send_message import send_no_divinations_broadcast
+            results = await send_no_divinations_broadcast()
+            logging.info(f"No-divinations broadcast job completed: {results}")
+        except Exception as e:
+            logging.error(f"Error in no-divinations broadcast job: {e}", exc_info=True)
+
+    scheduler.add_job(
+        no_divinations_broadcast_job,
+        trigger=CronTrigger(
+            day_of_week='mon,thu',
+            hour=NO_DIV_BROADCAST_HOUR,
+            minute=NO_DIV_BROADCAST_MINUTE,
+            timezone='Europe/Moscow'
+        ),
+        id='no_divinations_broadcast',
+        name='Рассылка напоминаний о закончившихся гаданиях (Пн, Чт)',
+        replace_existing=True
+    )
+
     scheduler.add_job(
         reconcile_pending_payments_job,
         trigger=IntervalTrigger(minutes=10),
@@ -119,6 +146,7 @@ async def main():
 
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
+    logging.info(f"APScheduler: no-divinations broadcast Mon/Thu at {NO_DIV_BROADCAST_HOUR:02d}:{NO_DIV_BROADCAST_MINUTE:02d} (Moscow time)")
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
 
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
