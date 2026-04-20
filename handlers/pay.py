@@ -69,24 +69,22 @@ def is_consultation_package(package: dict) -> bool:
 
 
 def make_tarologist_contact_kb() -> "buttons.KeyboardBuilder":
-    """Клавиатура с кнопкой «Написать тарологу» + возврат в меню.
+    """Клавиатура с кнопкой «Написать Диане» + возврат в меню.
     Показывается только после успешной оплаты консультации."""
     kb = buttons.KeyboardBuilder()
     if config.tarologist_profile_url:
-        tarologist_name = config.tarologist_name or "тарологу"
-        kb.row(buttons.LinkButton(f"💬 Написать {tarologist_name}", config.tarologist_profile_url))
+        kb.row(buttons.LinkButton("💬 Написать Диане", config.tarologist_profile_url))
     kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     return kb
 
 
 def build_consultation_success_text(package_name: str) -> str:
     """Текст-инструкция для пользователя после оплаты консультации."""
-    tarologist_name = config.tarologist_name or "тарологу"
     work_hours = config.tarologist_work_hours or "10:00–22:00"
     return (
         f"✅ <b>Оплата прошла!</b>\n\n"
         f"Ты оплатил(а) «{package_name}».\n\n"
-        f"Напиши {tarologist_name} в личные сообщения — она ответит "
+        f"Напиши Диане в личные сообщения — она ответит "
         f"в течение часа в рабочие часы ({work_hours} МСК).\n\n"
         f"👉 <b>Важно:</b> укажи в первом сообщении, что это оплаченный "
         f"«{package_name}», и задай свой вопрос."

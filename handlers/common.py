@@ -288,12 +288,11 @@ async def consultation_menu_button(message: aiomax.Message, cursor: fsm.FSMCurso
     except Exception as e:
         logging.error(f"Error saving paywall conversion (consultation): {e}", exc_info=True)
 
-    tarologist_name = config.tarologist_name or "Диана"
     work_hours = config.tarologist_work_hours or "10:00–22:00"
     await message.reply(
-        f"🔮 <b>Личная консультация с тарологом {tarologist_name}</b>\n\n"
+        f"🔮 <b>Личная консультация с тарологом Дианой</b>\n\n"
         f"Получи разбор от живого таролога — не алгоритм, а человек с опытом.\n"
-        f"{tarologist_name} ответит лично в течение часа в рабочие часы "
+        f"Диана ответит лично в течение часа в рабочие часы "
         f"({work_hours} МСК).\n\n"
         f"✨ <b>Базовый разбор — 500₽</b>\n"
         f"Расклад на один вопрос. Карты трактуются вместе — целостная "
