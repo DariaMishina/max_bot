@@ -651,7 +651,7 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
     if not text or text.startswith("/"):
         return
     
-    if text in ["Мои гадания 🔮", "Новый расклад 🃏", "Купить расклады 💎", "Карта дня ✨"]:
+    if text in ["Мои гадания 🔮", "Новый расклад 🃏", "Купить расклады 💎", "Карта дня ✨", "Личная консультация 🔮"]:
         return
     
     if cursor.get_state() is not None:
