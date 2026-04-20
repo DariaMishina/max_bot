@@ -162,17 +162,27 @@ async def yookassa_webhook_handler(request: Request) -> Response:
 
         # === 3. Уведомление пользователю (best-effort, не влияет на статус) ===
         try:
-            package_description = package.get('description', 'раскладам') if package else 'раскладам'
-            email_text = f"Чек отправлен на email: {email}\n\n" if email else ""
-
-            success_text = (
-                f"✅ <b>Оплата успешно завершена!</b>\n\n"
-                f"Спасибо за покупку! Теперь у тебя есть доступ к {package_description}.\n\n"
-                f"{email_text}"
-                f"🔮 Можешь начинать гадать! Используй команду /divination или выбери гадание из меню."
+            from handlers.pay import (
+                is_consultation_package,
+                build_consultation_success_text,
+                make_tarologist_contact_kb,
             )
 
-            await _send_message_direct(user_id, success_text, keyboard=make_back_to_menu_kb())
+            if is_consultation_package(package):
+                success_text = build_consultation_success_text(package.get('name', ''))
+                kb = make_tarologist_contact_kb()
+            else:
+                package_description = package.get('description', 'раскладам') if package else 'раскладам'
+                email_text = f"Чек отправлен на email: {email}\n\n" if email else ""
+                success_text = (
+                    f"✅ <b>Оплата успешно завершена!</b>\n\n"
+                    f"Спасибо за покупку! Теперь у тебя есть доступ к {package_description}.\n\n"
+                    f"{email_text}"
+                    f"🔮 Можешь начинать гадать! Используй команду /divination или выбери гадание из меню."
+                )
+                kb = make_back_to_menu_kb()
+
+            await _send_message_direct(user_id, success_text, keyboard=kb)
         except Exception as e:
             logging.warning(f"Could not send payment notification to user {user_id}: {e}")
             if is_send_blocked_error(e):

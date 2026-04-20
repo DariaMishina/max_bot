@@ -499,6 +499,15 @@ async def process_successful_payment(payment_id: str, yookassa_metadata: Optiona
 
                 logging.info(f"Payment status updated: {payment_id} -> succeeded")
 
+                # Личная консультация с тарологом: баланс не начисляется,
+                # услуга оказывается вручную (пользователь пишет тарологу в MAX).
+                if package_id in ('consult_basic', 'consult_detailed'):
+                    logging.info(
+                        f"Consultation payment for user {user_id}: "
+                        f"package={package_id}, no balance update"
+                    )
+                    return True
+
                 if package_id == 'unlimited':
                     expires_at = datetime.now() + timedelta(days=30)
 

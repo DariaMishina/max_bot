@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     channel_url: Optional[str] = None
     # Куда пересылать обратную связь (Max user_id админа)
     admin_chat_id: Optional[int] = None
+    # Личная консультация с тарологом (опциональная услуга)
+    tarologist_name: Optional[str] = "Диана"
+    tarologist_profile_url: Optional[str] = None
+    tarologist_work_hours: Optional[str] = "10:00–22:00"
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
 
     @field_validator("metrika_mp_counter_id", "admin_chat_id", "channel_chat_id", mode="before")

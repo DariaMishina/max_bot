@@ -40,7 +40,12 @@ STATE_CONFIRMING_EMAIL = 'confirming_email'
 STATE_WAITING_PAYMENT = 'waiting_for_payment'
 
 # Пакеты оплаты
+# type='consultation' — личная консультация с тарологом (не начисляет баланс,
+# после оплаты показываем кнопку «Написать тарологу»)
+# type по умолчанию (не указан) — пакет автогаданий/безлимит
 PACKAGES = {
+    'pay_consult_detailed': {'id': 'consult_detailed', 'name': 'Подробный разбор', 'amount': 150000, 'amount_rub': 1500.0, 'type': 'consultation'},
+    'pay_consult_basic':    {'id': 'consult_basic',    'name': 'Базовый разбор',   'amount': 50000,  'amount_rub': 500.0,  'type': 'consultation'},
     'pay_3_spreads': {'id': '3_spreads', 'name': '3 расклада', 'amount': 9900, 'amount_rub': 99.0, 'divinations': 3},
     'pay_10_spreads': {'id': '10_spreads', 'name': '10 раскладов', 'amount': 17900, 'amount_rub': 179.0, 'divinations': 10},
     'pay_20_spreads': {'id': '20_spreads', 'name': '20 раскладов', 'amount': 28900, 'amount_rub': 289.0, 'divinations': 20},
@@ -51,12 +56,58 @@ PAYMENT_PACKAGES = PACKAGES
 # Для webhook: поиск пакета по id из metadata (там приходит '3_spreads', а не 'pay_3_spreads')
 PACKAGES_BY_ID = {p['id']: p for p in PACKAGES.values()}
 
+# ID пакетов личной консультации (используется в ветках
+# «ничего не начисляем» в БД и «показываем ссылку на таролога» в success-сообщениях)
+CONSULTATION_PACKAGE_IDS = {'consult_basic', 'consult_detailed'}
+
+
+def is_consultation_package(package: dict) -> bool:
+    """True, если пакет — личная консультация с тарологом."""
+    if not package:
+        return False
+    return package.get('type') == 'consultation' or package.get('id') in CONSULTATION_PACKAGE_IDS
+
+
+def make_tarologist_contact_kb() -> "buttons.KeyboardBuilder":
+    """Клавиатура с кнопкой «Написать тарологу» + возврат в меню.
+    Показывается только после успешной оплаты консультации."""
+    kb = buttons.KeyboardBuilder()
+    if config.tarologist_profile_url:
+        tarologist_name = config.tarologist_name or "тарологу"
+        kb.row(buttons.LinkButton(f"💬 Написать {tarologist_name}", config.tarologist_profile_url))
+    kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
+    return kb
+
+
+def build_consultation_success_text(package_name: str) -> str:
+    """Текст-инструкция для пользователя после оплаты консультации."""
+    tarologist_name = config.tarologist_name or "тарологу"
+    work_hours = config.tarologist_work_hours or "10:00–22:00"
+    return (
+        f"✅ <b>Оплата прошла!</b>\n\n"
+        f"Ты оплатил(а) «{package_name}».\n\n"
+        f"Напиши {tarologist_name} в личные сообщения — она ответит "
+        f"в течение часа в рабочие часы ({work_hours} МСК).\n\n"
+        f"👉 <b>Важно:</b> укажи в первом сообщении, что это оплаченный "
+        f"«{package_name}», и задай свой вопрос."
+    )
+
 
 _PAY_TEXT = (
-    "💎 <b>Бесплатные гадания закончились</b>\n\n"
-    "Ты уже почувствовал(а), как это работает — бот даёт точные расклады прямо здесь и сейчас.\n\n"
-    "✨ <b>Хочешь продолжить гадать, когда нужен ответ?</b>\n"
-    "Перед встречей, в отношениях, когда тревожно — бот всегда с тобой.\n\n"
+    "🔮 <b>Личная консультация с тарологом Дианой</b>\n\n"
+    "Получи разбор от живого таролога — не от алгоритма.\n"
+    "Диана ответит лично в течение часа (в рабочие часы 10:00–22:00 МСК).\n\n"
+    "✨ <b>Базовый разбор — 500₽</b>\n"
+    "Расклад на один вопрос. Карты трактуются вместе — целостная картина "
+    "ситуации и конкретный совет. Коротко и по делу.\n\n"
+    "🔮 <b>Подробный разбор — 1500₽</b> (оптимально для большинства ситуаций)\n"
+    "— что происходит сейчас\n"
+    "— скрытые моменты\n"
+    "— к чему всё идёт\n"
+    "— совет от карт\n\n"
+    "━━━━━━━━━━━━━━━\n\n"
+    "💎 <b>Автоматические гадания от бота</b>\n"
+    "Если хочешь погадать прямо сейчас, бот всегда с тобой.\n\n"
     "<b>🔥 Самый популярный вариант</b>\n"
     "👑 Безлимит на месяц — 599₽\n"
     "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
@@ -214,9 +265,13 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     await bot.send_message("⏳ Создаю ссылку на оплату...", user_id=user_id)
     
     try:
+        if is_consultation_package(package):
+            pay_description = f"Личная консультация с тарологом: {package['name']}"
+        else:
+            pay_description = f"Оплата: {package['name']}"
         payment_info = await create_yookassa_payment(
             amount=package['amount_rub'],
-            description=f"Оплата: {package['name']}",
+            description=pay_description,
             email=email,
             user_id=user_id,
             package_id=package['id']
@@ -313,6 +368,11 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
             package = data.get('package', {})
 
+            # Если FSM потерял package (рестарт бота) — восстанавливаем из metadata платежа
+            if not package:
+                pkg_id = payment_info.get('metadata', {}).get('package_id', '')
+                package = PACKAGES_BY_ID.get(pkg_id) or {}
+
             try:
                 await save_conversion(
                     user_id=user_id,
@@ -327,20 +387,23 @@ async def handle_check_payment(cb: aiomax.Callback, cursor: fsm.FSMCursor):
                 logging.error(f"Error saving purchase conversion: {e}", exc_info=True)
 
             package_name = package.get('name', '')
-            if not package_name:
-                from handlers.pay import PACKAGES_BY_ID as _pkgs
-                pkg_id = payment_info.get('metadata', {}).get('package_id', '')
-                pkg = _pkgs.get(pkg_id)
-                package_name = pkg['name'] if pkg else ''
 
-            await bot.send_message(
-                f"✅ <b>Оплата прошла успешно!</b>\n\n"
-                f"Пакет «{package_name}» активирован.\n\n"
-                "Можешь продолжать гадать! Напиши свой вопрос в чат.",
-                user_id=user_id,
-                keyboard=make_back_to_menu_kb(),
-                format='html'
-            )
+            if is_consultation_package(package):
+                await bot.send_message(
+                    build_consultation_success_text(package_name),
+                    user_id=user_id,
+                    keyboard=make_tarologist_contact_kb(),
+                    format='html'
+                )
+            else:
+                await bot.send_message(
+                    f"✅ <b>Оплата прошла успешно!</b>\n\n"
+                    f"Пакет «{package_name}» активирован.\n\n"
+                    "Можешь продолжать гадать! Напиши свой вопрос в чат.",
+                    user_id=user_id,
+                    keyboard=make_back_to_menu_kb(),
+                    format='html'
+                )
             cursor.clear()
 
         elif status == 'pending' or status == 'waiting_for_capture':

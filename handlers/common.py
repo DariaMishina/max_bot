@@ -274,6 +274,40 @@ async def buy_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     await cmd_pay_internal(message)
 
 
+@router.on_message(filters.equals("Личная консультация 🔮"))
+async def consultation_menu_button(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Кнопка «Личная консультация 🔮» — описание услуги и 2 тарифа."""
+    from keyboards.pay import make_consultation_kb
+    cursor.clear()
+    user_id = message.sender.user_id
+    logging.info(f"consultation_menu: user_id={user_id}")
+
+    try:
+        await save_paywall_conversion(user_id=user_id, paywall_source="menu_consultation")
+        asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+    except Exception as e:
+        logging.error(f"Error saving paywall conversion (consultation): {e}", exc_info=True)
+
+    tarologist_name = config.tarologist_name or "Диана"
+    work_hours = config.tarologist_work_hours or "10:00–22:00"
+    await message.reply(
+        f"🔮 <b>Личная консультация с тарологом {tarologist_name}</b>\n\n"
+        f"Получи разбор от живого таролога — не алгоритм, а человек с опытом.\n"
+        f"{tarologist_name} ответит лично в течение часа в рабочие часы "
+        f"({work_hours} МСК).\n\n"
+        f"✨ <b>Базовый разбор — 500₽</b>\n"
+        f"Расклад на один вопрос. Карты трактуются вместе — целостная "
+        f"картина ситуации и конкретный совет. Коротко и по делу.\n\n"
+        f"🔮 <b>Подробный разбор — 1500₽</b> (оптимально для большинства ситуаций)\n"
+        f"— что происходит сейчас\n"
+        f"— скрытые моменты\n"
+        f"— к чему всё идёт\n"
+        f"— совет от карт",
+        keyboard=make_consultation_kb(),
+        format='html'
+    )
+
+
 @router.on_message(filters.equals("Карта дня ✨"))
 async def daily_card_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Карта дня ✨» — показать выбор карты дня"""
