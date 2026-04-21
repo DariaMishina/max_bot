@@ -23,6 +23,10 @@
 #      2.2. По периодам (до/после 02.02.26) — пока отключено
 #      2.3. По источникам траффика — пока отключено
 #   3. Статистика оплат (succeeded и pending)
+#      3.1. Общая статистика оплат (по статусу)
+#      3.2. Детализация по датам (все платежи с названием пакета)
+#      3.3. Разбивка оплат по типу услуги (консультации vs автогадания)
+#      3.4. Личные консультации — список оплативших (для Дианы)
 #   4. Проверка балансов гаданий (пользователи с нулевым балансом)
 #   5. Анализ источников пейволла
 #   6. Список пользователей, которые не заблокировали бота
@@ -419,6 +423,7 @@ SELECT
     COALESCE(NULLIF(trim(u.full_name), ''), u.first_name) as \"Имя\",
     COALESCE(u.email, '—') as \"Email\",
     TO_CHAR((u.created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_TZ_DISPLAY', 'DD.MM.YY') as \"Дата регистрации (МСК)\",
+    p.package_id as \"Пакет\",
     p.amount_rub as \"Сумма (руб)\"
 FROM max_payments p
 LEFT JOIN max_users u ON p.user_id = u.user_id
@@ -427,8 +432,61 @@ WHERE p.user_id NOT IN $EXCLUDE_USERS
 ORDER BY p.created_at DESC, p.user_id;
 "
 
+# 3.3 Разбивка оплат по типу услуги: личная консультация vs автогадания (пакеты раскладов + безлимит)
+# Консультации: package_id IN ('consult_basic', 'consult_detailed')
+# Автогадания: остальные (3_spreads, 10_spreads, 20_spreads, 30_spreads, unlimited)
+QUERY3_BY_SERVICE="
+SELECT
+    CASE
+        WHEN package_id IN ('consult_basic', 'consult_detailed') THEN 'Личная консультация'
+        WHEN package_id = 'unlimited' THEN 'Автогадания (безлимит)'
+        ELSE 'Автогадания (пакеты)'
+    END as \"Тип услуги\",
+    status as \"Статус\",
+    COUNT(*) as \"Платежей\",
+    COUNT(DISTINCT user_id) as \"Уникальных пользователей\",
+    SUM(amount_rub) as \"Сумма (руб)\",
+    ROUND(AVG(amount_rub), 2) as \"Средний чек (руб)\"
+FROM max_payments
+WHERE user_id NOT IN $EXCLUDE_USERS
+    AND status IN ('succeeded', 'pending')
+GROUP BY
+    CASE
+        WHEN package_id IN ('consult_basic', 'consult_detailed') THEN 'Личная консультация'
+        WHEN package_id = 'unlimited' THEN 'Автогадания (безлимит)'
+        ELSE 'Автогадания (пакеты)'
+    END,
+    status
+ORDER BY \"Тип услуги\", status;
+"
+
+# 3.4 Личные консультации — детализация для Дианы (сверка кто оплатил)
+# Показываем все платежи за консультации, чтобы можно было сверить с входящими сообщениями
+QUERY3_CONSULTATIONS="
+SELECT
+    TO_CHAR((p.created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_TZ_DISPLAY', 'DD.MM.YYYY HH24:MI') as \"Дата и время (МСК)\",
+    p.status as \"Статус\",
+    p.user_id as \"User ID\",
+    COALESCE(NULLIF(trim(u.full_name), ''), u.first_name) as \"Имя\",
+    COALESCE(u.username, '—') as \"Username\",
+    COALESCE(u.email, '—') as \"Email\",
+    CASE
+        WHEN p.package_id = 'consult_basic' THEN 'Базовый разбор'
+        WHEN p.package_id = 'consult_detailed' THEN 'Подробный разбор'
+        ELSE p.package_id
+    END as \"Пакет\",
+    p.amount_rub as \"Сумма (руб)\"
+FROM max_payments p
+LEFT JOIN max_users u ON p.user_id = u.user_id
+WHERE p.user_id NOT IN $EXCLUDE_USERS
+    AND p.package_id IN ('consult_basic', 'consult_detailed')
+ORDER BY p.created_at DESC, p.user_id;
+"
+
 execute_query "$QUERY3" "3.1. Общая статистика оплат"
 execute_query "$QUERY3_DETAIL" "3.2. Детализация по датам (все платежи)"
+execute_query "$QUERY3_BY_SERVICE" "3.3. Разбивка оплат по типу услуги (консультации vs автогадания)"
+execute_query "$QUERY3_CONSULTATIONS" "3.4. Личные консультации — список оплативших (для Дианы)"
 
 # 4. Проверка балансов гаданий - всех у кого 0 и платных, и бесплатных
 print_header "4. Проверка балансов гаданий (кроме нас)"

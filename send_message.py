@@ -282,6 +282,65 @@ async def send_friday13_promo(user_id: int):
         return False
 
 
+async def send_tarologist_intro(user_id: int):
+    """Представление таролога Дианы и новых услуг «Личная консультация» (+ меню оплаты)"""
+    from keyboards.pay import make_payment_kb
+    from main.conversions import save_paywall_conversion
+
+    intro_text = (
+        "🔮 <b>Знакомьтесь — таролог Диана.</b>\n\n"
+        "С этого момента в боте доступна <b>личная консультация</b>. "
+        "Раньше расклады тебе делал ИИ — а теперь при желании ты "
+        "можешь написать напрямую живому тарологу.\n\n"
+        "Диана разложит карты лично под твою ситуацию, ответит "
+        "в личных сообщениях в течение часа в рабочие часы "
+        "(10:00–22:00 МСК) и даст конкретный совет — так, как "
+        "алгоритм не сможет.\n\n"
+        "✨ <b>Базовый разбор — 500₽</b>\n"
+        "Расклад на один вопрос. Карты трактуются вместе — целостная "
+        "картина ситуации и конкретный совет. Коротко и по делу.\n\n"
+        "🔮 <b>Подробный разбор — 1500₽</b> (оптимально для большинства ситуаций)\n"
+        "— что происходит сейчас\n"
+        "— скрытые моменты\n"
+        "— к чему всё идёт\n"
+        "— совет от карт"
+    )
+    payment_text = (
+        "👇 Выбери формат консультации — или воспользуйся автоматическими "
+        "гаданиями от бота:\n\n"
+        "🔮 <b>Подробный разбор с тарологом — 1500₽</b>\n"
+        "✨ <b>Базовый разбор с тарологом — 500₽</b>\n\n"
+        "━━━━━━━━━━━━━━━\n\n"
+        "<b>Или автоматические гадания от бота:</b>\n"
+        "👑 Безлимит на месяц — 599₽\n"
+        "🔥 30 раскладов — 399₽\n"
+        "🌟 20 раскладов — 289₽\n"
+        "💫 10 раскладов — 179₽\n"
+        "🌙 3 расклада — 99₽"
+    )
+
+    print(f"📤 Отправляю представление таролога Дианы пользователю {user_id}...")
+    try:
+        try:
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="tarologist_intro",
+                metadata={'reminder_type': 'tarologist_intro', 'sent_via': 'send_message_script'}
+            )
+            from main.metrika_mp import send_conversion_event
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+        await bot.send_message(intro_text, user_id=user_id, format='html')
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        print(f"✅ Представление таролога отправлено пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, "представления таролога Дианы")
+        return False
+
+
 async def send_full_moon_promo(user_id: int):
     """Промо-рассылка: полнолуние — удвоение пакетов раскладов"""
     from keyboards.pay import make_payment_kb
@@ -389,6 +448,10 @@ async def main():
         help='Промо «Полнолуние»: удвоение пакетов раскладов (+ меню оплаты)'
     )
     parser.add_argument(
+        '--tarologist-intro', action='store_true',
+        help='Представление таролога Дианы и услуг «Личная консультация» (+ меню оплаты)'
+    )
+    parser.add_argument(
         '--broadcast', action='store_true',
         help='Рассылать всем пользователям из БД (исключая заблокированных)'
     )
@@ -444,12 +507,18 @@ async def main():
                 await send_full_moon_promo(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.tarologist_intro:
+            print(f"🔮 Отправка представления таролога Дианы для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_tarologist_intro(uid)
+                await asyncio.sleep(0.05)
+
         else:
             if not args.text:
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
                     "--payment-reminder / --no-divinations / --discussion / --restored / "
-                    "--friday13 / --fullmoon"
+                    "--friday13 / --fullmoon / --tarologist-intro"
                 )
                 return
 
