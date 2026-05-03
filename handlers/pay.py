@@ -91,24 +91,25 @@ def build_consultation_success_text(package_name: str) -> str:
     )
 
 
-_PAY_TEXT = (
+_PAY_TEXT_TAROLOGIST = (
     "🔮 <b>Личная консультация с тарологом Дианой</b>\n\n"
     "Получи разбор от живого таролога — не от алгоритма.\n"
     "Диана ответит лично в течение часа (в рабочие часы 10:00–22:00 МСК).\n\n"
     "✨ <b>Базовый разбор — 500₽</b>\n"
-    "Расклад на один вопрос. Карты трактуются вместе — целостная картина "
-    "ситуации и конкретный совет. Коротко и по делу.\n\n"
-    "🔮 <b>Подробный разбор — 1500₽</b> (оптимально для большинства ситуаций)\n"
+    "Расклад на один вопрос. Картина ситуации и конкретный совет.\n\n"
+    "🔮 <b>Подробный разбор — 1500₽</b> (оптимально)\n"
     "— что происходит сейчас\n"
     "— скрытые моменты\n"
     "— к чему всё идёт\n"
-    "— совет от карт\n\n"
-    "━━━━━━━━━━━━━━━\n\n"
+    "— совет от карт"
+)
+
+_PAY_TEXT_PACKAGES = (
     "💎 <b>Автоматические гадания от бота</b>\n"
-    "Если хочешь погадать прямо сейчас, бот всегда с тобой.\n\n"
+    "Мгновенно, анонимно, 24/7.\n\n"
     "<b>🔥 Самый популярный вариант</b>\n"
     "👑 Безлимит на месяц — 599₽\n"
-    "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
+    "Гадай когда угодно и сколько угодно.\n\n"
     "Или выбери пакет:\n"
     "🔥 30 раскладов — 399₽\n"
     "🌟 20 раскладов — 289₽\n"
@@ -129,10 +130,12 @@ async def cmd_pay_internal(msg):
     except Exception as e:
         logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
+    from keyboards.pay import make_consultation_kb, make_packages_kb
     if hasattr(msg, 'reply'):
-        await msg.reply(_PAY_TEXT, keyboard=make_payment_kb(), format='html')
+        await msg.reply(_PAY_TEXT_TAROLOGIST, keyboard=make_consultation_kb(), format='html')
     else:
-        await msg.send(_PAY_TEXT, keyboard=make_payment_kb(), format='html')
+        await msg.send(_PAY_TEXT_TAROLOGIST, keyboard=make_consultation_kb(), format='html')
+    await bot.send_message(_PAY_TEXT_PACKAGES, user_id=user_id, keyboard=make_packages_kb(), format='html')
 
 
 @router.on_command('pay')
@@ -156,7 +159,9 @@ async def handle_remind_pay(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     except Exception as e:
         logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-    await cb.send(_PAY_TEXT, keyboard=make_payment_kb(), format='html')
+    from keyboards.pay import make_consultation_kb, make_packages_kb
+    await cb.send(_PAY_TEXT_TAROLOGIST, keyboard=make_consultation_kb(), format='html')
+    await bot.send_message(_PAY_TEXT_PACKAGES, user_id=user_id, keyboard=make_packages_kb(), format='html')
 
 
 @router.on_button_callback(lambda data: data.payload.startswith('pay_'))

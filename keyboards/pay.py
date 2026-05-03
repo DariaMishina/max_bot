@@ -12,8 +12,8 @@ def make_payment_kb() -> buttons.KeyboardBuilder:
     Сверху — личная консультация (премиум), ниже — автогадания от бота.
     """
     kb = buttons.KeyboardBuilder()
-    kb.row(buttons.CallbackButton("🔮 Подробный разбор с тарологом — 1500₽", "pay_consult_detailed"))
-    kb.row(buttons.CallbackButton("✨ Базовый разбор с тарологом — 500₽", "pay_consult_basic"))
+    kb.row(buttons.CallbackButton("🔮 Подробный разбор с Дианой — 1500₽", "pay_consult_detailed"))
+    kb.row(buttons.CallbackButton("✨ Базовый разбор с Дианой — 500₽", "pay_consult_basic"))
     kb.row(buttons.CallbackButton("👑 Безлимит на месяц — 599₽", "pay_unlimited"))
     kb.row(buttons.CallbackButton("🔥 30 раскладов — 399₽", "pay_30_spreads"))
     kb.row(buttons.CallbackButton("🌟 20 раскладов — 289₽", "pay_20_spreads"))
@@ -29,8 +29,23 @@ def make_consultation_kb() -> buttons.KeyboardBuilder:
     Показывается по кнопке «Личная консультация 🔮» из главного меню.
     """
     kb = buttons.KeyboardBuilder()
-    kb.row(buttons.CallbackButton("🔮 Подробный разбор — 1500₽", "pay_consult_detailed"))
-    kb.row(buttons.CallbackButton("✨ Базовый разбор — 500₽", "pay_consult_basic"))
+    kb.row(buttons.CallbackButton("🔮 Подробный разбор с Дианой — 1500₽", "pay_consult_detailed"))
+    kb.row(buttons.CallbackButton("✨ Базовый разбор с Дианой — 500₽", "pay_consult_basic"))
+    kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
+    return kb
+
+
+def make_packages_kb() -> buttons.KeyboardBuilder:
+    """
+    Клавиатура только с пакетами автогаданий (без консультаций).
+    Используется как вторая часть разделённого меню оплаты.
+    """
+    kb = buttons.KeyboardBuilder()
+    kb.row(buttons.CallbackButton("👑 Безлимит на месяц — 599₽", "pay_unlimited"))
+    kb.row(buttons.CallbackButton("🔥 30 раскладов — 399₽", "pay_30_spreads"))
+    kb.row(buttons.CallbackButton("🌟 20 раскладов — 289₽", "pay_20_spreads"))
+    kb.row(buttons.CallbackButton("💫 10 раскладов — 179₽", "pay_10_spreads"))
+    kb.row(buttons.CallbackButton("🌙 3 расклада — 99₽", "pay_3_spreads"))
     kb.row(buttons.CallbackButton("◀ В меню", "back_to_menu"))
     return kb
 
