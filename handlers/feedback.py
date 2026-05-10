@@ -34,13 +34,13 @@ async def cmd_feedback(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
 @router.on_button_callback(lambda data: data.payload == 'leave_feedback_paid')
 async def handle_leave_feedback_paid(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Кнопка «Оставить отзыв» из рассылки купившим пользователям."""
-    logging.info(f"leave_feedback_paid: user_id={cb.sender.user_id}")
+    logging.info(f"leave_feedback_paid: user_id={cb.user.user_id}")
     cursor.change_state('waiting_feedback_paid')
     await bot.send_message(
         "✍️ Напиши, пожалуйста, что тебе нравится, а что хочется улучшить.\n"
         "Любые мысли важны — это поможет сделать бота лучше.\n\n"
         "Для отмены нажми ◀ В меню",
-        user_id=cb.sender.user_id,
+        user_id=cb.user.user_id,
     )
 
 
