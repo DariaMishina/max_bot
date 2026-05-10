@@ -15,7 +15,7 @@ import sys
 import aiohttp
 from aiomax import buttons
 from main.botdef import bot
-from main.database import Database, update_user_blocked_status, get_all_users, is_send_blocked_error
+from main.database import Database, update_user_blocked_status, get_all_users, get_paid_users, is_send_blocked_error
 
 logging.basicConfig(
     level=logging.INFO,
@@ -353,10 +353,11 @@ async def send_tarologist_reminder(user_id: int):
     from main.conversions import save_paywall_conversion
 
     reminder_text = (
-        "✨ Напоминаем: у вас есть возможность получить "
-        "<b>личный расклад от таролога Дианы</b>.\n\n"
-        "Если есть вопрос, который не даёт покоя, — "
-        "Диана разберёт его через карты и даст развёрнутый ответ.\n\n"
+        "Выходные пролетели, завтра новая неделя… "
+        "Чувствуешь лёгкую тревогу? Не знаешь, чего ждать?\n\n"
+        "Задай вопрос <b>тарологу Диане</b> — "
+        "она разложит карты и даст развёрнутый ответ, "
+        "чтобы ты начал(а) неделю спокойно.\n\n"
         "<b>Два формата на выбор:</b>\n\n"
         "✨ <b>Базовый разбор — 500 ₽</b>\n"
         "Один вопрос — картина ситуации и совет. Коротко и по делу.\n\n"
@@ -451,6 +452,25 @@ async def send_full_moon_promo(user_id: int):
         return False
 
 
+async def send_feedback_request(user_id: int):
+    """Запрос обратной связи у купившего пользователя с кнопкой «Оставить отзыв»."""
+    text = (
+        "Привет! Ты уже пользуешься раскладами — и нам важно знать, "
+        "как тебе опыт.\n\n"
+        "Расскажи, пожалуйста:\n"
+        "— Что нравится?\n"
+        "— Что хочется улучшить?\n"
+        "— Может, чего-то не хватает?\n\n"
+        "🎁 За подробный отзыв — 3 бесплатных расклада в подарок!\n\n"
+        "Нажми кнопку ниже — и просто напиши свои мысли 💬"
+    )
+    kb = buttons.KeyboardBuilder()
+    kb.row(buttons.CallbackButton("📝 Оставить отзыв", "leave_feedback_paid"))
+
+    print(f"📤 Отправляю запрос обратной связи пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, format=None, keyboard=kb)
+
+
 def _handle_send_error(user_id: int, error: Exception, action_desc: str):
     """Общая обработка ошибок отправки — логирование и обновление статуса блокировки."""
     error_msg = str(error).lower()
@@ -518,6 +538,10 @@ async def main():
         help='Напоминание о тарологе Диане (повторная рассылка, + меню оплаты)'
     )
     parser.add_argument(
+        '--feedback-request', action='store_true',
+        help='Запрос обратной связи у купивших пользователей (автоматически берёт из БД)'
+    )
+    parser.add_argument(
         '--broadcast', action='store_true',
         help='Рассылать всем пользователям из БД (исключая заблокированных)'
     )
@@ -526,18 +550,28 @@ async def main():
     fmt = args.format if args.format != 'none' else None
 
     try:
-        if args.broadcast:
+        if args.feedback_request and not args.user_id:
+            paid = await get_paid_users()
+            args.user_id = [u['user_id'] for u in paid]
+            print(f"📋 Загружено {len(args.user_id)} купивших пользователей для запроса отзыва")
+        elif args.broadcast:
             all_users = await get_all_users(include_blocked=False)
             args.user_id = [u['user_id'] for u in all_users]
             print(f"📋 Загружено {len(args.user_id)} пользователей для рассылки")
 
         if not args.user_id:
-            print("❌ Ошибка: укажите user_id или используйте --broadcast")
+            print("❌ Ошибка: укажите user_id или используйте --broadcast / --feedback-request")
             return
 
         total = len(args.user_id)
 
-        if args.payment_reminder:
+        if args.feedback_request:
+            print(f"📝 Отправка запроса обратной связи для {total} купивших пользователя(ей)...")
+            for uid in args.user_id:
+                await send_feedback_request(uid)
+                await asyncio.sleep(0.05)
+
+        elif args.payment_reminder:
             print(f"🚀 Отправка напоминаний об оплате для {total} пользователя(ей)...")
             for uid in args.user_id:
                 await send_payment_reminder(uid)
@@ -590,7 +624,8 @@ async def main():
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
                     "--payment-reminder / --no-divinations / --discussion / --restored / "
-                    "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder"
+                    "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder / "
+                    "--feedback-request"
                 )
                 return
 

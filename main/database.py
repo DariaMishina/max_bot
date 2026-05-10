@@ -708,6 +708,38 @@ async def get_all_users(include_blocked: bool = False, include_unsubscribed_dail
         return []
 
 
+async def get_paid_users() -> List[Dict[str, Any]]:
+    """
+    Получить список пользователей, у которых есть хотя бы один успешный платёж.
+    Исключает заблокированных (is_blocked = TRUE).
+    """
+    try:
+        users_table = get_table_name("users")
+        payments_table = get_table_name("payments")
+        query = f"""
+            SELECT DISTINCT u.user_id, u.username, u.first_name, u.last_name, u.full_name
+            FROM {users_table} u
+            JOIN {payments_table} p ON u.user_id = p.user_id
+            WHERE p.status = 'succeeded'
+              AND u.is_blocked = FALSE
+            ORDER BY u.user_id
+        """
+        results = await Database.fetch_all(query)
+        return [
+            {
+                'user_id': r['user_id'],
+                'username': r['username'],
+                'first_name': r['first_name'],
+                'last_name': r['last_name'],
+                'full_name': r['full_name'],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logging.error(f"Error getting paid users: {e}", exc_info=True)
+        return []
+
+
 def is_send_blocked_error(exc: Exception) -> bool:
     """
     Проверить, означает ли исключение при отправке сообщения,
