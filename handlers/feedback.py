@@ -36,11 +36,12 @@ async def handle_leave_feedback_paid(cb: aiomax.Callback, cursor: fsm.FSMCursor)
     """Кнопка «Оставить отзыв» из рассылки купившим пользователям."""
     logging.info(f"leave_feedback_paid: user_id={cb.user.user_id}")
     cursor.change_state('waiting_feedback_paid')
+    from keyboards.main_menu import make_back_to_menu_kb
     await bot.send_message(
         "✍️ Напиши, пожалуйста, что тебе нравится, а что хочется улучшить.\n"
-        "Любые мысли важны — это поможет сделать бота лучше.\n\n"
-        "Для отмены нажми ◀ В меню",
+        "Любые мысли важны — это поможет сделать бота лучше.",
         user_id=cb.user.user_id,
+        keyboard=make_back_to_menu_kb(),
     )
 
 
