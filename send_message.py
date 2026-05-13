@@ -156,7 +156,7 @@ async def send_no_divinations_broadcast() -> dict:
     """Рассылка напоминаний о закончившихся гаданиях всем незаблокированным пользователям."""
     results = {'sent': 0, 'failed': 0, 'blocked': 0}
 
-    all_users = await get_all_users(include_blocked=False)
+    all_users = await get_all_users(include_blocked=False, include_unsubscribed_daily_card=True)
     logging.info(f"No-divinations broadcast: {len(all_users)} users")
 
     for user in all_users:
@@ -353,11 +353,10 @@ async def send_tarologist_reminder(user_id: int):
     from main.conversions import save_paywall_conversion
 
     reminder_text = (
-        "Выходные пролетели, завтра новая неделя… "
-        "Чувствуешь лёгкую тревогу? Не знаешь, чего ждать?\n\n"
-        "Задай вопрос <b>тарологу Диане</b> — "
-        "она разложит карты и даст развёрнутый ответ, "
-        "чтобы ты начал(а) неделю спокойно.\n\n"
+        "Середина недели — а ясности всё нет? "
+        "Иногда нужен не совет подруги, а взгляд со стороны.\n\n"
+        "<b>Таролог Диана</b> разберёт твою ситуацию "
+        "и подскажет, на что обратить внимание.\n\n"
         "<b>Два формата на выбор:</b>\n\n"
         "✨ <b>Базовый разбор — 500 ₽</b>\n"
         "Один вопрос — картина ситуации и совет. Коротко и по делу.\n\n"
@@ -555,7 +554,7 @@ async def main():
             args.user_id = [u['user_id'] for u in paid]
             print(f"📋 Загружено {len(args.user_id)} купивших пользователей для запроса отзыва")
         elif args.broadcast:
-            all_users = await get_all_users(include_blocked=False)
+            all_users = await get_all_users(include_blocked=False, include_unsubscribed_daily_card=True)
             args.user_id = [u['user_id'] for u in all_users]
             print(f"📋 Загружено {len(args.user_id)} пользователей для рассылки")
 
