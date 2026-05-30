@@ -144,10 +144,29 @@ async def main():
         replace_existing=True
     )
 
+    async def payment_reminders_job():
+        """Напоминания о незавершённой оплате: 10м, 1ч, 3ч после создания платежа."""
+        try:
+            from main.payment_reminders import process_payment_reminders
+            results = await process_payment_reminders()
+            if results['sent'] or results['failed']:
+                logging.info(f"Payment reminders job completed: {results}")
+        except Exception as e:
+            logging.error(f"Error in payment reminders job: {e}", exc_info=True)
+
+    scheduler.add_job(
+        payment_reminders_job,
+        trigger=IntervalTrigger(minutes=2),
+        id='payment_reminders',
+        name='Напоминания о незавершённой оплате (10м / 1ч / 3ч)',
+        replace_existing=True
+    )
+
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
     logging.info(f"APScheduler: no-divinations broadcast Mon/Thu at {NO_DIV_BROADCAST_HOUR:02d}:{NO_DIV_BROADCAST_MINUTE:02d} (Moscow time)")
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
+    logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h stages)")
 
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
     webhook_runner = None

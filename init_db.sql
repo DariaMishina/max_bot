@@ -60,9 +60,12 @@ CREATE TABLE IF NOT EXISTS max_payments (
     status            VARCHAR(50) NOT NULL,
     email             VARCHAR(255),
     yookassa_metadata JSONB,
-    created_at        TIMESTAMP DEFAULT NOW(),
-    updated_at        TIMESTAMP DEFAULT NOW(),
-    completed_at      TIMESTAMP
+    created_at            TIMESTAMP DEFAULT NOW(),
+    updated_at            TIMESTAMP DEFAULT NOW(),
+    completed_at          TIMESTAMP,
+    reminder_10m_sent_at  TIMESTAMP,
+    reminder_1h_sent_at   TIMESTAMP,
+    reminder_3h_sent_at   TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_max_payments_payment_id  ON max_payments(payment_id);
@@ -143,6 +146,11 @@ ALTER TABLE max_users ADD COLUMN IF NOT EXISTS channel_subscribed_at TIMESTAMP N
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS yclid VARCHAR(255) NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS metrika_client_id VARCHAR(255) NULL;
 CREATE INDEX IF NOT EXISTS idx_max_users_yclid ON max_users(yclid);
+
+-- Миграция: напоминания о незавершённой оплате (10м / 1ч / 3ч)
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP NULL;
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
 
 
 -- 7. max_webapp_follow_up_context — контекст уточняющих вопросов после WebApp-гадания (FSM недоступен из HTTP)

@@ -635,6 +635,98 @@ async def get_stale_pending_payments(minutes: int = 15) -> List[Dict[str, Any]]:
         return []
 
 
+PAYMENT_REMINDER_STAGES = {
+    '10m': (10, 'reminder_10m_sent_at'),
+    '1h': (60, 'reminder_1h_sent_at'),
+    '3h': (180, 'reminder_3h_sent_at'),
+}
+
+
+async def get_payments_due_for_reminder(stage: str) -> List[Dict[str, Any]]:
+    """
+    Платежи, которым пора отправить напоминание об оплате.
+
+    Условия:
+    - status in (pending, canceled)
+    - пользователь не заблокирован
+    - прошло >= N минут с created_at
+    - напоминание этого этапа ещё не отправлялось
+    - нет «связанной» успешной оплаты:
+      * оплатил (любой пакет) в любой момент после начала этой попытки — рассылка прекращается,
+      * или оплатил в течение 30 мин до начала этой попытки (купил пакет, потом быстро бросил вторую оплату)
+    """
+    if stage not in PAYMENT_REMINDER_STAGES:
+        raise ValueError(f"Unknown reminder stage: {stage}")
+
+    minutes, sent_column = PAYMENT_REMINDER_STAGES[stage]
+    payments_table = get_table_name("payments")
+    users_table = get_table_name("users")
+
+    try:
+        query = f"""
+            SELECT p.payment_id, p.user_id, p.package_id, p.status, p.created_at
+            FROM {payments_table} p
+            INNER JOIN {users_table} u ON u.user_id = p.user_id
+            WHERE p.status IN ('pending', 'canceled')
+              AND u.is_blocked = FALSE
+              AND p.{sent_column} IS NULL
+              AND p.created_at <= NOW() - INTERVAL '{int(minutes)} minutes'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM {payments_table} s
+                  WHERE s.user_id = p.user_id
+                    AND s.status = 'succeeded'
+                    AND s.completed_at IS NOT NULL
+                    AND (
+                        s.completed_at >= p.created_at
+                        OR (
+                            s.completed_at <= p.created_at
+                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
+                        )
+                    )
+              )
+            ORDER BY p.created_at ASC
+        """
+        results = await Database.fetch_all(query)
+        return [
+            {
+                'payment_id': r['payment_id'],
+                'user_id': r['user_id'],
+                'package_id': r['package_id'],
+                'status': r['status'],
+                'created_at': r['created_at'],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logging.error(f"Error getting payments due for reminder ({stage}): {e}", exc_info=True)
+        return []
+
+
+async def mark_payment_reminder_sent(payment_id: str, stage: str) -> bool:
+    """Отметить, что напоминание об оплате на данном этапе отправлено."""
+    if stage not in PAYMENT_REMINDER_STAGES:
+        raise ValueError(f"Unknown reminder stage: {stage}")
+
+    _, sent_column = PAYMENT_REMINDER_STAGES[stage]
+    payments_table = get_table_name("payments")
+
+    try:
+        query = f"""
+            UPDATE {payments_table}
+            SET {sent_column} = NOW(),
+                updated_at = NOW()
+            WHERE payment_id = $1
+              AND {sent_column} IS NULL
+        """
+        await Database.execute_query(query, payment_id)
+        logging.info(f"Payment reminder marked sent: {payment_id} stage={stage}")
+        return True
+    except Exception as e:
+        logging.error(f"Error marking payment reminder sent ({payment_id}, {stage}): {e}", exc_info=True)
+        return False
+
+
 async def get_user_email(user_id: int) -> Optional[str]:
     """Получить email пользователя"""
     try:

@@ -95,13 +95,31 @@ async def send_message_to_multiple_users(
     return results
 
 
-async def send_payment_reminder(user_id: int):
-    """Напоминание об оплате с кнопкой «Оплатить»"""
-    text = "<b>Доступ к раскладам почти открыт — осталось только завершить оплату</b> 👇"
+async def send_payment_reminder(user_id: int, stage: str = '10m'):
+    """Напоминание об оплате с кнопкой «Оплатить».
+
+    stage: '10m' | '1h' | '3h' — этап автоматической рассылки.
+    """
+    texts = {
+        '10m': (
+            "<b>Доступ к раскладам почти открыт — осталось только завершить оплату</b> 👇"
+        ),
+        '1h': (
+            "Кажется, оплата не дошла до конца — бывает 🔮\n\n"
+            "Если расклад всё ещё актуален, можешь завершить оплату, "
+            "когда будет удобно."
+        ),
+        '3h': (
+            "На всякий случай напоминаем: доступ к раскладам всё ещё можно открыть ✨\n\n"
+            "Если сейчас не время — ничего страшного. "
+            "Когда захочешь вернуться, нажми «Оплатить» ниже."
+        ),
+    }
+    text = texts.get(stage, texts['10m'])
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.CallbackButton("💳 Оплатить", "remind_pay"))
 
-    print(f"📤 Отправляю напоминание об оплате пользователю {user_id}...")
+    print(f"📤 Отправляю напоминание об оплате ({stage}) пользователю {user_id}...")
     return await send_message_to_user(user_id, text, keyboard=kb)
 
 
@@ -349,15 +367,17 @@ async def send_tarologist_intro(user_id: int):
 
 async def send_tarologist_reminder(user_id: int):
     """Повторное напоминание о тарологе Диане — для тех, кто уже видел представление."""
-    from keyboards.pay import make_payment_kb
+    from keyboards.pay import make_consultation_kb
     from main.conversions import save_paywall_conversion
 
     reminder_text = (
-        "Середина недели — а ясности всё нет? "
-        "Иногда нужен не совет подруги, а взгляд со стороны.\n\n"
-        "<b>Таролог Диана</b> разберёт твою ситуацию "
-        "и подскажет, на что обратить внимание.\n\n"
-        "<b>Два формата на выбор:</b>\n\n"
+        "Что происходит в отношениях на самом деле? 💗\n"
+        "Стоит ли менять работу или подождать? 🤔\n"
+        "Какой шаг сейчас приблизит тебя к цели? 💫\n\n"
+        "Если хочется скорее получить ответ — "
+        "<b>таролог Диана</b> разберёт твою ситуацию через карты. "
+        "Лично, развёрнуто, без общих фраз ✨\n\n"
+        "<b>Два формата:</b>\n\n"
         "✨ <b>Базовый разбор — 500 ₽</b>\n"
         "Один вопрос — картина ситуации и совет. Коротко и по делу.\n\n"
         "🔮 <b>Подробный разбор — 1500 ₽</b> (оптимально)\n"
@@ -366,17 +386,7 @@ async def send_tarologist_reminder(user_id: int):
         "— скрытые моменты\n"
         "— к чему идёт\n"
         "— совет карт\n\n"
-        "Ответ в течение часа (10:00–22:00 МСК).\n\n"
-        "А для быстрых раскладов — бот всегда под рукой 👇"
-    )
-    payment_text = (
-        "👑 <b>Безлимит на месяц — 599 ₽</b> (самый популярный)\n"
-        "Гадай сколько угодно.\n\n"
-        "📦 Или пакет:\n"
-        "🔥 30 раскладов — 399 ₽\n"
-        "🌟 20 — 289 ₽\n"
-        "💫 10 — 179 ₽\n"
-        "🌙 3 — 99 ₽"
+        "Ответ в течение часа (10:00–22:00 МСК) 🔮"
     )
 
     print(f"📤 Отправляю напоминание о тарологе Диане пользователю {user_id}...")
@@ -392,8 +402,7 @@ async def send_tarologist_reminder(user_id: int):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(reminder_text, user_id=user_id, format='html')
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        await bot.send_message(reminder_text, user_id=user_id, keyboard=make_consultation_kb(), format='html')
         print(f"✅ Напоминание о тарологе отправлено пользователю {user_id}")
         return True
     except Exception as e:

@@ -52,6 +52,12 @@ MSK_TODAY="(NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date"
 MSK_YESTERDAY="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - 1)"
 MSK_BEFORE_YESTERDAY="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - 2)"
 
+# Возвращённые платежи (исключаем из статистики, чтобы не искажали цифры)
+# 07.05.2026 — Анюта Очирова (user_id=62476933), Подробный разбор, 1500₽
+# 24.05.2026 — Анюта Очирова (user_id=62476933), Базовый разбор, 500₽
+EXCLUDE_REFUNDED="AND NOT (user_id = 62476933 AND ((package_id = 'consult_detailed' AND created_at::date = '2026-05-07') OR (package_id = 'consult_basic' AND created_at::date = '2026-05-24')))"
+EXCLUDE_REFUNDED_P="AND NOT (p.user_id = 62476933 AND ((p.package_id = 'consult_detailed' AND p.created_at::date = '2026-05-07') OR (p.package_id = 'consult_basic' AND p.created_at::date = '2026-05-24')))"
+
 # Функция для вывода заголовка
 print_header() {
     echo ""
@@ -403,16 +409,18 @@ execute_query "$QUERY2_1" "2.1. Полная воронка конверсий (
 print_header "3. Статистика оплат (succeeded и pending, кроме нас)"
 QUERY3="
 SELECT 
+    TO_CHAR(((created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_TZ_DISPLAY'), 'YYYY-MM') as \"Месяц\",
     status as \"Статус\",
-    COUNT(*) as \"Количество платежей\",
-    COUNT(DISTINCT user_id) as \"Уникальных пользователей\",
+    COUNT(*) as \"Кол-во платежей\",
+    COUNT(DISTINCT user_id) as \"Уник. пользователей\",
     SUM(amount_rub) as \"Сумма (руб)\",
     ROUND(AVG(amount_rub), 2) as \"Средний чек (руб)\"
 FROM max_payments
 WHERE user_id NOT IN $EXCLUDE_USERS
     AND status IN ('succeeded', 'pending')
-GROUP BY status
-ORDER BY status;
+    $EXCLUDE_REFUNDED
+GROUP BY 1, status
+ORDER BY 1 DESC, status;
 "
 
 QUERY3_DETAIL="
@@ -429,6 +437,7 @@ FROM max_payments p
 LEFT JOIN max_users u ON p.user_id = u.user_id
 WHERE p.user_id NOT IN $EXCLUDE_USERS
     AND p.status IN ('succeeded', 'pending')
+    $EXCLUDE_REFUNDED_P
 ORDER BY p.created_at DESC, p.user_id;
 "
 
@@ -437,6 +446,7 @@ ORDER BY p.created_at DESC, p.user_id;
 # Автогадания: остальные (3_spreads, 10_spreads, 20_spreads, 30_spreads, unlimited)
 QUERY3_BY_SERVICE="
 SELECT
+    TO_CHAR(((created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_TZ_DISPLAY'), 'YYYY-MM') as \"Месяц\",
     CASE
         WHEN package_id IN ('consult_basic', 'consult_detailed') THEN 'Личная консультация'
         WHEN package_id = 'unlimited' THEN 'Автогадания (безлимит)'
@@ -444,20 +454,22 @@ SELECT
     END as \"Тип услуги\",
     status as \"Статус\",
     COUNT(*) as \"Платежей\",
-    COUNT(DISTINCT user_id) as \"Уникальных пользователей\",
+    COUNT(DISTINCT user_id) as \"Уник. пользователей\",
     SUM(amount_rub) as \"Сумма (руб)\",
     ROUND(AVG(amount_rub), 2) as \"Средний чек (руб)\"
 FROM max_payments
 WHERE user_id NOT IN $EXCLUDE_USERS
     AND status IN ('succeeded', 'pending')
+    $EXCLUDE_REFUNDED
 GROUP BY
+    1,
     CASE
         WHEN package_id IN ('consult_basic', 'consult_detailed') THEN 'Личная консультация'
         WHEN package_id = 'unlimited' THEN 'Автогадания (безлимит)'
         ELSE 'Автогадания (пакеты)'
     END,
     status
-ORDER BY \"Тип услуги\", status;
+ORDER BY 1 DESC, \"Тип услуги\", status;
 "
 
 # 3.4 Личные консультации — детализация для Дианы (сверка кто оплатил)
@@ -480,6 +492,7 @@ FROM max_payments p
 LEFT JOIN max_users u ON p.user_id = u.user_id
 WHERE p.user_id NOT IN $EXCLUDE_USERS
     AND p.package_id IN ('consult_basic', 'consult_detailed')
+    $EXCLUDE_REFUNDED_P
 ORDER BY p.created_at DESC, p.user_id;
 "
 
