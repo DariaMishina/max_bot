@@ -152,6 +152,13 @@ ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
 
+UPDATE max_payments
+SET reminder_10m_sent_at = COALESCE(reminder_10m_sent_at, NOW()),
+    reminder_1h_sent_at  = COALESCE(reminder_1h_sent_at, NOW()),
+    reminder_3h_sent_at  = COALESCE(reminder_3h_sent_at, NOW()),
+    updated_at = NOW()
+WHERE status IN ('pending', 'canceled');
+
 
 -- 7. max_webapp_follow_up_context — контекст уточняющих вопросов после WebApp-гадания (FSM недоступен из HTTP)
 CREATE TABLE IF NOT EXISTS max_webapp_follow_up_context (

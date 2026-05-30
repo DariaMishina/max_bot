@@ -39,7 +39,15 @@ class Settings(BaseSettings):
     tarologist_name: Optional[str] = "Диана"
     tarologist_profile_url: Optional[str] = None
     tarologist_work_hours: Optional[str] = "10:00–22:00"
+    payment_reminders_enabled: bool = True
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
+
+    @field_validator("payment_reminders_enabled", mode="before")
+    @classmethod
+    def parse_payment_reminders_enabled(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ('true', '1', 'yes', 'on')
+        return v
 
     @field_validator("metrika_mp_counter_id", "admin_chat_id", "channel_chat_id", mode="before")
     @classmethod

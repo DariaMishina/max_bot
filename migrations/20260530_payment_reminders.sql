@@ -12,6 +12,14 @@ ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
 
+-- Старые pending/canceled не должны получить рассылку при первом деплое фичи
+UPDATE max_payments
+SET reminder_10m_sent_at = COALESCE(reminder_10m_sent_at, NOW()),
+    reminder_1h_sent_at  = COALESCE(reminder_1h_sent_at, NOW()),
+    reminder_3h_sent_at  = COALESCE(reminder_3h_sent_at, NOW()),
+    updated_at = NOW()
+WHERE status IN ('pending', 'canceled');
+
 -- Проверка (опционально):
 -- SELECT column_name, data_type
 -- FROM information_schema.columns
