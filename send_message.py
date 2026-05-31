@@ -11,11 +11,28 @@
 import asyncio
 import logging
 import sys
+from typing import Optional
 
 import aiohttp
 from aiomax import buttons
 from main.botdef import bot
-from main.database import Database, update_user_blocked_status, get_all_users, get_paid_users, is_send_blocked_error
+from main.database import (
+    Database,
+    update_user_blocked_status,
+    get_all_users,
+    get_paid_users,
+    is_send_blocked_error,
+    get_users_for_div_reminder_broadcast,
+    get_users_for_activation_broadcast,
+    mark_activation_sent,
+    mark_div_reminder_broadcast_sent,
+    DIV_REMINDER_SKIP_SEGMENTS,
+    DIV_REMINDER_SEGMENT_ACTIVE,
+    DIV_REMINDER_SEGMENT_EXPIRED,
+    DIV_REMINDER_SEGMENT_PAYWALL,
+    DIV_REMINDER_SEGMENT_FREE_RETURN,
+)
+from main.broadcast_schedule import is_user_due_in_tick, is_same_msk_day
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,7 +140,12 @@ async def send_payment_reminder(user_id: int, stage: str = '10m'):
     return await send_message_to_user(user_id, text, keyboard=kb)
 
 
-async def send_no_divinations_reminder(user_id: int):
+async def send_no_divinations_reminder(
+    user_id: int,
+    *,
+    sent_via: str = 'send_message_script',
+    segment: Optional[str] = None,
+):
     """Напоминание тем, у кого закончились все гадания + меню оплаты"""
     from keyboards.pay import make_payment_kb
     from main.conversions import save_paywall_conversion
@@ -134,27 +156,18 @@ async def send_no_divinations_reminder(user_id: int):
         "И если сейчас снова нужна ясность — я здесь.\n\n"
         "Выбери свой путь и продолжай находить ответы внутри себя 💫"
     )
-    payment_text = (
-        "🔮 <b>Личная консультация с тарологом Дианой</b> — от 500₽\n"
-        "Живой расклад и ответ в течение часа (10:00–22:00 МСК).\n\n"
-        "<b>🔥 Самый популярный вариант</b>\n"
-        "👑 Безлимит на месяц — 599₽\n"
-        "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
-        "Или выбери пакет:\n"
-        "🔥 30 раскладов — 399₽\n"
-        "🌟 20 раскладов — 289₽\n"
-        "💫 10 раскладов — 179₽\n"
-        "🌙 3 расклада — 99₽\n\n"
-        "👉 Выбрать пакет"
-    )
+    payment_text = _broadcast_payment_text()
 
     print(f"📤 Отправляю напоминание о закончившихся гаданиях пользователю {user_id}...")
     try:
+        metadata = {'reminder_type': 'no_divinations', 'sent_via': sent_via}
+        if segment:
+            metadata['segment'] = segment
         try:
             await save_paywall_conversion(
                 user_id=user_id,
                 paywall_source="no_divinations_reminder",
-                metadata={'reminder_type': 'no_divinations', 'sent_via': 'send_message_script'}
+                metadata=metadata,
             )
             from main.metrika_mp import send_conversion_event
             await send_conversion_event(user_id, 'paywall')
@@ -170,28 +183,235 @@ async def send_no_divinations_reminder(user_id: int):
         return False
 
 
-async def send_no_divinations_broadcast() -> dict:
-    """Рассылка напоминаний о закончившихся гаданиях всем незаблокированным пользователям."""
-    results = {'sent': 0, 'failed': 0, 'blocked': 0}
+def _broadcast_payment_text() -> str:
+    return (
+        "🔮 <b>Личная консультация с тарологом Дианой</b> — от 500₽\n"
+        "Живой расклад и ответ в течение часа (10:00–22:00 МСК).\n\n"
+        "<b>🔥 Самый популярный вариант</b>\n"
+        "👑 Безлимит на месяц — 599₽\n"
+        "Гадай когда угодно и сколько угодно. Полная анонимность.\n\n"
+        "Или выбери пакет:\n"
+        "🔥 30 раскладов — 399₽\n"
+        "🌟 20 раскладов — 289₽\n"
+        "💫 10 раскладов — 179₽\n"
+        "🌙 3 расклада — 99₽\n\n"
+        "👉 Выбрать пакет"
+    )
 
-    all_users = await get_all_users(include_blocked=False, include_unsubscribed_daily_card=True)
-    logging.info(f"No-divinations broadcast: {len(all_users)} users")
 
-    for user in all_users:
-        uid = user['user_id']
+async def send_activation_nudge(user_id: int):
+    """Welcome-активация: пользователь заходил, но ещё не сделал расклад."""
+    text = (
+        "Привет 🔮\n\n"
+        "Ты заходил(а), но мы ещё не успели погадать вместе.\n\n"
+        "Задай свой первый вопрос — карты уже ждут. "
+        "Можно начать с чего-то простого: «Что мне важно знать сегодня?»\n\n"
+        "Нажми /start или выбери расклад в меню ✨"
+    )
+    print(f"📤 Отправляю welcome-активацию пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, format=None)
+
+
+async def send_gentle_nudge(user_id: int):
+    """Мягкое напоминание для пользователей с активным платным доступом."""
+    text = (
+        "Привет 🔮\n\n"
+        "Просто напомню — карты здесь, если захочется новый расклад.\n\n"
+        "Не обязательно ждать сложного момента. "
+        "Можно спросить о делах, отношениях или просто «что важно знать сейчас».\n\n"
+        "Я рядом ✨"
+    )
+    print(f"📤 Отправляю мягкое напоминание пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, format=None)
+
+
+async def send_free_return_nudge(user_id: int):
+    """Мягкое напоминание для пользователей с оставшимися бесплатными раскладами."""
+    text = (
+        "Привет 🔮\n\n"
+        "У тебя ещё есть бесплатные расклады — можешь воспользоваться, когда будет удобно.\n\n"
+        "Карты помогают увидеть ситуацию с другой стороны. "
+        "Загляни, если захочется ясности ✨"
+    )
+    print(f"📤 Отправляю мягкое напоминание (free return) пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, format=None)
+
+
+async def send_expired_sub_reminder(
+    user_id: int,
+    *,
+    sent_via: str = 'send_message_script',
+    segment: Optional[str] = None,
+):
+    """Напоминание пользователям, у которых закончился платный доступ."""
+    from keyboards.pay import make_payment_kb
+    from main.conversions import save_paywall_conversion
+
+    reminder_text = (
+        "Привет! 💫\n\n"
+        "Твои расклады закончились, но вопросы к картам — нет.\n\n"
+        "Если снова нужна ясность — я здесь. "
+        "Можно вернуться к любой теме, которая сейчас важна ✨"
+    )
+    payment_text = _broadcast_payment_text()
+
+    print(f"📤 Отправляю напоминание об истёкшем доступе пользователю {user_id}...")
+    try:
+        metadata = {'reminder_type': 'expired_sub_reminder', 'sent_via': sent_via}
+        if segment:
+            metadata['segment'] = segment
         try:
-            success = await send_no_divinations_reminder(uid)
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="expired_sub_reminder",
+                metadata=metadata,
+            )
+            from main.metrika_mp import send_conversion_event
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+        await bot.send_message(reminder_text, user_id=user_id, format=None)
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        print(f"✅ Напоминание об истёкшем доступе отправлено пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, "напоминания об истёкшем доступе")
+        return False
+
+
+DIV_REMINDER_SENDERS = {
+    DIV_REMINDER_SEGMENT_ACTIVE: send_gentle_nudge,
+    DIV_REMINDER_SEGMENT_EXPIRED: send_expired_sub_reminder,
+    DIV_REMINDER_SEGMENT_PAYWALL: send_no_divinations_reminder,
+    DIV_REMINDER_SEGMENT_FREE_RETURN: send_free_return_nudge,
+}
+
+BROADCAST_SEND_DELAY_SEC = 0.1
+
+
+def _init_broadcast_results() -> dict:
+    return {
+        'sent': 0,
+        'failed': 0,
+        'blocked': 0,
+        'skipped': 0,
+        'skipped_time': 0,
+        'skipped_already_sent': 0,
+        'by_segment': {},
+    }
+
+
+async def _send_div_reminder_for_segment(user_id: int, segment: str) -> bool:
+    """Отправка по сегменту с metadata для paywall-сценариев."""
+    if segment in (DIV_REMINDER_SEGMENT_EXPIRED, DIV_REMINDER_SEGMENT_PAYWALL):
+        sender = DIV_REMINDER_SENDERS[segment]
+        return await sender(user_id, sent_via='broadcast', segment=segment)
+    sender = DIV_REMINDER_SENDERS.get(segment)
+    if not sender:
+        return False
+    return await sender(user_id)
+
+
+async def send_activation_broadcast() -> dict:
+    """
+    Welcome-активация: ≥24ч после регистрации, без гаданий.
+    Отправка в персональный слот 10:00–20:00 MSK (тик каждые 30 мин).
+    """
+    results = _init_broadcast_results()
+    targets = await get_users_for_activation_broadcast()
+    logging.info(f"Activation broadcast tick: {len(targets)} eligible users")
+
+    for target in targets:
+        uid = target['user_id']
+        last_active_at = target.get('last_active_at')
+
+        if not is_user_due_in_tick(uid, last_active_at):
+            results['skipped_time'] += 1
+            continue
+
+        try:
+            success = await send_activation_nudge(uid)
             if success:
+                await mark_activation_sent(uid)
                 results['sent'] += 1
             else:
                 results['blocked'] += 1
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(BROADCAST_SEND_DELAY_SEC)
         except Exception as e:
-            logging.error(f"Error in no-divinations broadcast for user {uid}: {e}", exc_info=True)
+            logging.error(f"Error in activation broadcast for user {uid}: {e}", exc_info=True)
             results['failed'] += 1
 
-    logging.info(f"No-divinations broadcast results: {results}")
+    if any(v for k, v in results.items() if k != 'by_segment' and v):
+        logging.info(f"Activation broadcast tick results: {results}")
     return results
+
+
+async def send_divination_reminder_broadcast() -> dict:
+    """
+    Сегментированная рассылка Пн/Чт.
+    Отправка в персональный слот 10:00–20:00 MSK (тик каждые 30 мин).
+    """
+    results = _init_broadcast_results()
+    targets = await get_users_for_div_reminder_broadcast()
+    logging.info(f"Divination-reminder broadcast tick: {len(targets)} users loaded")
+
+    for target in targets:
+        uid = target['user_id']
+        segment = target['segment']
+        last_active_at = target.get('last_active_at')
+
+        if segment not in results['by_segment']:
+            results['by_segment'][segment] = {'sent': 0, 'failed': 0, 'blocked': 0}
+
+        if segment in DIV_REMINDER_SKIP_SEGMENTS:
+            results['skipped'] += 1
+            continue
+
+        if is_same_msk_day(target.get('last_div_reminder_broadcast_at')):
+            results['skipped_already_sent'] += 1
+            continue
+
+        if not is_user_due_in_tick(uid, last_active_at):
+            results['skipped_time'] += 1
+            continue
+
+        if segment not in DIV_REMINDER_SENDERS:
+            logging.warning(f"Unknown broadcast segment '{segment}' for user {uid}, skipping")
+            results['skipped'] += 1
+            continue
+
+        try:
+            success = await _send_div_reminder_for_segment(uid, segment)
+            if success:
+                await mark_div_reminder_broadcast_sent(uid)
+                results['sent'] += 1
+                results['by_segment'][segment]['sent'] += 1
+            else:
+                results['blocked'] += 1
+                results['by_segment'][segment]['blocked'] += 1
+            await asyncio.sleep(BROADCAST_SEND_DELAY_SEC)
+        except Exception as e:
+            logging.error(
+                f"Error in divination-reminder broadcast for user {uid} "
+                f"(segment={segment}): {e}",
+                exc_info=True,
+            )
+            results['failed'] += 1
+            results['by_segment'][segment]['failed'] += 1
+
+    if any(v for k, v in results.items() if k != 'by_segment' and v) or results['by_segment']:
+        logging.info(f"Divination-reminder broadcast tick results: {results}")
+    return results
+
+
+async def send_no_divinations_broadcast() -> dict:
+    """Устаревший alias — используйте send_divination_reminder_broadcast()."""
+    logging.warning(
+        "send_no_divinations_broadcast() is deprecated; "
+        "use send_divination_reminder_broadcast() for scheduled ticks"
+    )
+    return await send_divination_reminder_broadcast()
 
 
 async def send_discussion_announcement(user_id: int):
@@ -522,6 +742,18 @@ async def main():
         help='Напоминание тем, у кого закончились гадания (+ меню оплаты)'
     )
     parser.add_argument(
+        '--gentle-nudge', action='store_true',
+        help='Мягкое напоминание платникам (без paywall)'
+    )
+    parser.add_argument(
+        '--free-return', action='store_true',
+        help='Мягкое напоминание пользователям с бесплатными раскладами'
+    )
+    parser.add_argument(
+        '--expired-sub', action='store_true',
+        help='Напоминание об истёкшем доступе (+ меню оплаты)'
+    )
+    parser.add_argument(
         '--discussion', action='store_true',
         help='Объявление о функции обсуждения расклада (+ меню оплаты)'
     )
@@ -591,6 +823,24 @@ async def main():
                 await send_no_divinations_reminder(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.gentle_nudge:
+            print(f"🚀 Отправка мягких напоминаний для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_gentle_nudge(uid)
+                await asyncio.sleep(0.05)
+
+        elif args.free_return:
+            print(f"🚀 Отправка free-return напоминаний для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_free_return_nudge(uid)
+                await asyncio.sleep(0.05)
+
+        elif args.expired_sub:
+            print(f"🚀 Отправка напоминаний об истёкшем доступе для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_expired_sub_reminder(uid)
+                await asyncio.sleep(0.05)
+
         elif args.discussion:
             print(f"🚀 Отправка объявлений об обсуждении расклада для {total} пользователя(ей)...")
             for uid in args.user_id:
@@ -631,7 +881,8 @@ async def main():
             if not args.text:
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
-                    "--payment-reminder / --no-divinations / --discussion / --restored / "
+                    "--payment-reminder / --no-divinations / --gentle-nudge / --free-return / "
+                    "--expired-sub / --discussion / --restored / "
                     "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder / "
                     "--feedback-request"
                 )

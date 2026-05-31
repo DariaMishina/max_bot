@@ -109,30 +109,50 @@ async def main():
         except Exception as e:
             logging.error(f"Error in reconcile_pending_payments_job: {e}", exc_info=True)
 
-    # ==================== РАССЫЛКА --no-divinations ====================
-    NO_DIV_BROADCAST_HOUR = 16
-    NO_DIV_BROADCAST_MINUTE = 30
-    # ===================================================================
+    # ==================== РАССЫЛКИ (активация + Пн/Чт) ====================
+    # Окно 10:00–20:00 MSK, тик каждые 30 мин — персональный слот на пользователя
+    BROADCAST_CRON_HOURS = '10-20'
+    BROADCAST_CRON_MINUTES = '0,30'
+    # ========================================================================
 
-    async def no_divinations_broadcast_job():
-        """Задача для рассылки напоминаний о закончившихся гаданиях"""
+    async def activation_broadcast_job():
+        """Welcome-активация: ≥24ч после регистрации, без гаданий."""
         try:
-            from send_message import send_no_divinations_broadcast
-            results = await send_no_divinations_broadcast()
-            logging.info(f"No-divinations broadcast job completed: {results}")
+            from send_message import send_activation_broadcast
+            await send_activation_broadcast()
         except Exception as e:
-            logging.error(f"Error in no-divinations broadcast job: {e}", exc_info=True)
+            logging.error(f"Error in activation broadcast job: {e}", exc_info=True)
 
     scheduler.add_job(
-        no_divinations_broadcast_job,
+        activation_broadcast_job,
         trigger=CronTrigger(
-            day_of_week='mon,thu',
-            hour=NO_DIV_BROADCAST_HOUR,
-            minute=NO_DIV_BROADCAST_MINUTE,
+            hour=BROADCAST_CRON_HOURS,
+            minute=BROADCAST_CRON_MINUTES,
             timezone='Europe/Moscow'
         ),
-        id='no_divinations_broadcast',
-        name='Рассылка напоминаний о закончившихся гаданиях (Пн, Чт)',
+        id='activation_broadcast',
+        name='Welcome-активация (ежедневно, 10:00–20:00 MSK)',
+        replace_existing=True
+    )
+
+    async def divination_reminder_broadcast_job():
+        """Сегментированная рассылка Пн/Чт."""
+        try:
+            from send_message import send_divination_reminder_broadcast
+            await send_divination_reminder_broadcast()
+        except Exception as e:
+            logging.error(f"Error in divination-reminder broadcast job: {e}", exc_info=True)
+
+    scheduler.add_job(
+        divination_reminder_broadcast_job,
+        trigger=CronTrigger(
+            day_of_week='mon,thu',
+            hour=BROADCAST_CRON_HOURS,
+            minute=BROADCAST_CRON_MINUTES,
+            timezone='Europe/Moscow'
+        ),
+        id='divination_reminder_broadcast',
+        name='Сегментированная рассылка (Пн, Чт, 10:00–20:00 MSK)',
         replace_existing=True
     )
 
@@ -170,7 +190,14 @@ async def main():
 
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
-    logging.info(f"APScheduler: no-divinations broadcast Mon/Thu at {NO_DIV_BROADCAST_HOUR:02d}:{NO_DIV_BROADCAST_MINUTE:02d} (Moscow time)")
+    logging.info(
+        f"APScheduler: activation broadcast daily {BROADCAST_CRON_HOURS} MSK "
+        f"(every {BROADCAST_CRON_MINUTES} min)"
+    )
+    logging.info(
+        f"APScheduler: divination-reminder broadcast Mon/Thu {BROADCAST_CRON_HOURS} MSK "
+        f"(every {BROADCAST_CRON_MINUTES} min)"
+    )
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
     if app_config.payment_reminders_enabled:
         logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h stages)")

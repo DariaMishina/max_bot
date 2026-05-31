@@ -800,6 +800,235 @@ async def get_all_users(include_blocked: bool = False, include_unsubscribed_dail
         return []
 
 
+DIV_REMINDER_SEGMENT_ACTIVE = 'active_subscriber'
+DIV_REMINDER_SEGMENT_EXPIRED = 'expired_sub'
+DIV_REMINDER_SEGMENT_PAYWALL = 'paywall'
+DIV_REMINDER_SEGMENT_FREE_RETURN = 'free_return'
+DIV_REMINDER_SEGMENT_SKIP_PENDING = 'skip_pending'
+DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS = 'skip_no_divinations'
+
+DIV_REMINDER_SKIP_SEGMENTS = frozenset({
+    DIV_REMINDER_SEGMENT_SKIP_PENDING,
+    DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS,
+})
+
+
+async def get_users_for_div_reminder_broadcast() -> List[Dict[str, Any]]:
+    """
+    Пользователи для сегментированной рассылки Пн/Чт.
+
+    Сегменты:
+      active_subscriber   — безлимит / платные расклады / подписка → gentle nudge
+      expired_sub         — был платный доступ, сейчас нет → expired reminder + paywall
+      paywall             — исчерпал бесплатные расклады, не платил → no_divinations reminder
+      free_return         — есть бесплатные расклады, уже гадал → мягкое напоминание
+      skip_pending        — незавершённая оплата (обрабатывается payment_reminders)
+      skip_no_divinations — ни разу не гадал (активация — отдельный поток)
+    """
+    users_table = get_table_name("users")
+    balances_table = get_table_name("user_balances")
+    subscriptions_table = get_table_name("subscriptions")
+    payments_table = get_table_name("payments")
+    divinations_table = get_table_name("divinations")
+
+    try:
+        query = f"""
+            WITH user_ctx AS (
+                SELECT
+                    u.user_id,
+                    u.last_active_at,
+                    u.last_div_reminder_broadcast_at,
+                    COALESCE(ub.free_divinations_remaining, 3) AS free_divinations_remaining,
+                    COALESCE(ub.paid_divinations_remaining, 0) AS paid_divinations_remaining,
+                    (
+                        ub.unlimited_until IS NOT NULL AND ub.unlimited_until > NOW()
+                    ) AS has_active_unlimited,
+                    (
+                        COALESCE(ub.paid_divinations_remaining, 0) > 0
+                    ) AS has_paid_divinations,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM {subscriptions_table} s
+                            WHERE s.user_id = u.user_id
+                              AND s.is_active = TRUE
+                              AND s.expires_at > NOW()
+                        )
+                    ) AS has_active_subscription,
+                    (
+                        ub.unlimited_until IS NOT NULL AND ub.unlimited_until <= NOW()
+                    ) AS had_expired_unlimited,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM {subscriptions_table} s
+                            WHERE s.user_id = u.user_id
+                              AND s.expires_at <= NOW()
+                        )
+                    ) AS had_expired_subscription,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM {payments_table} p
+                            WHERE p.user_id = u.user_id
+                              AND p.status = 'succeeded'
+                        )
+                    ) AS had_successful_payment,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM {divinations_table} d
+                            WHERE d.user_id = u.user_id
+                        )
+                    ) AS has_divinations,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM {payments_table} p
+                            WHERE p.user_id = u.user_id
+                              AND p.status IN ('pending', 'canceled')
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM {payments_table} s
+                                  WHERE s.user_id = p.user_id
+                                    AND s.status = 'succeeded'
+                                    AND s.completed_at IS NOT NULL
+                                    AND (
+                                        s.completed_at >= p.created_at
+                                        OR (
+                                            s.completed_at <= p.created_at
+                                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
+                                        )
+                                    )
+                              )
+                        )
+                    ) AS has_open_payment
+                FROM {users_table} u
+                LEFT JOIN {balances_table} ub ON ub.user_id = u.user_id
+                WHERE u.is_blocked = FALSE
+            )
+            SELECT
+                user_id,
+                last_active_at,
+                last_div_reminder_broadcast_at,
+                CASE
+                    WHEN has_open_payment THEN '{DIV_REMINDER_SEGMENT_SKIP_PENDING}'
+                    WHEN NOT has_divinations THEN '{DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS}'
+                    WHEN has_active_unlimited OR has_paid_divinations OR has_active_subscription
+                        THEN '{DIV_REMINDER_SEGMENT_ACTIVE}'
+                    WHEN had_expired_unlimited OR had_expired_subscription OR (
+                        had_successful_payment
+                        AND NOT has_active_unlimited
+                        AND NOT has_paid_divinations
+                        AND NOT has_active_subscription
+                    ) THEN '{DIV_REMINDER_SEGMENT_EXPIRED}'
+                    WHEN free_divinations_remaining = 0 AND NOT had_successful_payment
+                        THEN '{DIV_REMINDER_SEGMENT_PAYWALL}'
+                    ELSE '{DIV_REMINDER_SEGMENT_FREE_RETURN}'
+                END AS segment
+            FROM user_ctx
+            ORDER BY user_id
+        """
+        results = await Database.fetch_all(query)
+        return [
+            {
+                'user_id': r['user_id'],
+                'segment': r['segment'],
+                'last_active_at': r['last_active_at'],
+                'last_div_reminder_broadcast_at': r['last_div_reminder_broadcast_at'],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logging.error(f"Error getting users for div reminder broadcast: {e}", exc_info=True)
+        return []
+
+
+ACTIVATION_DELAY_HOURS = 24
+
+
+async def get_users_for_activation_broadcast() -> List[Dict[str, Any]]:
+    """
+    Пользователи для welcome-активации: зарегистрировались ≥24ч назад,
+    ни разу не гадали, активация ещё не отправлялась.
+    """
+    users_table = get_table_name("users")
+    payments_table = get_table_name("payments")
+    divinations_table = get_table_name("divinations")
+
+    try:
+        query = f"""
+            SELECT
+                u.user_id,
+                u.last_active_at,
+                u.created_at
+            FROM {users_table} u
+            WHERE u.is_blocked = FALSE
+              AND u.activation_sent_at IS NULL
+              AND u.created_at <= NOW() - INTERVAL '{ACTIVATION_DELAY_HOURS} hours'
+              AND NOT EXISTS (
+                  SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM {payments_table} p
+                  WHERE p.user_id = u.user_id
+                    AND p.status IN ('pending', 'canceled')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {payments_table} s
+                        WHERE s.user_id = p.user_id
+                          AND s.status = 'succeeded'
+                          AND s.completed_at IS NOT NULL
+                          AND (
+                              s.completed_at >= p.created_at
+                              OR (
+                                  s.completed_at <= p.created_at
+                                  AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
+                              )
+                          )
+                    )
+              )
+            ORDER BY u.user_id
+        """
+        results = await Database.fetch_all(query)
+        return [
+            {
+                'user_id': r['user_id'],
+                'last_active_at': r['last_active_at'],
+                'created_at': r['created_at'],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logging.error(f"Error getting users for activation broadcast: {e}", exc_info=True)
+        return []
+
+
+async def mark_activation_sent(user_id: int) -> bool:
+    """Отметить, что welcome-активация отправлена."""
+    try:
+        users_table = get_table_name("users")
+        query = f"""
+            UPDATE {users_table}
+            SET activation_sent_at = NOW()
+            WHERE user_id = $1
+        """
+        await Database.execute_query(query, user_id)
+        return True
+    except Exception as e:
+        logging.error(f"Error marking activation sent for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def mark_div_reminder_broadcast_sent(user_id: int) -> bool:
+    """Отметить отправку Пн/Чт рассылки."""
+    try:
+        users_table = get_table_name("users")
+        query = f"""
+            UPDATE {users_table}
+            SET last_div_reminder_broadcast_at = NOW()
+            WHERE user_id = $1
+        """
+        await Database.execute_query(query, user_id)
+        return True
+    except Exception as e:
+        logging.error(f"Error marking div reminder broadcast sent for user {user_id}: {e}", exc_info=True)
+        return False
+
+
 async def get_paid_users() -> List[Dict[str, Any]]:
     """
     Получить список пользователей, у которых есть хотя бы один успешный платёж.

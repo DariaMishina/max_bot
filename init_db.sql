@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS max_users (
     last_active_at  TIMESTAMP DEFAULT NOW(),
     is_blocked      BOOLEAN DEFAULT FALSE,
     daily_card_subscribed BOOLEAN NULL,
+    activation_sent_at    TIMESTAMP NULL,
+    last_div_reminder_broadcast_at TIMESTAMP NULL,
     client_id       VARCHAR(255) NULL,
     phone           VARCHAR(20) NULL,
     utm_source      VARCHAR(255) NULL,
@@ -158,6 +160,25 @@ SET reminder_10m_sent_at = COALESCE(reminder_10m_sent_at, NOW()),
     reminder_3h_sent_at  = COALESCE(reminder_3h_sent_at, NOW()),
     updated_at = NOW()
 WHERE status IN ('pending', 'canceled');
+
+-- Миграция: рассылки (активация + Пн/Чт)
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS activation_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS last_div_reminder_broadcast_at TIMESTAMP NULL;
+
+CREATE INDEX IF NOT EXISTS idx_max_users_activation_sent_at
+    ON max_users(activation_sent_at)
+    WHERE activation_sent_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_max_users_last_div_reminder_broadcast_at
+    ON max_users(last_div_reminder_broadcast_at);
+
+UPDATE max_users u
+SET activation_sent_at = NOW()
+WHERE activation_sent_at IS NULL
+  AND created_at < NOW() - INTERVAL '7 days'
+  AND NOT EXISTS (
+      SELECT 1 FROM max_divinations d WHERE d.user_id = u.user_id
+  );
 
 
 -- 7. max_webapp_follow_up_context — контекст уточняющих вопросов после WebApp-гадания (FSM недоступен из HTTP)
