@@ -24,7 +24,7 @@
 #      2.3. По источникам траффика — пока отключено
 #   3. Статистика оплат (succeeded и pending)
 #      3.1. Общая статистика оплат (по статусу)
-#      3.2. Детализация по датам (все платежи с названием пакета)
+#      3.2. Детализация по датам (платежи за последний месяц, первый/повторный)
 #      3.3. Разбивка оплат по типу услуги (консультации vs автогадания)
 #      3.4. Личные консультации — список оплативших (для Дианы)
 #   4. Проверка балансов гаданий (пользователи с нулевым балансом)
@@ -51,6 +51,7 @@ REPORT_TZ_DISPLAY='Europe/Moscow'
 MSK_TODAY="(NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date"
 MSK_YESTERDAY="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - 1)"
 MSK_BEFORE_YESTERDAY="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - 2)"
+MSK_LAST_MONTH="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - INTERVAL '1 month')"
 
 # Возвращённые платежи (исключаем из статистики, чтобы не искажали цифры)
 # 07.05.2026 — Анюта Очирова (user_id=62476933), Подробный разбор, 1500₽
@@ -424,9 +425,21 @@ ORDER BY 1 DESC, status;
 "
 
 QUERY3_DETAIL="
-SELECT 
+SELECT
     TO_CHAR((p.created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_TZ_DISPLAY', 'DD.MM.YYYY HH24:MI:SS') as \"Дата и время (МСК)\",
     p.status as \"Статус\",
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM max_payments p_prev
+            WHERE p_prev.user_id = p.user_id
+                AND p_prev.status = 'succeeded'
+                AND p_prev.created_at < p.created_at
+                AND p_prev.user_id NOT IN $EXCLUDE_USERS
+                AND NOT (p_prev.user_id = 62476933 AND ((p_prev.package_id = 'consult_detailed' AND p_prev.created_at::date = '2026-05-07') OR (p_prev.package_id = 'consult_basic' AND p_prev.created_at::date = '2026-05-24')))
+        ) THEN 'повторный'
+        ELSE 'первый'
+    END as \"Платёж\",
     p.user_id as \"User ID\",
     COALESCE(NULLIF(trim(u.full_name), ''), u.first_name) as \"Имя\",
     COALESCE(u.email, '—') as \"Email\",
@@ -437,6 +450,7 @@ FROM max_payments p
 LEFT JOIN max_users u ON p.user_id = u.user_id
 WHERE p.user_id NOT IN $EXCLUDE_USERS
     AND p.status IN ('succeeded', 'pending')
+    AND (p.created_at AT TIME ZONE '$REPORT_TZ_STORED') >= ($MSK_LAST_MONTH AT TIME ZONE '$REPORT_TZ_DISPLAY')
     $EXCLUDE_REFUNDED_P
 ORDER BY p.created_at DESC, p.user_id;
 "
@@ -497,7 +511,7 @@ ORDER BY p.created_at DESC, p.user_id;
 "
 
 execute_query "$QUERY3" "3.1. Общая статистика оплат"
-execute_query "$QUERY3_DETAIL" "3.2. Детализация по датам (все платежи)"
+execute_query "$QUERY3_DETAIL" "3.2. Детализация по датам (последний месяц)"
 execute_query "$QUERY3_BY_SERVICE" "3.3. Разбивка оплат по типу услуги (консультации vs автогадания)"
 execute_query "$QUERY3_CONSULTATIONS" "3.4. Личные консультации — список оплативших (для Дианы)"
 
