@@ -585,6 +585,59 @@ async def send_tarologist_intro(user_id: int):
         return False
 
 
+CONSULT_PACKAGE_NAMES = {
+    'basic': 'Базовый разбор',
+    'detailed': 'Подробный разбор',
+}
+
+
+def _make_consult_diana_contact_kb():
+    """Кнопка-ссылка на личные сообщения Дианы (без меню оплаты)."""
+    from main.config_reader import config
+
+    kb = buttons.KeyboardBuilder()
+    if config.tarologist_profile_url:
+        kb.row(buttons.LinkButton("💬 Написать Диане", config.tarologist_profile_url))
+    return kb
+
+
+def _build_consult_diana_contact_text(package_name: str) -> str:
+    from main.config_reader import config
+
+    work_hours = config.tarologist_work_hours or "10:00–22:00"
+    return (
+        "Привет!\n\n"
+        f"Видим, что ты оплатила «{package_name}» — спасибо! 🙏\n\n"
+        "Чтобы получить консультацию, нажми кнопку ниже — "
+        "она откроет личные сообщения с Дианой.\n\n"
+        "Напиши ей свой вопрос и укажи, что это оплаченный "
+        f"«{package_name}». Диана ответит в течение часа "
+        f"(в рабочие часы {work_hours} МСК) ✨"
+    )
+
+
+async def send_consult_diana_contact(user_id: int, package: str = 'detailed'):
+    """
+    Помощь после оплаты консультации: инструкция + кнопка «Написать Диане».
+    package: basic | detailed
+    """
+    package_key = package if package in CONSULT_PACKAGE_NAMES else 'detailed'
+    package_name = CONSULT_PACKAGE_NAMES[package_key]
+    text = _build_consult_diana_contact_text(package_name)
+    kb = _make_consult_diana_contact_kb()
+
+    print(
+        f"📤 Отправляю контакт Дианы ({package_name}) пользователю {user_id}..."
+    )
+    try:
+        await bot.send_message(text, user_id=user_id, keyboard=kb, format=None)
+        print(f"✅ Контакт Дианы отправлен пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, f"контакта Дианы ({package_name})")
+        return False
+
+
 async def send_tarologist_reminder(user_id: int):
     """Повторное напоминание о тарологе Диане — для тех, кто уже видел представление."""
     from keyboards.pay import make_consultation_kb
@@ -778,6 +831,15 @@ async def main():
         help='Напоминание о тарологе Диане (повторная рассылка, + меню оплаты)'
     )
     parser.add_argument(
+        '--consult-diana-contact', action='store_true',
+        help='Инструкция + кнопка «Написать Диане» после оплаты консультации'
+    )
+    parser.add_argument(
+        '--consult-package', type=str, default='detailed',
+        choices=['basic', 'detailed'],
+        help='Пакет консультации для --consult-diana-contact (по умолчанию: detailed)'
+    )
+    parser.add_argument(
         '--feedback-request', action='store_true',
         help='Запрос обратной связи у купивших пользователей (автоматически берёт из БД)'
     )
@@ -877,6 +939,15 @@ async def main():
                 await send_tarologist_reminder(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.consult_diana_contact:
+            pkg = CONSULT_PACKAGE_NAMES[args.consult_package]
+            print(
+                f"💬 Отправка контакта Дианы ({pkg}) для {total} пользователя(ей)..."
+            )
+            for uid in args.user_id:
+                await send_consult_diana_contact(uid, package=args.consult_package)
+                await asyncio.sleep(0.05)
+
         else:
             if not args.text:
                 print(
@@ -884,7 +955,7 @@ async def main():
                     "--payment-reminder / --no-divinations / --gentle-nudge / --free-return / "
                     "--expired-sub / --discussion / --restored / "
                     "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder / "
-                    "--feedback-request"
+                    "--consult-diana-contact / --feedback-request"
                 )
                 return
 

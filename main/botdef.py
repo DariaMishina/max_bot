@@ -39,3 +39,18 @@ def _make_authed_method(http_method: str):
 
 for _m in ("get", "post", "patch", "put", "delete"):
     setattr(aiomax.Bot, _m, _make_authed_method(_m))
+
+
+# MAX API иногда не возвращает intent у callback-кнопок (поле опционально в API),
+# а aiomax 2.12.4 требует его при разборе ответов — KeyError ломает /start и кнопки.
+from aiomax import buttons as _aiomax_buttons
+
+
+@staticmethod
+def _patched_callback_from_json(data: dict) -> _aiomax_buttons.CallbackButton:
+    return _aiomax_buttons.CallbackButton(
+        data["text"], data["payload"], data.get("intent", "default")
+    )
+
+
+_aiomax_buttons.CallbackButton.from_json = _patched_callback_from_json
