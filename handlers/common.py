@@ -1,5 +1,5 @@
 """
-Общие обработчики: /start (on_bot_start), /balance, неизвестные команды.
+Общие обработчики: on_bot_start, on_command('start'), /balance, неизвестные команды.
 Адаптировано с aiogram на aiomax.
 
 Ключевые отличия от Telegram-версии:
@@ -241,6 +241,83 @@ async def cmd_start(payload: aiomax.BotStartPayload, cursor: fsm.FSMCursor):
             "<b>💫 Чтобы начать — напиши свой вопрос в чат. У тебя есть 3 бесплатных гадания 👇</b>",
             keyboard=make_main_menu(),
             format='html',
+        )
+
+
+@router.on_command('start')
+async def cmd_start_command(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
+    """Повторный /start (on_bot_start срабатывает только при первом запуске)."""
+    start_param = ctx.args_raw.strip() if ctx.args_raw else None
+    logging.info(
+        f"cmd_start_command: user_id={ctx.sender.user_id}, "
+        f"name={ctx.sender.name}, start_param={start_param!r}"
+    )
+
+    client_id = None
+    utm_campaign = None
+    if start_param:
+        client_id, utm_campaign = _parse_start_param_from_landing(start_param)
+        if client_id:
+            logging.info(
+                f"cmd_start_command: parsed landing start param: "
+                f"client_id={client_id}, utm_campaign={utm_campaign}"
+            )
+
+    cursor.clear()
+
+    source = "landing" if client_id else "organic"
+    is_new = False
+    try:
+        is_new = await create_or_update_user(
+            user_id=ctx.sender.user_id,
+            username=ctx.sender.username,
+            first_name=ctx.sender.name or "",
+            last_name=None,
+            language_code=None,
+            is_premium=False,
+            client_id=client_id,
+            utm_source="landing" if client_id else None,
+            utm_campaign=utm_campaign,
+        )
+        if is_new:
+            logging.info(f"New user registered via /start: {ctx.sender.user_id} with source={source}")
+            try:
+                await save_conversion(
+                    user_id=ctx.sender.user_id,
+                    conversion_type="registration",
+                    source=source,
+                    client_id=client_id,
+                    campaign_id=utm_campaign,
+                )
+            except Exception as e:
+                logging.error(f"Error saving registration conversion: {e}", exc_info=True)
+    except Exception as e:
+        logging.error(f"Error saving user to database: {e}", exc_info=True)
+
+    is_subscribed = await check_channel_subscription(ctx.sender.user_id)
+
+    if not is_subscribed:
+        await send_channel_sub_prompt(ctx)
+        return
+
+    if is_new:
+        await ctx.reply(
+            "🪬 Тревожно? Не знаешь, как поступить?\n\n"
+            "Не с кем посоветоваться, а онлайн-расклады — пустые слова.\n\n"
+            "🕯 Сделай расклад — и получи мгновенное толкование Таро и И-Цзин с помощью ИИ.\n\n"
+            "📌 Как работает:\n\n"
+            "1️⃣ Пишешь свой вопрос\n"
+            "2️⃣ Выбираешь тип гадания — Таро или И-Цзин\n"
+            "3️⃣ Бот выдает карты или гексаграмму\n"
+            "💬 Бот сразу покажет толкование и комментарий именно под твой вопрос.\n\n"
+            "<b>💫 Чтобы начать — напиши свой вопрос в чат. У тебя есть 3 бесплатных гадания 👇</b>",
+            keyboard=make_main_menu(),
+            format='html',
+        )
+    else:
+        await ctx.reply(
+            "👋 С возвращением! Выбери действие в меню или напиши свой вопрос в чат 🔮",
+            keyboard=make_main_menu(),
         )
 
 

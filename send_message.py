@@ -201,15 +201,17 @@ def _broadcast_payment_text() -> str:
 
 async def send_activation_nudge(user_id: int):
     """Welcome-активация: пользователь заходил, но ещё не сделал расклад."""
+    from keyboards.main_menu import make_main_menu
+
     text = (
         "Привет 🔮\n\n"
         "Ты заходил(а), но мы ещё не успели погадать вместе.\n\n"
         "Задай свой первый вопрос — карты уже ждут. "
         "Можно начать с чего-то простого: «Что мне важно знать сегодня?»\n\n"
-        "Нажми /start или выбери расклад в меню ✨"
+        "Выбери расклад в меню ниже ✨"
     )
     print(f"📤 Отправляю welcome-активацию пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, format=None)
+    return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
 
 
 async def send_gentle_nudge(user_id: int):
@@ -465,14 +467,15 @@ async def send_discussion_announcement(user_id: int):
 
 async def send_bot_restored(user_id: int):
     """Сообщение о восстановлении работы бота"""
+    from keyboards.main_menu import make_main_menu
+
     text = (
         "Привет! Это <b>Сфера Таро</b> 🔮\n\n"
         "Рады сообщить: бот снова работает в полном режиме!\n\n"
-        "Возвращайся — карты ждут твоих вопросов 💫\n\n"
-        "Нажми /start чтобы начать"
+        "Выбери действие в меню ниже или напиши свой вопрос в чат 💫"
     )
     print(f"📤 Отправляю сообщение о восстановлении бота пользователю {user_id}...")
-    return await send_message_to_user(user_id, text)
+    return await send_message_to_user(user_id, text, keyboard=make_main_menu())
 
 
 async def send_friday13_promo(user_id: int):
@@ -795,6 +798,10 @@ async def main():
         help='Напоминание тем, у кого закончились гадания (+ меню оплаты)'
     )
     parser.add_argument(
+        '--activation', action='store_true',
+        help='Welcome-активация: заходил, но ещё не сделал расклад (+ меню)'
+    )
+    parser.add_argument(
         '--gentle-nudge', action='store_true',
         help='Мягкое напоминание платникам (без paywall)'
     )
@@ -885,6 +892,12 @@ async def main():
                 await send_no_divinations_reminder(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.activation:
+            print(f"📤 Отправка welcome-активации для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_activation_nudge(uid)
+                await asyncio.sleep(0.05)
+
         elif args.gentle_nudge:
             print(f"🚀 Отправка мягких напоминаний для {total} пользователя(ей)...")
             for uid in args.user_id:
@@ -952,7 +965,8 @@ async def main():
             if not args.text:
                 print(
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
-                    "--payment-reminder / --no-divinations / --gentle-nudge / --free-return / "
+                    "--payment-reminder / --no-divinations / --activation / --gentle-nudge / "
+                    "--free-return / "
                     "--expired-sub / --discussion / --restored / "
                     "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder / "
                     "--consult-diana-contact / --feedback-request"
