@@ -205,18 +205,12 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
             pass
         
         # ChatGPT толкование
-        system_prompt = (
-            "Ты опытный гадатель по Ицзин (Книге Перемен). "
-            "Проведи детальное и мистическое толкование гексаграммы по древнекитайской традиции. "
-            "Проанализируй значение гексаграммы в контексте вопроса пользователя и дай целостную интерпретацию. "
-            "Отвечай на русском языке, будь мудрым и проникновенным. "
-            "Начни с краткого описания значения гексаграммы, затем дай детальное толкование в контексте вопроса."
-        )
+        system_prompt = ICHING_SYSTEM_PROMPT
         chatgpt_question = (
             f"Вопрос пользователя: {question}\n\n"
             f"Выпавшая гексаграмма: {hexagram_name}\n"
             f"Значение гексаграммы: {hexagram_meaning}\n\n"
-            "Дай детальное толкование этой гексаграммы Ицзин в контексте вопроса пользователя."
+            f"{ICHING_USER_INSTRUCTION}"
         )
         
         chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
@@ -357,17 +351,11 @@ async def handle_tarot_random(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             card = get_card_info(card_id)
             cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
         
-        system_prompt = (
-            "Ты опытный таролог. Проведи детальное и мистическое толкование расклада из 3 карт Таро. "
-            "Карты расположены: 1-я — Прошлое, 2-я — Настоящее, 3-я — Будущее. "
-            "Проанализируй каждую карту в контексте вопроса пользователя и дай целостную интерпретацию. "
-            "Отвечай на русском языке, будь мудрым и проникновенным. "
-            "Начни с каждой карты отдельно, затем дай общее толкование."
-        )
+        system_prompt = TAROT_SYSTEM_PROMPT
         chatgpt_question = (
             f"Вопрос пользователя: {question}\n\n"
             f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            "Дай детальное толкование этого расклада в контексте вопроса пользователя."
+            f"{TAROT_USER_INSTRUCTION}"
         )
         
         chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
@@ -491,16 +479,11 @@ async def handle_confirm_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             card = get_card_info(card_id)
             cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
         
-        system_prompt = (
-            "Ты опытный таролог. Проведи детальное и мистическое толкование расклада из 3 карт Таро. "
-            "Карты расположены: 1-я — Прошлое, 2-я — Настоящее, 3-я — Будущее. "
-            "Проанализируй каждую карту в контексте вопроса пользователя и дай целостную интерпретацию. "
-            "Отвечай на русском языке, будь мудрым и проникновенным."
-        )
+        system_prompt = TAROT_SYSTEM_PROMPT
         chatgpt_question = (
             f"Вопрос пользователя: {question}\n\n"
             f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            "Дай детальное толкование этого расклада в контексте вопроса пользователя."
+            f"{TAROT_USER_INSTRUCTION}"
         )
         
         chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
@@ -599,12 +582,7 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
     conversation_history = data.get('conversation_history', [])
     conversation_history.append({"role": "user", "content": text})
     
-    system_prompt = (
-        "Ты опытный гадатель и таролог. "
-        "Пользователь задает уточняющий вопрос по уже проведенному раскладу. "
-        "Отвечай на русском, будь мудрым и проникновенным. "
-        "Используй контекст предыдущего расклада для ответа."
-    )
+    system_prompt = FOLLOW_UP_SYSTEM_PROMPT
     
     try:
         response = await get_chatgpt_response_with_history(conversation_history, system_prompt)
@@ -708,92 +686,153 @@ def _build_card_selection_kb(available: list, selected: list) -> buttons.Keyboar
 
 
 def format_interpretation_with_bold(text: str) -> str:
-    """Форматирует текст толкования, выделяя жирным ключевые слова"""
+    """Форматирует текст толкования для Max HTML: ключевые разделы жирным."""
+    section_aliases = [
+        (re.compile(r"карта\s+прошлого", re.IGNORECASE), "Прошлое"),
+        (re.compile(r"^прошлое\b", re.IGNORECASE), "Прошлое"),
+        (re.compile(r"карта\s+настоящего", re.IGNORECASE), "Настоящее"),
+        (re.compile(r"^настоящее\b", re.IGNORECASE), "Настоящее"),
+        (re.compile(r"карта\s+будущего", re.IGNORECASE), "Будущее"),
+        (re.compile(r"^будущее\b", re.IGNORECASE), "Будущее"),
+        (re.compile(r"итоговая\s+интерпретация", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"общее\s+толкование", re.IGNORECASE), "Общее толкование"),
+    ]
     keywords = ["Прошлое", "Настоящее", "Будущее", "Общее толкование"]
-    
-    formatted_text = text
-    
-    for keyword in keywords:
-        markdown_pattern = rf'(^|\n)\s*###\s*({re.escape(keyword)})(\s*:)'
-        markdown_replacement = r'\1<b>\2</b>\3'
-        formatted_text = re.sub(markdown_pattern, markdown_replacement, formatted_text, flags=re.IGNORECASE | re.MULTILINE)
-        
-        markdown_bold_pattern = rf'\*\*({re.escape(keyword)})\*\*(\s*:)'
-        markdown_bold_replacement = r'<b>\1</b>\2'
-        formatted_text = re.sub(markdown_bold_pattern, markdown_bold_replacement, formatted_text, flags=re.IGNORECASE)
-    
-    for keyword in keywords:
-        if re.search(rf'<b>\s*{re.escape(keyword)}\s*</b>', formatted_text, re.IGNORECASE):
+
+    def _section_label(title: str) -> str | None:
+        clean = re.sub(r"\*+", "", title).strip()
+        for pattern, label in section_aliases:
+            if pattern.search(clean):
+                return label
+        return None
+
+    def _format_header_line(line: str) -> str:
+        match = re.match(r"^(#{1,3})\s+(.+)$", line.strip())
+        if not match:
+            return line
+
+        title = re.sub(r"\*+", "", match.group(2)).strip()
+        parts = re.match(r"^(.+?)(\s*[:—\-]\s*.+)?$", title)
+        if not parts:
+            return line
+
+        main_part = parts.group(1).strip()
+        suffix = parts.group(2) or ""
+        label = _section_label(main_part)
+        if label:
+            return f"<b>{label}</b>{suffix}"
+
+        if len(match.group(1)) == 1:
+            return f"<b>{main_part}</b>{suffix}"
+        return f"<b>{main_part}</b>{suffix}"
+
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            lines.append(_format_header_line(stripped))
             continue
-        pattern = rf'(^|\n)({re.escape(keyword)})(\s*:)'
-        replacement = r'\1<b>\2</b>\3'
-        formatted_text = re.sub(pattern, replacement, formatted_text, flags=re.IGNORECASE | re.MULTILINE)
-    
-    return formatted_text
+
+        formatted_line = line
+        for keyword in keywords:
+            formatted_line = re.sub(
+                rf"\*\*({re.escape(keyword)})\s*:([^*]*)\*\*",
+                rf"<b>\1:</b>\2",
+                formatted_line,
+                flags=re.IGNORECASE,
+            )
+            formatted_line = re.sub(
+                rf"\*\*({re.escape(keyword)})\s*:\*\*",
+                rf"<b>\1:</b>",
+                formatted_line,
+                flags=re.IGNORECASE,
+            )
+            formatted_line = re.sub(
+                rf"\*\*({re.escape(keyword)})\*\*(\s*[:—\-]?)",
+                rf"<b>\1</b>\2",
+                formatted_line,
+                flags=re.IGNORECASE,
+            )
+            if re.search(rf"<b>\s*{re.escape(keyword)}\s*</b>", formatted_line, re.IGNORECASE):
+                continue
+            formatted_line = re.sub(
+                rf"(^|\n)({re.escape(keyword)})(\s*[:—\-])",
+                rf"\1<b>\2</b>\3",
+                formatted_line,
+                flags=re.IGNORECASE,
+            )
+        lines.append(formatted_line)
+
+    return "\n".join(lines)
+
+
+DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MAX_TOKENS = 650
+DEEPSEEK_TEMPERATURE = 0.65
+
+TAROT_SYSTEM_PROMPT = (
+    "Ты опытный таролог. Толкование расклада из 3 карт Таро: "
+    "1-я — Прошлое, 2-я — Настоящее, 3-я — Будущее. "
+    "Отвечай на русском, мудро и по существу. "
+    "Формат: по 2–3 предложения на каждую карту, затем общее толкование на 3–4 предложения. "
+    "Всего 4–6 абзацев, без списков и повторов."
+)
+
+ICHING_SYSTEM_PROMPT = (
+    "Ты опытный гадатель по Ицзин (Книге Перемен). "
+    "Толкование одной гексаграммы в контексте вопроса пользователя. "
+    "Отвечай на русском, мудро и по существу. "
+    "Формат: краткое значение гексаграммы (2–3 предложения), затем ответ на вопрос (3–4 предложения). "
+    "Всего 3–5 абзацев, без списков и повторов."
+)
+
+FOLLOW_UP_SYSTEM_PROMPT = (
+    "Ты опытный гадатель и таролог. "
+    "Пользователь задаёт уточняющий вопрос по уже проведённому раскладу. "
+    "Отвечай на русском, используя контекст расклада. "
+    "Кратко: 2–4 предложения, без списков и повторов."
+)
+
+TAROT_USER_INSTRUCTION = "Дай толкование этого расклада в контексте вопроса пользователя."
+ICHING_USER_INSTRUCTION = "Дай толкование этой гексаграммы в контексте вопроса пользователя."
+
+
+async def _call_deepseek(messages: list, system_prompt: str) -> str:
+    """Запрос к DeepSeek API."""
+    from main.config_reader import config
+
+    api_key = config.api_key.get_secret_value()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [{"role": "system", "content": system_prompt}, *messages],
+        "max_tokens": DEEPSEEK_MAX_TOKENS,
+        "temperature": DEEPSEEK_TEMPERATURE,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(DEEPSEEK_URL, headers=headers, json=data) as response:
+            if response.status == 200:
+                result = await response.json()
+                response_text = result["choices"][0]["message"]["content"]
+                return format_interpretation_with_bold(response_text)
+            error_text = await response.text()
+            logging.error(f"DeepSeek API error: {response.status} - {error_text}")
+            raise Exception(f"Ошибка API: {response.status}")
 
 
 async def get_chatgpt_response_with_prompt(question: str, system_prompt: str) -> str:
-    """Отправка запроса к ChatGPT API с кастомным системным промптом"""
-    from main.config_reader import config
-    
-    api_key = config.api_key.get_secret_value()
-    
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.8
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as response:
-            if response.status == 200:
-                result = await response.json()
-                response_text = result["choices"][0]["message"]["content"]
-                return format_interpretation_with_bold(response_text)
-            else:
-                error_text = await response.text()
-                logging.error(f"ChatGPT API error: {response.status} - {error_text}")
-                raise Exception(f"Ошибка API: {response.status}")
+    """Отправка запроса к DeepSeek API с кастомным системным промптом."""
+    return await _call_deepseek(
+        [{"role": "user", "content": question}],
+        system_prompt,
+    )
 
 
 async def get_chatgpt_response_with_history(messages: list, system_prompt: str) -> str:
-    """Отправка запроса к ChatGPT API с историей диалога"""
-    from main.config_reader import config
-    
-    api_key = config.api_key.get_secret_value()
-    
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    all_messages = [{"role": "system", "content": system_prompt}] + messages
-    
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": all_messages,
-        "max_tokens": 1000,
-        "temperature": 0.8
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as response:
-            if response.status == 200:
-                result = await response.json()
-                response_text = result["choices"][0]["message"]["content"]
-                return format_interpretation_with_bold(response_text)
-            else:
-                error_text = await response.text()
-                logging.error(f"ChatGPT API error: {response.status} - {error_text}")
-                raise Exception(f"Ошибка API: {response.status}")
+    """Отправка запроса к DeepSeek API с историей диалога."""
+    return await _call_deepseek(messages, system_prompt)

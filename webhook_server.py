@@ -266,7 +266,7 @@ async def webapp_cards_handler(request: Request) -> Response:
 async def _process_webapp_divination(user_id: int, question: str, card_ids: list):
     """Фоновая обработка гадания по картам из мини-приложения"""
     from handlers.tarot_cards import get_card_info, send_card_images
-    from handlers.divination import get_chatgpt_response_with_prompt
+    from handlers.divination import get_chatgpt_response_with_prompt, TAROT_SYSTEM_PROMPT, TAROT_USER_INSTRUCTION
 
     try:
         await send_card_images(bot, None, card_ids, as_media_group=True, user_id=user_id)
@@ -277,16 +277,11 @@ async def _process_webapp_divination(user_id: int, question: str, card_ids: list
             card = get_card_info(card_id)
             cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
 
-        system_prompt = (
-            "Ты опытный таролог. Проведи детальное и мистическое толкование расклада из 3 карт Таро. "
-            "Карты расположены: 1-я — Прошлое, 2-я — Настоящее, 3-я — Будущее. "
-            "Проанализируй каждую карту в контексте вопроса пользователя и дай целостную интерпретацию. "
-            "Отвечай на русском языке, будь мудрым и проникновенным."
-        )
+        system_prompt = TAROT_SYSTEM_PROMPT
         chatgpt_question = (
             f"Вопрос пользователя: {question}\n\n"
             f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            "Дай детальное толкование этого расклада в контексте вопроса пользователя."
+            f"{TAROT_USER_INSTRUCTION}"
         )
 
         chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
