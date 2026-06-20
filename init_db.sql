@@ -1,10 +1,10 @@
 -- =============================================================================
 -- Миграция БД для Max-бота (гадания)
--- Таблицы с префиксом max_ — живут в той же БД tg_bot_db рядом с Telegram-таблицами
+-- Таблицы с префиксом max_ — БД max_bot_db на сервере max_bot (46.16.36.243)
 -- Совместимо с PostgreSQL 13+
 --
 -- Запуск:
---   psql -U tg_bot_user -d tg_bot_db -f init_db.sql
+--   psql -U max_bot_user -d max_bot_db -h localhost -f init_db.sql
 -- =============================================================================
 
 -- 1. max_users — профили пользователей Max
@@ -154,12 +154,8 @@ ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
 
-UPDATE max_payments
-SET reminder_10m_sent_at = COALESCE(reminder_10m_sent_at, NOW()),
-    reminder_1h_sent_at  = COALESCE(reminder_1h_sent_at, NOW()),
-    reminder_3h_sent_at  = COALESCE(reminder_3h_sent_at, NOW()),
-    updated_at = NOW()
-WHERE status IN ('pending', 'canceled');
+-- Одноразовый backfill для старых pending/canceled — только migrations/20260530_payment_reminders.sql
+-- НЕ делать UPDATE здесь: при повторном init_db.sql (миграция, деплой) напоминания «ломаются» без отправки.
 
 -- Миграция: рассылки (активация + Пн/Чт)
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS activation_sent_at TIMESTAMP NULL;

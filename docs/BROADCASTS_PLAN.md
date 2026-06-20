@@ -410,7 +410,7 @@ BROADCAST_CRON_MINUTES = '0,30'
 ## 12. Деплой (когда код будет готов)
 
 ```bash
-psql -U tg_bot_user -d tg_bot_db -f migrations/20260531_broadcasts.sql
+psql -U max_bot_user -d max_bot_db -f migrations/20260531_broadcasts.sql
 # restart max_bot service
 ```
 

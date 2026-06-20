@@ -3,7 +3,7 @@
 ## 📋 Предварительные требования
 
 1. Репозиторий на GitHub: https://github.com/DariaMishina/max_bot
-2. Сервер на Google Cloud с SSH доступом (`dariamishina@35.234.89.2`)
+2. Сервер VM (`dariamishina@46.16.36.243`): max_bot :8081, psy_max :8080, PostgreSQL `max_bot_db`
 3. Systemd на сервере (обычно уже установлен)
 
 ## 🔧 Шаг 1: Настройка сервера
@@ -11,7 +11,7 @@
 ### 1.1. Подключитесь к серверу
 
 ```bash
-ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 ```
 
 ### 1.2. Клонируйте репозиторий (если еще не клонирован)
@@ -243,13 +243,13 @@ GitHub → https://github.com/DariaMishina/max_bot → Settings → Secrets and 
 
 ```bash
 # 1. Создайте новый SSH ключ БЕЗ пароля (нажмите Enter при запросе пароля)
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_deploy_max -N ""
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_deploy -N ""
 
 # 2. Скопируйте публичный ключ на сервер
-ssh-copy-id -i ~/.ssh/id_ed25519_deploy_max.pub dariamishina@35.234.89.2
+ssh-copy-id -i ~/.ssh/id_ed25519_deploy.pub dariamishina@46.16.36.243
 
 # Или вручную:
-cat ~/.ssh/id_ed25519_deploy_max.pub
+cat ~/.ssh/id_ed25519_deploy.pub
 # Скопируйте вывод и на сервере выполните:
 # mkdir -p ~/.ssh
 # echo "ВАШ_ПУБЛИЧНЫЙ_КЛЮЧ" >> ~/.ssh/authorized_keys
@@ -259,19 +259,19 @@ cat ~/.ssh/id_ed25519_deploy_max.pub
 **Проверьте подключение:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_deploy_max dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 # Должно подключиться без запроса пароля
 ```
 
 ### 2.3. Добавьте следующие секреты:
 
-1. **SSH_HOST**: `35.234.89.2`
+1. **SSH_HOST**: `46.16.36.243`
 2. **SSH_USER**: `dariamishina`
 3. **SSH_PRIVATE_KEY**: содержимое приватного ключа БЕЗ пароля
 
 Чтобы получить приватный ключ:
 ```bash
-cat ~/.ssh/id_ed25519_deploy_max
+cat ~/.ssh/id_ed25519_deploy
 ```
 
 **⚠️ ВАЖНО:**
@@ -395,7 +395,7 @@ git push origin main
 Подключитесь к серверу:
 
 ```bash
-ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 cd ~/max_bot
 
 # Проверьте последний коммит
@@ -432,7 +432,7 @@ sudo systemctl restart max-bot.service
 
 1. **Если GitHub Actions упал с ошибкой:**
    ```bash
-   ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+   ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
    cd ~/max_bot
    git pull origin main
    source venv/bin/activate
@@ -504,7 +504,7 @@ git push origin main
 Подключитесь к серверу:
 
 ```bash
-ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 cd ~/max_bot
 
 # Проверьте, что тестовый файл появился (если создавали)
@@ -544,7 +544,7 @@ sudo systemctl is-active max-bot.service
 Если нужно задеплоить вручную:
 
 ```bash
-ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 cd ~/max_bot
 git pull origin main
 source venv/bin/activate
@@ -563,7 +563,7 @@ sudo systemctl restart max-bot.service
 **Проблема: Деплой падает с ошибкой SSH**
 
 1. Проверьте, что SSH ключ правильный в Secrets
-2. Проверьте, что сервер доступен: `ping 35.234.89.2`
+2. Проверьте, что сервер доступен: `ping 46.16.36.243`
 3. Проверьте firewall настройки Google Cloud
 
 **Проблема: Деплой проходит, но бот не перезапускается**
@@ -579,7 +579,7 @@ sudo systemctl restart max-bot.service
 ### Проверка статуса сервиса
 
 ```bash
-ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
+ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 sudo systemctl status max-bot.service
 ```
 
@@ -639,12 +639,12 @@ sudo systemctl stop max-bot.service
 
 ## 📝 Дополнительные настройки
 
-### Порты (max_bot и tg_bot на одном сервере)
+### Порты (max_bot и psy_max на одном сервере)
 
-В **max_bot** вебхук-сервер (ЮKassa, `/api/webapp/cards`) слушает порт из переменной **`PORT`** в `.env`. По умолчанию в коде — **8081**, чтобы не конфликтовать с **tg_bot**, который по умолчанию использует 8080.
+В **max_bot** вебхук-сервер (ЮKassa, `/api/webapp/cards`) слушает порт из переменной **`PORT`** в `.env`. По умолчанию в коде — **8081**, чтобы не конфликтовать с **psy_max**, который использует 8080.
 
 - В `.env` задано `PORT=8081` (при необходимости можно сменить).
-- На том же сервере tg_bot слушает 8080, max_bot — 8081.
+- На том же сервере psy_max слушает 8080, max_bot — 8081.
 
 Проверить, кто слушает порт (ничего не останавливая):
 
@@ -662,7 +662,7 @@ ss -tlnp | grep 8081
 
 **Чтобы запросы шли на вашу VM** (где вебхук уже слушает 8081):
 
-1. Нужен **HTTPS** до этой VM: браузер с `https://dariamishina.github.io` не разрешает запросы на `http://35.234.89.2:8081` (mixed content). Варианты:
+1. Нужен **HTTPS** до этой VM: браузер с `https://dariamishina.github.io` не разрешает запросы на `http://46.16.36.243:8081` (mixed content). Варианты:
    - домен, указывающий на VM, и nginx/caddy с Let's Encrypt;
    - туннель (ngrok, Cloudflare Tunnel) с HTTPS.
 2. После появления HTTPS-URL вашей VM задать его в веб-приложении: в `index.html` перед подключением `app.js` добавить, например:
@@ -732,7 +732,7 @@ gcloud compute firewall-rules create allow-max-bot-webhook \
 
 4. **Проверить доступ снаружи** (с любого компьютера или телефона не в VPN):
    ```bash
-   curl -s -o /dev/null -w "%{http_code}" http://35.234.89.2:8081/health
+   curl -s -o /dev/null -w "%{http_code}" http://46.16.36.243:8081/health
    ```
    Ожидается ответ `200`. Если тестируете с самого сервера: `curl -s http://localhost:8081/health` — должно вернуть `OK`.
 

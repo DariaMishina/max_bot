@@ -4,8 +4,8 @@
 #
 # Использование:
 #   ./internal_reports.sh
-# ssh -i ~/.ssh/id_rsa dariamishina@35.234.89.2
-# psql -U tg_bot_user -d tg_bot_db -h 35.234.89.2
+# ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
+# psql -U max_bot_user -d max_bot_db -h 46.16.36.243
 #
 # Требует переменные окружения:
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
@@ -24,7 +24,7 @@
 #      2.3. По источникам траффика — пока отключено
 #   3. Статистика оплат (succeeded и pending)
 #      3.1. Общая статистика оплат (по статусу)
-#      3.2. Детализация по датам (платежи за последний месяц, первый/повторный)
+#      3.2. Детализация по датам (платежи за последний месяц, все статусы, первый/повторный)
 #      3.3. Разбивка оплат по типу услуги (консультации vs автогадания)
 #      3.4. Личные консультации — список оплативших (для Дианы)
 #   4. Проверка балансов гаданий (пользователи с нулевым балансом)
@@ -85,10 +85,10 @@ if ! command -v psql &> /dev/null; then
 fi
 
 # Парсинг аргументов командной строки
-DB_HOST="${DB_HOST:-35.234.89.2}"
+DB_HOST="${DB_HOST:-46.16.36.243}"
 DB_PORT="${DB_PORT:-5432}"
-DB_NAME="${DB_NAME:-tg_bot_db}"
-DB_USER="${DB_USER:-tg_bot_user}"
+DB_NAME="${DB_NAME:-max_bot_db}"
+DB_USER="${DB_USER:-max_bot_user}"
 DB_PASSWORD="${DB_PASSWORD:-16Dima12}"
 
 while [[ $# -gt 0 ]]; do
@@ -130,6 +130,7 @@ fi
 
 # Экспорт пароля для psql
 export PGPASSWORD="$DB_PASSWORD"
+export PGSSLMODE="${PGSSLMODE:-disable}"
 
 # Проверка подключения к БД
 print_header "Проверка подключения к базе данных"
@@ -449,7 +450,6 @@ SELECT
 FROM max_payments p
 LEFT JOIN max_users u ON p.user_id = u.user_id
 WHERE p.user_id NOT IN $EXCLUDE_USERS
-    AND p.status IN ('succeeded', 'pending')
     AND (p.created_at AT TIME ZONE '$REPORT_TZ_STORED') >= ($MSK_LAST_MONTH AT TIME ZONE '$REPORT_TZ_DISPLAY')
     $EXCLUDE_REFUNDED_P
 ORDER BY p.created_at DESC, p.user_id;
@@ -511,7 +511,7 @@ ORDER BY p.created_at DESC, p.user_id;
 "
 
 execute_query "$QUERY3" "3.1. Общая статистика оплат"
-execute_query "$QUERY3_DETAIL" "3.2. Детализация по датам (последний месяц)"
+execute_query "$QUERY3_DETAIL" "3.2. Детализация по датам (последний месяц, все статусы)"
 execute_query "$QUERY3_BY_SERVICE" "3.3. Разбивка оплат по типу услуги (консультации vs автогадания)"
 execute_query "$QUERY3_CONSULTATIONS" "3.4. Личные консультации — список оплативших (для Дианы)"
 
