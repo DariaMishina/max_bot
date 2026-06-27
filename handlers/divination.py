@@ -306,7 +306,7 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
 
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.CallbackButton("🔮 Карты покажут сами", "tarot_random"))
-    kb.row(buttons.CallbackButton("✍️ Назвать карты", "tarot_name_cards"))
+    kb.row(buttons.CallbackButton("✍️ Написать свои карты", "tarot_name_cards"))
 
     try:
         me = await bot_instance.get_me()
@@ -321,7 +321,7 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
         "Выберите способ гадания:\n"
         "• <b>🔮 Карты покажут сами</b> — случайный расклад\n"
-        "• <b>✍️ Назвать карты</b> — напишите названия трёх карт\n"
+        "• <b>✍️ Написать свои карты</b> — напишите названия трёх карт\n"
         "• <b>🃏 Выбрать карты самой</b> — красивый интерфейс выбора",
         keyboard=kb,
         format='html'
@@ -445,11 +445,11 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     cursor.change_data(data)
     cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
     try:
-        await cb.answer("✍️ Жду названия карт", text="✍️ Жду названия карт", keyboard=[])
+        await cb.answer("✍️ Жду ваши карты", text="✍️ Жду ваши карты", keyboard=[])
     except Exception as e:
         logging.warning(f"cb.answer failed in tarot_name_cards: {e}")
     await bot.send_message(
-        f"✍️ <b>Назовите три карты</b>\n\n"
+        f"✍️ <b>Напишите свои карты</b>\n\n"
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
         "Напишите названия трёх карт через запятую — "
         "например: <i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
@@ -462,7 +462,7 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 
 @router.on_message(filters.state(STATE_SELECTING_CARDS))
 async def handle_cards_input_from_selection(message: aiomax.Message, cursor: fsm.FSMCursor):
-    """Принять названия карт сразу, без нажатия кнопки «Назвать карты»."""
+    """Принять названия карт сразу, без нажатия кнопки «Написать свои карты»."""
     text = (message.content or "").strip()
     if not text or text.startswith("/"):
         return

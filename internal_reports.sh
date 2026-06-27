@@ -45,8 +45,8 @@ NC='\033[0m' # No Color
 # ID пользователей "мы" для исключения (Max-бот)
 EXCLUDE_USERS="(3260473, 129045679, 200748988)"
 
-# Даты/время в отчётах — Europe/Moscow; TIMESTAMP в БД трактуем как UTC (как при NOW() на сервере в UTC)
-REPORT_TZ_STORED='UTC'
+# Даты/время в отчётах — Europe/Moscow; TIMESTAMP в БД уже в МСК (NOW() на сервере в Europe/Moscow)
+REPORT_TZ_STORED='Europe/Moscow'
 REPORT_TZ_DISPLAY='Europe/Moscow'
 MSK_TODAY="(NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date"
 MSK_YESTERDAY="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - 1)"

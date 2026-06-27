@@ -19,9 +19,9 @@ MAX_CARDS_INPUT_ATTEMPTS = 3
 MIN_INPUT_LENGTH = 3
 
 RANK_WORDS: dict[int, list[str]] = {
-    1: ["туз", "ace", "1"],
-    2: ["двойка", "2"],
-    3: ["тройка", "3"],
+    1: ["туз", "ace", "1", "as"],
+    2: ["двойка", "2", "two"],
+    3: ["тройка", "3", "three"],
     4: ["четверка", "4", "четв"],
     5: ["пятерка", "5", "пят"],
     6: ["шестерка", "6", "шест"],
@@ -29,41 +29,162 @@ RANK_WORDS: dict[int, list[str]] = {
     8: ["восьмерка", "8", "восьм"],
     9: ["девятка", "9", "девят"],
     10: ["десятка", "10", "десят"],
-    11: ["паж", "page", "валет"],
-    12: ["рыцарь", "knight"],
-    13: ["королева", "queen"],
-    14: ["король", "king"],
+    11: ["паж", "page", "валет", "принцесса", "вестник", "служанка"],
+    12: ["рыцарь", "knight", "принц", "кавалер", "всадник"],
+    13: ["королева", "queen", "дама"],
+    14: ["король", "king", "царь"],
 }
 
 SUIT_WORDS: dict[str, str] = {
+    # Кубки / Чаши
     "кубков": "Cups",
     "кубки": "Cups",
     "кубок": "Cups",
+    "чаш": "Cups",
+    "чаши": "Cups",
+    "чаша": "Cups",
+    "чаше": "Cups",
     "cups": "Cups",
-    "мечей": "Swords",
+    "cup": "Cups",
+    # Мечи / Клинки / Шпаги
     "мечи": "Swords",
     "меч": "Swords",
+    "меча": "Swords",
+    "клинков": "Swords",
+    "клинки": "Swords",
+    "клинок": "Swords",
+    "шпаг": "Swords",
+    "шпаги": "Swords",
+    "шпага": "Swords",
     "swords": "Swords",
+    "sword": "Swords",
+    # Жезлы / Посохи / Скипетры
     "жезлов": "Wands",
     "жезлы": "Wands",
     "жезл": "Wands",
+    "жезла": "Wands",
     "посохов": "Wands",
     "посохи": "Wands",
+    "посох": "Wands",
+    "посоха": "Wands",
+    "скипетров": "Wands",
+    "скипетры": "Wands",
+    "скипетр": "Wands",
+    "палок": "Wands",
+    "палки": "Wands",
+    "палка": "Wands",
+    "дубин": "Wands",
+    "дубины": "Wands",
+    "дубина": "Wands",
+    "булав": "Wands",
+    "булавы": "Wands",
     "wands": "Wands",
+    "wand": "Wands",
+    "rods": "Wands",
+    "staves": "Wands",
+    # Пентакли / Монеты / Диски / Денарии
     "пентаклей": "Pentacles",
     "пентакли": "Pentacles",
     "пентакль": "Pentacles",
     "монет": "Pentacles",
     "монеты": "Pentacles",
+    "монета": "Pentacles",
     "дисков": "Pentacles",
     "диски": "Pentacles",
+    "диск": "Pentacles",
+    "денариев": "Pentacles",
+    "денарии": "Pentacles",
+    "денарий": "Pentacles",
+    "камней": "Pentacles",
+    "камни": "Pentacles",
+    "камень": "Pentacles",
     "pentacles": "Pentacles",
+    "pentacle": "Pentacles",
+    "coins": "Pentacles",
+    "coin": "Pentacles",
+    "discs": "Pentacles",
+    "disc": "Pentacles",
+}
+
+# Старшие арканы: альтернативные названия из разных колод и школ
+MAJOR_ALIASES: dict[str, str] = {
+    "шут": "00-TheFool",
+    "дурак": "00-TheFool",
+    "fool": "00-TheFool",
+    "маг": "01-TheMagician",
+    "фокусник": "01-TheMagician",
+    "волшебник": "01-TheMagician",
+    "magician": "01-TheMagician",
+    "жрица": "02-TheHighPriestess",
+    "папесса": "02-TheHighPriestess",
+    "верховная жрица": "02-TheHighPriestess",
+    "верховная папесса": "02-TheHighPriestess",
+    "императрица": "03-TheEmpress",
+    "empress": "03-TheEmpress",
+    "император": "04-TheEmperor",
+    "царь": "04-TheEmperor",
+    "emperor": "04-TheEmperor",
+    "иерофант": "05-TheHierophant",
+    "папа": "05-TheHierophant",
+    "жрец": "05-TheHierophant",
+    "первосвященник": "05-TheHierophant",
+    "hierophant": "05-TheHierophant",
+    "влюбленные": "06-TheLovers",
+    "любовники": "06-TheLovers",
+    "lovers": "06-TheLovers",
+    "колесница": "07-TheChariot",
+    "колесничий": "07-TheChariot",
+    "возничий": "07-TheChariot",
+    "chariot": "07-TheChariot",
+    "сила": "08-Strength",
+    "strength": "08-Strength",
+    "отшельник": "09-TheHermit",
+    "старец": "09-TheHermit",
+    "старик": "09-TheHermit",
+    "hermit": "09-TheHermit",
+    "колесо фортуны": "10-WheelOfFortune",
+    "колесо судьбы": "10-WheelOfFortune",
+    "колесо": "10-WheelOfFortune",
+    "фортуна": "10-WheelOfFortune",
+    "wheel of fortune": "10-WheelOfFortune",
+    "справедливость": "11-Justice",
+    "правосудие": "11-Justice",
+    "justice": "11-Justice",
+    "повешенный": "12-TheHangedMan",
+    "hanged man": "12-TheHangedMan",
+    "смерть": "13-Death",
+    "death": "13-Death",
+    "умеренность": "14-Temperance",
+    "воздержание": "14-Temperance",
+    "алхимик": "14-Temperance",
+    "temperance": "14-Temperance",
+    "дьявол": "15-TheDevil",
+    "devil": "15-TheDevil",
+    "башня": "16-TheTower",
+    "неудача": "16-TheTower",
+    "tower": "16-TheTower",
+    "the tower": "16-TheTower",
+    "звезда": "17-TheStar",
+    "star": "17-TheStar",
+    "луна": "18-TheMoon",
+    "moon": "18-TheMoon",
+    "солнце": "19-TheSun",
+    "sun": "19-TheSun",
+    "суд": "20-Judgement",
+    "судный день": "20-Judgement",
+    "воскресение": "20-Judgement",
+    "judgement": "20-Judgement",
+    "judgment": "20-Judgement",
+    "мир": "21-TheWorld",
+    "world": "21-TheWorld",
 }
 
 CARD_PARSE_SYSTEM_PROMPT = (
     "Ты помощник таролога. Определи ровно 3 карты Таро Rider-Waite из текста пользователя "
     "в порядке слева направо (Прошлое, Настоящее, Будущее). "
     "Верни ТОЛЬКО JSON-массив из 3 строк — ID карт из списка ниже. "
+    "Учитывай синонимы: чаши=кубки, посохи/скипетры=жезлы, монеты/диски/денарии=пентакли, "
+    "клинки/шпаги=мечи, дама=королева, папесса=жрица, жрец/папа=иерофант, шут=дурак. "
     "Если карту нельзя однозначно определить, используй null на этой позиции. "
     "Без markdown и пояснений."
 )
@@ -111,31 +232,7 @@ def _build_alias_map() -> dict[str, str]:
                     if suit_key == suit:
                         aliases[normalize_card_text(f"{rank_word} {suit_word}")] = card_id
 
-    extra_major = {
-        "шут": "00-TheFool",
-        "дурак": "00-TheFool",
-        "fool": "00-TheFool",
-        "жрица": "02-TheHighPriestess",
-        "верховная жрица": "02-TheHighPriestess",
-        "папа": "05-TheHierophant",
-        "иерофант": "05-TheHierophant",
-        "влюбленные": "06-TheLovers",
-        "колесница": "07-TheChariot",
-        "колесо фортуны": "10-WheelOfFortune",
-        "колесо": "10-WheelOfFortune",
-        "повешенный": "12-TheHangedMan",
-        "смерть": "13-Death",
-        "умеренность": "14-Temperance",
-        "дьявол": "15-TheDevil",
-        "башня": "16-TheTower",
-        "tower": "16-TheTower",
-        "звезда": "17-TheStar",
-        "луна": "18-TheMoon",
-        "солнце": "19-TheSun",
-        "суд": "20-Judgement",
-        "мир": "21-TheWorld",
-    }
-    for alias, card_id in extra_major.items():
+    for alias, card_id in MAJOR_ALIASES.items():
         aliases[normalize_card_text(alias)] = card_id
 
     return aliases
@@ -149,12 +246,9 @@ def _build_tarot_hint_words() -> frozenset[str]:
     for words in RANK_WORDS.values():
         hints.update(w for w in words if len(w) >= 3)
     hints.update(
-        normalize_card_text(name)
-        for name in (
-            "башня", "дурак", "маг", "императрица", "император", "смерть", "повешенный",
-            "дьявол", "звезда", "луна", "солнце", "суд", "мир", "колесница", "сила",
-            "отшельник", "умеренность", "влюбленные", "жрица", "колесо",
-        )
+        word for alias in MAJOR_ALIASES
+        for word in normalize_card_text(alias).split()
+        if len(word) >= 3
     )
     return frozenset(hints)
 
