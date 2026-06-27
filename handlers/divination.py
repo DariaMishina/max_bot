@@ -440,8 +440,11 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         return
 
     chat_id = cb.message.recipient.chat_id
-    await cb.answer("✍️ Жду названия карт")
     cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
+    try:
+        await cb.answer("✍️ Жду названия карт", text="✍️ Жду названия карт", keyboard=[])
+    except Exception as e:
+        logging.warning(f"cb.answer failed in tarot_name_cards: {e}")
     await bot.send_message(
         f"✍️ <b>Назовите три карты</b>\n\n"
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
@@ -452,6 +455,16 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         keyboard=make_back_to_menu_kb(),
         format='html'
     )
+
+
+@router.on_message(filters.state(STATE_SELECTING_CARDS))
+async def handle_cards_input_from_selection(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Принять названия карт сразу, без нажатия кнопки «Назвать карты»."""
+    text = (message.content or "").strip()
+    if not text or text.startswith("/"):
+        return
+    cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
+    await handle_cards_input(message, cursor)
 
 
 @router.on_message(filters.state(STATE_WAITING_FOR_CARDS_INPUT))

@@ -198,8 +198,53 @@ def parse_single_card(part: str) -> str | None:
     return None
 
 
+def _parse_cards_greedy(text: str) -> list[str] | None:
+    """Извлечь 3 карты из текста через пробелы (жадное сопоставление)."""
+    remaining = normalize_card_text(text)
+    if not remaining:
+        return None
+
+    found: list[str] = []
+    aliases_by_len = sorted(ALIAS_MAP.items(), key=lambda item: len(item[0]), reverse=True)
+
+    while remaining and len(found) < REQUIRED_CARD_COUNT:
+        card_id = None
+        matched_len = 0
+
+        for alias, cid in aliases_by_len:
+            if len(alias) < 2:
+                continue
+            if remaining == alias or remaining.startswith(f"{alias} "):
+                card_id = cid
+                matched_len = len(alias)
+                break
+
+        if not card_id:
+            words = remaining.split()
+            for end in range(min(len(words), 4), 0, -1):
+                part = " ".join(words[:end])
+                card_id = parse_single_card(part)
+                if card_id:
+                    matched_len = len(normalize_card_text(part))
+                    break
+
+        if not card_id:
+            return None
+        if card_id not in found:
+            found.append(card_id)
+        remaining = remaining[matched_len:].strip()
+
+    return found if len(found) == REQUIRED_CARD_COUNT else None
+
+
 def parse_cards_from_aliases(text: str) -> list[str] | None:
     parts = split_card_input(text)
+
+    if len(parts) == 1 and " " in parts[0]:
+        greedy = _parse_cards_greedy(text)
+        if greedy:
+            return greedy
+
     if not parts:
         return None
 
@@ -211,6 +256,10 @@ def parse_cards_from_aliases(text: str) -> list[str] | None:
 
     if len(card_ids) == REQUIRED_CARD_COUNT:
         return card_ids
+
+    greedy = _parse_cards_greedy(text)
+    if greedy:
+        return greedy
     return None
 
 
