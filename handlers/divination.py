@@ -23,6 +23,11 @@ from handlers.tarot_cards import (
     get_all_available_cards, send_card_images, get_card_info, TAROT_CARDS,
     get_random_cards, combine_cards_image
 )
+from handlers.tarot_card_parser import (
+    parse_cards_from_text,
+    format_parsed_cards,
+    REQUIRED_CARD_COUNT,
+)
 from handlers.hexagrams import (
     get_all_available_hexagrams, get_hexagram_image_path,
     send_hexagram_image, get_hexagram_info, HEXAGRAMS
@@ -39,6 +44,7 @@ FOLLOW_UP_LIMIT_PAID = 5
 STATE_CHOOSING_DIVINATION = 'choosing_divination'
 STATE_WAITING_FOR_QUESTION = 'waiting_for_question'
 STATE_SELECTING_CARDS = 'selecting_cards'
+STATE_WAITING_FOR_CARDS_INPUT = 'waiting_for_cards_input'
 STATE_CHATTING = 'chatting'
 
 router = aiomax.Router()
@@ -299,6 +305,7 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
 
     kb = buttons.KeyboardBuilder()
     kb.row(buttons.CallbackButton("🔮 Карты покажут сами", "tarot_random"))
+    kb.row(buttons.CallbackButton("✍️ Назвать карты", "tarot_name_cards"))
 
     try:
         me = await bot_instance.get_me()
@@ -313,11 +320,198 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
         "Выберите способ гадания:\n"
         "• <b>🔮 Карты покажут сами</b> — случайный расклад\n"
+        "• <b>✍️ Назвать карты</b> — напишите названия трёх карт\n"
         "• <b>🃏 Выбрать карты самой</b> — красивый интерфейс выбора",
         keyboard=kb,
         format='html'
     )
     cursor.change_state(STATE_SELECTING_CARDS)
+
+
+async def _finish_tarot_reading(
+    *,
+    bot,
+    chat_id: int,
+    user_id: int,
+    question: str,
+    card_ids: list[str],
+    cursor: fsm.FSMCursor,
+    data: dict,
+    method: str = 'random',
+) -> bool:
+    """Отправить карты, получить толкование, списать гадание."""
+    try:
+        await send_card_images(bot, chat_id, card_ids, as_media_group=True)
+
+        cards_info = []
+        positions = ["Прошлое", "Настоящее", "Будущее"]
+        for i, card_id in enumerate(card_ids):
+            card = get_card_info(card_id)
+            cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
+
+        chatgpt_question = (
+            f"Вопрос пользователя: {question}\n\n"
+            f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
+            f"{TAROT_USER_INSTRUCTION}"
+        )
+        chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, TAROT_SYSTEM_PROMPT)
+
+        balance_before = await get_user_balance(user_id)
+        is_free = balance_before and balance_before['free_divinations_remaining'] > 0 if balance_before else True
+
+        used = await use_divination(user_id)
+        if not used:
+            await bot.send_message(
+                "❌ Произошла ошибка при списании гадания.",
+                chat_id=chat_id,
+                keyboard=make_back_to_menu_kb(),
+            )
+            cursor.clear()
+            return False
+
+        divination_id = await save_divination(
+            user_id=user_id, divination_type="Таро", question=question,
+            selected_cards=card_ids, interpretation=chatgpt_response, is_free=is_free
+        )
+
+        if divination_id:
+            try:
+                await save_conversion(
+                    user_id=user_id, conversion_type='service_usage', divination_type="Таро",
+                    metadata={
+                        'divination_id': divination_id,
+                        'card_ids': card_ids,
+                        'is_free': is_free,
+                        'method': method,
+                    }
+                )
+                import asyncio
+                asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
+            except Exception as e:
+                logging.error(f"Error saving conversion: {e}", exc_info=True)
+
+        conversation_history = [
+            {"role": "user", "content": f"Мой вопрос: {question}"},
+            {"role": "assistant", "content": chatgpt_response}
+        ]
+        data.update({
+            'divination_id': divination_id, 'is_free_divination': is_free,
+            'follow_up_count': 0, 'conversation_history': conversation_history,
+            'original_interpretation': chatgpt_response
+        })
+        cursor.change_data(data)
+
+        cards_names = [get_card_info(cid)['name'] for cid in card_ids]
+        await bot.send_message(
+            f"🃏 <b>Результат гадания на Таро</b>\n\n"
+            f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
+            f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
+            f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
+            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
+            "🔮 Новый расклад — нажми ◀ В меню",
+            chat_id=chat_id,
+            keyboard=make_back_to_menu_kb(),
+            format='html'
+        )
+
+        cursor.change_state(STATE_CHATTING)
+        return True
+
+    except Exception as e:
+        logging.error(f"Error in Tarot reading ({method}): {e}", exc_info=True)
+        await bot.send_message(
+            "❌ Произошла ошибка при гадании. Попробуйте ещё раз.",
+            chat_id=chat_id, keyboard=make_back_to_menu_kb()
+        )
+        cursor.clear()
+        return False
+
+
+@router.on_button_callback(lambda data: data.payload == 'tarot_name_cards')
+async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
+    """Переход к текстовому вводу названий карт."""
+    from main.botdef import bot
+
+    data = cursor.get_data() or {}
+    question = data.get('question', '')
+    if not question:
+        await cb.answer("Пожалуйста, начните гадание заново.")
+        cursor.clear()
+        return
+
+    chat_id = cb.message.recipient.chat_id
+    await cb.answer("✍️ Жду названия карт")
+    cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
+    await bot.send_message(
+        f"✍️ <b>Назовите три карты</b>\n\n"
+        f"Ваш вопрос: <i>«{question}»</i>\n\n"
+        "Напишите названия трёх карт через запятую — "
+        "например: <i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
+        "Порядок: Прошлое → Настоящее → Будущее",
+        chat_id=chat_id,
+        keyboard=make_back_to_menu_kb(),
+        format='html'
+    )
+
+
+@router.on_message(filters.state(STATE_WAITING_FOR_CARDS_INPUT))
+async def handle_cards_input(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Обработка текстового ввода названий карт."""
+    from main.botdef import bot
+
+    text = (message.content or "").strip()
+    if not text or text.startswith("/"):
+        if text == "/cancel":
+            cursor.clear()
+            await message.reply("❌ Гадание отменено.", keyboard=make_back_to_menu_kb())
+        return
+
+    data = cursor.get_data() or {}
+    question = data.get('question', '')
+    user_id = message.sender.user_id
+    chat_id = message.recipient.chat_id
+
+    processing_msg = await message.reply("🔍 Распознаю карты...")
+
+    async def llm_call(user_prompt: str, system_prompt: str) -> str:
+        return await _call_deepseek(
+            [{"role": "user", "content": user_prompt}],
+            system_prompt,
+            max_tokens=200,
+            temperature=0.1,
+            format_output=False,
+        )
+
+    card_ids, source = await parse_cards_from_text(text, call_llm=llm_call)
+
+    try:
+        await bot.delete_message(processing_msg.body.mid)
+    except Exception:
+        pass
+
+    if not card_ids:
+        await message.reply(
+            f"❌ Не удалось распознать {REQUIRED_CARD_COUNT} карты.\n\n"
+            "Напишите три названия через запятую, например:\n"
+            "<i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
+            "Или начните заново через ◀ В меню",
+            keyboard=make_back_to_menu_kb(),
+            format='html'
+        )
+        return
+
+    logging.info(f"Cards parsed via {source} for user {user_id}: {card_ids}")
+    await message.reply(f"🃏 Карты: {format_parsed_cards(card_ids)}\n\n🔮 Толкую расклад...")
+    await _finish_tarot_reading(
+        bot=bot,
+        chat_id=chat_id,
+        user_id=user_id,
+        question=question,
+        card_ids=card_ids,
+        cursor=cursor,
+        data=data,
+        method='manual_text',
+    )
 
 
 @router.on_button_callback(lambda data: data.payload == 'tarot_random')
@@ -337,83 +531,18 @@ async def handle_tarot_random(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     await cb.answer("🔮 Тяну карты...", text="🔮 Тяну карты...", keyboard=[])
     
     try:
-        # Выбираем 3 случайные карты
         card_ids = get_random_cards(3)
-        
-        # Отправляем изображения
         chat_id = cb.message.recipient.chat_id
-        await send_card_images(bot, chat_id, card_ids, as_media_group=True)
-        
-        # ChatGPT толкование
-        cards_info = []
-        positions = ["Прошлое", "Настоящее", "Будущее"]
-        for i, card_id in enumerate(card_ids):
-            card = get_card_info(card_id)
-            cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
-        
-        system_prompt = TAROT_SYSTEM_PROMPT
-        chatgpt_question = (
-            f"Вопрос пользователя: {question}\n\n"
-            f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            f"{TAROT_USER_INSTRUCTION}"
-        )
-        
-        chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
-        
-        # Списываем гадание
-        balance_before = await get_user_balance(user_id)
-        is_free = balance_before and balance_before['free_divinations_remaining'] > 0 if balance_before else True
-        
-        used = await use_divination(user_id)
-        if not used:
-            await bot.send_message("❌ Произошла ошибка при списании гадания.", chat_id=chat_id, keyboard=make_back_to_menu_kb())
-            cursor.clear()
-            return
-        
-        divination_id = await save_divination(
-            user_id=user_id, divination_type="Таро", question=question,
-            selected_cards=card_ids, interpretation=chatgpt_response, is_free=is_free
-        )
-        
-        if divination_id:
-            try:
-                await save_conversion(
-                    user_id=user_id, conversion_type='service_usage', divination_type="Таро",
-                    metadata={'divination_id': divination_id, 'card_ids': card_ids, 'is_free': is_free}
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
-            except Exception as e:
-                logging.error(f"Error saving conversion: {e}", exc_info=True)
-        
-        follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
-        conversation_history = [
-            {"role": "user", "content": f"Мой вопрос: {question}"},
-            {"role": "assistant", "content": chatgpt_response}
-        ]
-        
-        data.update({
-            'divination_id': divination_id, 'is_free_divination': is_free,
-            'follow_up_count': 0, 'conversation_history': conversation_history,
-            'original_interpretation': chatgpt_response
-        })
-        cursor.change_data(data)
-        
-        cards_names = [get_card_info(cid)['name'] for cid in card_ids]
-        await bot.send_message(
-            f"🃏 <b>Результат гадания на Таро</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
-            f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
-            f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
-            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню",
+        await _finish_tarot_reading(
+            bot=bot,
             chat_id=chat_id,
-            keyboard=make_back_to_menu_kb(),
-            format='html'
+            user_id=user_id,
+            question=question,
+            card_ids=card_ids,
+            cursor=cursor,
+            data=data,
+            method='random',
         )
-        
-        cursor.change_state(STATE_CHATTING)
-        
     except Exception as e:
         logging.error(f"Error in Tarot divination: {e}", exc_info=True)
         await bot.send_message(
@@ -469,74 +598,16 @@ async def handle_confirm_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     await cb.answer("🔮 Толкую карты...")
     
     try:
-        # Отправляем изображения
-        await send_card_images(bot, chat_id, selected, as_media_group=True)
-        
-        # ChatGPT
-        cards_info = []
-        positions = ["Прошлое", "Настоящее", "Будущее"]
-        for i, card_id in enumerate(selected):
-            card = get_card_info(card_id)
-            cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
-        
-        system_prompt = TAROT_SYSTEM_PROMPT
-        chatgpt_question = (
-            f"Вопрос пользователя: {question}\n\n"
-            f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            f"{TAROT_USER_INSTRUCTION}"
+        await _finish_tarot_reading(
+            bot=bot,
+            chat_id=chat_id,
+            user_id=user_id,
+            question=question,
+            card_ids=selected,
+            cursor=cursor,
+            data=data,
+            method='manual',
         )
-        
-        chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
-        
-        balance_before = await get_user_balance(user_id)
-        is_free = balance_before and balance_before['free_divinations_remaining'] > 0 if balance_before else True
-        
-        used = await use_divination(user_id)
-        if not used:
-            await bot.send_message("❌ Ошибка при списании гадания.", chat_id=chat_id, keyboard=make_back_to_menu_kb())
-            cursor.clear()
-            return
-        
-        divination_id = await save_divination(
-            user_id=user_id, divination_type="Таро", question=question,
-            selected_cards=selected, interpretation=chatgpt_response, is_free=is_free
-        )
-        
-        if divination_id:
-            try:
-                await save_conversion(
-                    user_id=user_id, conversion_type='service_usage', divination_type="Таро",
-                    metadata={'divination_id': divination_id, 'card_ids': selected, 'is_free': is_free, 'method': 'manual'}
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
-            except Exception as e:
-                logging.error(f"Error saving conversion: {e}", exc_info=True)
-        
-        conversation_history = [
-            {"role": "user", "content": f"Мой вопрос: {question}"},
-            {"role": "assistant", "content": chatgpt_response}
-        ]
-        data.update({
-            'divination_id': divination_id, 'is_free_divination': is_free,
-            'follow_up_count': 0, 'conversation_history': conversation_history,
-            'original_interpretation': chatgpt_response
-        })
-        cursor.change_data(data)
-        
-        cards_names = [get_card_info(cid)['name'] for cid in selected]
-        await bot.send_message(
-            f"🃏 <b>Результат гадания на Таро</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
-            f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
-            f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
-            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню",
-            chat_id=chat_id, keyboard=make_back_to_menu_kb(), format='html'
-        )
-        
-        cursor.change_state(STATE_CHATTING)
-        
     except Exception as e:
         logging.error(f"Error in manual Tarot divination: {e}", exc_info=True)
         await bot.send_message("❌ Ошибка при гадании. Попробуйте ещё раз.", chat_id=chat_id, keyboard=make_back_to_menu_kb())
@@ -824,7 +895,14 @@ TAROT_USER_INSTRUCTION = "Дай толкование этого расклад�
 ICHING_USER_INSTRUCTION = "Дай толкование этой гексаграммы в контексте вопроса пользователя."
 
 
-async def _call_deepseek(messages: list, system_prompt: str) -> str:
+async def _call_deepseek(
+    messages: list,
+    system_prompt: str,
+    *,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    format_output: bool = True,
+) -> str:
     """Запрос к DeepSeek API."""
     from main.config_reader import config
 
@@ -836,8 +914,8 @@ async def _call_deepseek(messages: list, system_prompt: str) -> str:
     data = {
         "model": DEEPSEEK_MODEL,
         "messages": [{"role": "system", "content": system_prompt}, *messages],
-        "max_tokens": DEEPSEEK_MAX_TOKENS,
-        "temperature": DEEPSEEK_TEMPERATURE,
+        "max_tokens": max_tokens if max_tokens is not None else DEEPSEEK_MAX_TOKENS,
+        "temperature": temperature if temperature is not None else DEEPSEEK_TEMPERATURE,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -845,7 +923,9 @@ async def _call_deepseek(messages: list, system_prompt: str) -> str:
             if response.status == 200:
                 result = await response.json()
                 response_text = result["choices"][0]["message"]["content"]
-                return format_interpretation_with_bold(response_text)
+                if format_output:
+                    return format_interpretation_with_bold(response_text)
+                return response_text
             error_text = await response.text()
             logging.error(f"DeepSeek API error: {response.status} - {error_text}")
             raise Exception(f"Ошибка API: {response.status}")
