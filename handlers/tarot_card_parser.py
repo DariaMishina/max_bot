@@ -15,6 +15,8 @@ from typing import Callable, Awaitable
 from handlers.tarot_cards import TAROT_CARDS, get_card_info
 
 REQUIRED_CARD_COUNT = 3
+MAX_CARDS_INPUT_ATTEMPTS = 3
+MIN_INPUT_LENGTH = 3
 
 RANK_WORDS: dict[int, list[str]] = {
     1: ["туз", "ace", "1"],
@@ -142,6 +144,24 @@ def _build_alias_map() -> dict[str, str]:
 ALIAS_MAP = _build_alias_map()
 
 
+def _build_tarot_hint_words() -> frozenset[str]:
+    hints: set[str] = set(SUIT_WORDS.keys())
+    for words in RANK_WORDS.values():
+        hints.update(w for w in words if len(w) >= 3)
+    hints.update(
+        normalize_card_text(name)
+        for name in (
+            "башня", "дурак", "маг", "императрица", "император", "смерть", "повешенный",
+            "дьявол", "звезда", "луна", "солнце", "суд", "мир", "колесница", "сила",
+            "отшельник", "умеренность", "влюбленные", "жрица", "колесо",
+        )
+    )
+    return frozenset(hints)
+
+
+TAROT_HINT_WORDS = _build_tarot_hint_words()
+
+
 def split_card_input(text: str) -> list[str]:
     normalized = text.strip()
     normalized = re.sub(r"[\n;|/\\]+", ",", normalized)
@@ -196,6 +216,48 @@ def parse_single_card(part: str) -> str | None:
             return card_id
 
     return None
+
+
+def count_identified_cards(text: str) -> int:
+    """Сколько карт удалось распознать локально (0–3), без LLM."""
+    parts = split_card_input(text)
+    card_ids: list[str] = []
+    for part in parts:
+        card_id = parse_single_card(part)
+        if card_id and card_id not in card_ids:
+            card_ids.append(card_id)
+    if len(card_ids) >= REQUIRED_CARD_COUNT:
+        return REQUIRED_CARD_COUNT
+
+    greedy = _parse_cards_greedy(text)
+    if greedy:
+        return len(greedy)
+    return len(card_ids)
+
+
+def should_use_llm_fallback(text: str) -> bool:
+    """
+    Есть ли смысл звать LLM: отсечь явный мусор без таро-лексики и без частичных совпадений.
+    """
+    stripped = text.strip()
+    if len(stripped) < MIN_INPUT_LENGTH:
+        return False
+
+    norm = normalize_card_text(text)
+    if not re.search(r"[a-zа-я]", norm, re.IGNORECASE):
+        return False
+
+    if count_identified_cards(text) >= 1:
+        return True
+
+    if any(hint in norm for hint in TAROT_HINT_WORDS):
+        return True
+
+    for alias in ALIAS_MAP:
+        if len(alias) >= 4 and alias in norm:
+            return True
+
+    return False
 
 
 def _parse_cards_greedy(text: str) -> list[str] | None:
@@ -331,7 +393,7 @@ async def parse_cards_from_text(
 ) -> tuple[list[str] | None, str]:
     """
     Распознать 3 карты из текста.
-    Возвращает (card_ids, source) где source: 'alias' | 'llm' | 'failed'.
+    Возвращает (card_ids, source) где source: 'alias' | 'llm' | 'rejected' | 'failed'.
     """
     alias_result = parse_cards_from_aliases(text)
     if alias_result:
@@ -339,6 +401,9 @@ async def parse_cards_from_text(
 
     if call_llm is None:
         return None, "failed"
+
+    if not should_use_llm_fallback(text):
+        return None, "rejected"
 
     llm_result = await parse_cards_with_llm(text, call_llm)
     if llm_result:

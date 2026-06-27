@@ -27,6 +27,7 @@ from handlers.tarot_card_parser import (
     parse_cards_from_text,
     format_parsed_cards,
     REQUIRED_CARD_COUNT,
+    MAX_CARDS_INPUT_ATTEMPTS,
 )
 from handlers.hexagrams import (
     get_all_available_hexagrams, get_hexagram_image_path,
@@ -440,6 +441,8 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         return
 
     chat_id = cb.message.recipient.chat_id
+    data['cards_input_attempts'] = 0
+    cursor.change_data(data)
     cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
     try:
         await cb.answer("✍️ Жду названия карт", text="✍️ Жду названия карт", keyboard=[])
@@ -463,6 +466,9 @@ async def handle_cards_input_from_selection(message: aiomax.Message, cursor: fsm
     text = (message.content or "").strip()
     if not text or text.startswith("/"):
         return
+    data = cursor.get_data() or {}
+    data['cards_input_attempts'] = 0
+    cursor.change_data(data)
     cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
     await handle_cards_input(message, cursor)
 
@@ -503,15 +509,44 @@ async def handle_cards_input(message: aiomax.Message, cursor: fsm.FSMCursor):
         pass
 
     if not card_ids:
+        attempts = data.get('cards_input_attempts', 0) + 1
+        data['cards_input_attempts'] = attempts
+        cursor.change_data(data)
+
+        if attempts >= MAX_CARDS_INPUT_ATTEMPTS:
+            cursor.clear()
+            await message.reply(
+                "❌ Три неудачные попытки — гадание отменено.\n\n"
+                "Начните новый расклад через ◀ В меню.",
+                keyboard=make_back_to_menu_kb(),
+                format='html',
+            )
+            return
+
+        remaining = MAX_CARDS_INPUT_ATTEMPTS - attempts
+        if source == "rejected":
+            await message.reply(
+                "❌ Не похоже на названия карт Таро.\n\n"
+                "Напишите три карты, например:\n"
+                "<i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
+                f"Осталось попыток: {remaining}",
+                keyboard=make_back_to_menu_kb(),
+                format='html',
+            )
+            return
+
         await message.reply(
             f"❌ Не удалось распознать {REQUIRED_CARD_COUNT} карты.\n\n"
             "Напишите три названия через запятую, например:\n"
             "<i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
-            "Или начните заново через ◀ В меню",
+            f"Осталось попыток: {remaining}",
             keyboard=make_back_to_menu_kb(),
-            format='html'
+            format='html',
         )
         return
+
+    data['cards_input_attempts'] = 0
+    cursor.change_data(data)
 
     logging.info(f"Cards parsed via {source} for user {user_id}: {card_ids}")
     await message.reply(f"🃏 Карты: {format_parsed_cards(card_ids)}\n\n🔮 Толкую расклад...")
