@@ -696,8 +696,24 @@ def format_interpretation_with_bold(text: str) -> str:
         (re.compile(r"^будущее\b", re.IGNORECASE), "Будущее"),
         (re.compile(r"итоговая\s+интерпретация", re.IGNORECASE), "Общее толкование"),
         (re.compile(r"общее\s+толкование", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^итог\b", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^заключение\b", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^в\s+целом\b", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^вывод\b", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^общий\s+вывод\b", re.IGNORECASE), "Общее толкование"),
+        (re.compile(r"^резюме\b", re.IGNORECASE), "Общее толкование"),
     ]
     keywords = ["Прошлое", "Настоящее", "Будущее", "Общее толкование"]
+    summary_markdown = re.compile(
+        r"\*\*(?:Общее\s+толкование|Итог(?:овое\s+толкование)?|Заключение|"
+        r"В\s+целом|Вывод|Общий\s+вывод|Резюме)\s*:?\*\*",
+        re.IGNORECASE,
+    )
+    summary_plain = re.compile(
+        r"(?<![\w>])(?:Итог(?:овое\s+толкование)?|Заключение|В\s+целом|"
+        r"Вывод|Общий\s+вывод|Резюме)(\s*[:—\-])",
+        re.IGNORECASE,
+    )
 
     def _section_label(title: str) -> str | None:
         clean = re.sub(r"\*+", "", title).strip()
@@ -725,6 +741,13 @@ def format_interpretation_with_bold(text: str) -> str:
         if len(match.group(1)) == 1:
             return f"<b>{main_part}</b>{suffix}"
         return f"<b>{main_part}</b>{suffix}"
+
+    def _normalize_summary_headers(line: str) -> str:
+        line = summary_markdown.sub("<b>Общее толкование:</b>", line)
+        return summary_plain.sub(r"<b>Общее толкование</b>\1", line)
+
+    def _markdown_bold_to_html(line: str) -> str:
+        return re.sub(r"\*\*([^*]+?)\*\*", r"<b>\1</b>", line)
 
     lines = []
     for line in text.splitlines():
@@ -761,13 +784,15 @@ def format_interpretation_with_bold(text: str) -> str:
                 formatted_line,
                 flags=re.IGNORECASE,
             )
+        formatted_line = _normalize_summary_headers(formatted_line)
+        formatted_line = _markdown_bold_to_html(formatted_line)
         lines.append(formatted_line)
 
     return "\n".join(lines)
 
 
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEEPSEEK_MAX_TOKENS = 650
 DEEPSEEK_TEMPERATURE = 0.65
 
@@ -775,8 +800,9 @@ TAROT_SYSTEM_PROMPT = (
     "Ты опытный таролог. Толкование расклада из 3 карт Таро: "
     "1-я — Прошлое, 2-я — Настоящее, 3-я — Будущее. "
     "Отвечай на русском, мудро и по существу. "
-    "Формат: по 2–3 предложения на каждую карту, затем общее толкование на 3–4 предложения. "
-    "Всего 4–6 абзацев, без списков и повторов."
+    "Формат: заголовки «Прошлое:», «Настоящее:», «Будущее:», «Общее толкование:» — "
+    "по 2–3 предложения на каждую карту, затем общее толкование на 3–4 предложения. "
+    "Всего 4–6 абзацев, без markdown и списков."
 )
 
 ICHING_SYSTEM_PROMPT = (
