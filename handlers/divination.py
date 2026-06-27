@@ -793,7 +793,7 @@ def format_interpretation_with_bold(text: str) -> str:
 
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
-DEEPSEEK_MAX_TOKENS = 650
+DEEPSEEK_MAX_TOKENS = 1200
 DEEPSEEK_TEMPERATURE = 0.65
 
 TAROT_SYSTEM_PROMPT = (
