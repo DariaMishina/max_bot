@@ -22,17 +22,9 @@ from main.database import (
     get_all_users,
     get_paid_users,
     is_send_blocked_error,
-    get_users_for_div_reminder_broadcast,
-    get_users_for_activation_broadcast,
-    mark_activation_sent,
-    mark_div_reminder_broadcast_sent,
-    DIV_REMINDER_SKIP_SEGMENTS,
-    DIV_REMINDER_SEGMENT_ACTIVE,
-    DIV_REMINDER_SEGMENT_EXPIRED,
-    DIV_REMINDER_SEGMENT_PAYWALL,
-    DIV_REMINDER_SEGMENT_FREE_RETURN,
+    mark_expired_access_reminder_sent,
+    get_expired_access_reminder_stage_for_user,
 )
-from main.broadcast_schedule import is_user_due_in_tick, is_same_msk_day
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,7 +107,7 @@ async def send_message_to_multiple_users(
 async def send_payment_reminder(user_id: int, stage: str = '10m'):
     """Напоминание об оплате с кнопкой «Оплатить».
 
-    stage: '10m' | '1h' | '3h' — этап автоматической рассылки.
+    stage: '10m' | '1h' | '3h' | '24h' — этап автоматической рассылки.
     """
     texts = {
         '10m': (
@@ -131,6 +123,10 @@ async def send_payment_reminder(user_id: int, stage: str = '10m'):
             "Если сейчас не время — ничего страшного. "
             "Когда захочешь вернуться, нажми «Оплатить» ниже."
         ),
+        '24h': (
+            "Прошли сутки — доступ к раскладам всё ещё можно открыть 🔮\n\n"
+            "Если захочешь вернуться, нажми «Оплатить» ниже."
+        ),
     }
     text = texts.get(stage, texts['10m'])
     kb = buttons.KeyboardBuilder()
@@ -138,6 +134,186 @@ async def send_payment_reminder(user_id: int, stage: str = '10m'):
 
     print(f"📤 Отправляю напоминание об оплате ({stage}) пользователю {user_id}...")
     return await send_message_to_user(user_id, text, keyboard=kb)
+
+
+async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d'):
+    """Мягкое напоминание платнику, который давно не делал расклад."""
+    texts = {
+        '1d': (
+            "Привет 🔮\n\n"
+            "Просто напомню — карты здесь, если захочется новый расклад.\n\n"
+            "Можно спросить о чём угодно ✨"
+        ),
+        '3d': (
+            "Давно не раскладывали 🔮\n\n"
+            "Если что-то крутится в голове — можешь спросить у карт. Я рядом 💫"
+        ),
+        '5d': (
+            "Привет! Доступ к раскладам активен — можешь вернуться когда удобно.\n\n"
+            "Иногда один вопрос стоит целого разговора 🔮"
+        ),
+        '10d': (
+            "Просто заглянула 🔮\n\n"
+            "Если захочешь снова спросить у карт — я здесь. Без спешки ✨"
+        ),
+    }
+    text = texts.get(stage, texts['1d'])
+    print(f"📤 Отправляю paid inactivity nudge ({stage}) пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, format=None)
+
+
+async def send_free_user_nudge(user_id: int, category: str, stage: str):
+    """Nudge для бесплатных пользователей (C1–C4)."""
+    if category == 'c1':
+        from keyboards.main_menu import make_main_menu
+        texts = {
+            '1h': (
+                "Привет 🔮\n\n"
+                "Ты заходил(а), но мы ещё не погадали вместе.\n\n"
+                "Задай первый вопрос — карты уже ждут ✨"
+            ),
+            '3h': (
+                "Можно начать с простого: «Что мне важно знать сегодня?» 🔮\n\n"
+                "Я рядом."
+            ),
+            '24h': (
+                "Если захочешь попробовать — просто нажми «Новый расклад» в меню.\n\n"
+                "Я здесь, когда будешь готов(а) 💫"
+            ),
+        }
+        text = texts.get(stage, texts['1h'])
+        return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
+
+    if category == 'c2':
+        texts = {
+            '3h': (
+                "Мы не договорили 🔮\n\n"
+                "Хочешь задать ещё один вопрос картам? "
+                "У тебя остались бесплатные расклады ✨"
+            ),
+            '24h': (
+                "У тебя ещё есть бесплатные расклады — "
+                "можешь использовать, когда будет удобно 💫"
+            ),
+            '48h': (
+                "Просто напоминаю: бесплатные расклады ещё доступны.\n\n"
+                "Загляни, если нужна ясность 🔮"
+            ),
+        }
+        text = texts.get(stage, texts['3h'])
+        return await send_message_to_user(user_id, text, format=None)
+
+    if category == 'c3':
+        from keyboards.pay import make_payment_kb
+        texts = {
+            '1h': (
+                "Бесплатные расклады закончились — но вопросы к картам никуда не делись 🔮\n\n"
+                "Выбери пакет и продолжай ✨"
+            ),
+            '3h': (
+                "Если сейчас нужна ясность — доступ можно открыть за пару минут 💫"
+            ),
+            '24h': (
+                "Карты ждут твоего вопроса 🔮\n\n"
+                "Нажми «Оплатить» и продолжай раскладывать ✨"
+            ),
+            '48h': (
+                "Последнее: если захочешь вернуться — кнопка ниже.\n\n"
+                "Без спешки 💫"
+            ),
+        }
+        text = texts.get(stage, texts['1h'])
+        payment_text = _broadcast_payment_text()
+        try:
+            from main.conversions import save_paywall_conversion
+            from main.metrika_mp import send_conversion_event
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="free_nudge_c3",
+                metadata={'category': 'c3', 'stage': stage, 'sent_via': 'nudge'},
+            )
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+        await bot.send_message(text, user_id=user_id, format=None)
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        return True
+
+    if category == 'c4':
+        texts = {
+            '3d': (
+                "Привет 🔮\n\n"
+                "Давно не раскладывали. Если что-то крутится в голове — "
+                "можешь спросить у карт ✨"
+            ),
+            '7d': (
+                "Карты здесь, если понадобится ясность.\n\n"
+                "Возвращайся, когда будет удобно 💫"
+            ),
+        }
+        text = texts.get(stage, texts['3d'])
+        return await send_message_to_user(user_id, text, format=None)
+
+    logging.warning(f"Unknown free nudge category {category} for user {user_id}")
+    return False
+
+
+async def send_expired_access_reminder(
+    user_id: int,
+    stage: str = 'day0',
+    *,
+    sent_via: str = 'send_message_script',
+):
+    """Напоминание пользователям с истёкшим платным доступом — серия day0–day3."""
+    from keyboards.pay import make_payment_kb
+    from main.conversions import save_paywall_conversion
+
+    texts = {
+        'day0': (
+            "Привет! 💫\n\n"
+            "Твои расклады закончились, но карты всё ещё помнят тебя.\n\n"
+            "Если снова нужна ясность — я здесь ✨"
+        ),
+        'day1': (
+            "Карты заметили, что ты давно не задавал(а) вопросов 🔮\n\n"
+            "Может, пора?"
+        ),
+        'day2': (
+            "Иногда один расклад помогает увидеть то, что не замечаешь.\n\n"
+            "Я рядом, когда будешь готов(а) 💫"
+        ),
+        'day3': (
+            "Последнее: если захочешь вернуться — нажми кнопку ниже.\n\n"
+            "Без спешки ✨"
+        ),
+    }
+    reminder_text = texts.get(stage, texts['day0'])
+    payment_text = _broadcast_payment_text()
+
+    print(f"📤 Отправляю напоминание об истёкшем доступе ({stage}) пользователю {user_id}...")
+    try:
+        try:
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="expired_access_reminder",
+                metadata={
+                    'reminder_type': 'expired_access_reminder',
+                    'stage': stage,
+                    'sent_via': sent_via,
+                },
+            )
+            from main.metrika_mp import send_conversion_event
+            await send_conversion_event(user_id, 'paywall')
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
+        await bot.send_message(reminder_text, user_id=user_id, format=None)
+        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        print(f"✅ Напоминание об истёкшем доступе ({stage}) отправлено пользователю {user_id}")
+        return True
+    except Exception as e:
+        _handle_send_error(user_id, e, "напоминания об истёкшем доступе")
+        return False
 
 
 async def send_no_divinations_reminder(
@@ -244,176 +420,14 @@ async def send_expired_sub_reminder(
     *,
     sent_via: str = 'send_message_script',
     segment: Optional[str] = None,
+    stage: Optional[str] = None,
 ):
-    """Напоминание пользователям, у которых закончился платный доступ."""
-    from keyboards.pay import make_payment_kb
-    from main.conversions import save_paywall_conversion
-
-    reminder_text = (
-        "Привет! 💫\n\n"
-        "Твои расклады закончились, но вопросы к картам — нет.\n\n"
-        "Если снова нужна ясность — я здесь. "
-        "Можно вернуться к любой теме, которая сейчас важна ✨"
+    """Alias для ручной отправки — делегирует в send_expired_access_reminder."""
+    return await send_expired_access_reminder(
+        user_id,
+        stage=stage or 'day0',
+        sent_via=sent_via,
     )
-    payment_text = _broadcast_payment_text()
-
-    print(f"📤 Отправляю напоминание об истёкшем доступе пользователю {user_id}...")
-    try:
-        metadata = {'reminder_type': 'expired_sub_reminder', 'sent_via': sent_via}
-        if segment:
-            metadata['segment'] = segment
-        try:
-            await save_paywall_conversion(
-                user_id=user_id,
-                paywall_source="expired_sub_reminder",
-                metadata=metadata,
-            )
-            from main.metrika_mp import send_conversion_event
-            await send_conversion_event(user_id, 'paywall')
-        except Exception as e:
-            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
-
-        await bot.send_message(reminder_text, user_id=user_id, format=None)
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
-        print(f"✅ Напоминание об истёкшем доступе отправлено пользователю {user_id}")
-        return True
-    except Exception as e:
-        _handle_send_error(user_id, e, "напоминания об истёкшем доступе")
-        return False
-
-
-DIV_REMINDER_SENDERS = {
-    DIV_REMINDER_SEGMENT_ACTIVE: send_gentle_nudge,
-    DIV_REMINDER_SEGMENT_EXPIRED: send_expired_sub_reminder,
-    DIV_REMINDER_SEGMENT_PAYWALL: send_no_divinations_reminder,
-    DIV_REMINDER_SEGMENT_FREE_RETURN: send_free_return_nudge,
-}
-
-BROADCAST_SEND_DELAY_SEC = 0.1
-
-
-def _init_broadcast_results() -> dict:
-    return {
-        'sent': 0,
-        'failed': 0,
-        'blocked': 0,
-        'skipped': 0,
-        'skipped_time': 0,
-        'skipped_already_sent': 0,
-        'by_segment': {},
-    }
-
-
-async def _send_div_reminder_for_segment(user_id: int, segment: str) -> bool:
-    """Отправка по сегменту с metadata для paywall-сценариев."""
-    if segment in (DIV_REMINDER_SEGMENT_EXPIRED, DIV_REMINDER_SEGMENT_PAYWALL):
-        sender = DIV_REMINDER_SENDERS[segment]
-        return await sender(user_id, sent_via='broadcast', segment=segment)
-    sender = DIV_REMINDER_SENDERS.get(segment)
-    if not sender:
-        return False
-    return await sender(user_id)
-
-
-async def send_activation_broadcast() -> dict:
-    """
-    Welcome-активация: ≥24ч после регистрации, без гаданий.
-    Отправка в персональный слот 10:00–20:00 MSK (тик каждые 30 мин).
-    """
-    results = _init_broadcast_results()
-    targets = await get_users_for_activation_broadcast()
-    logging.info(f"Activation broadcast tick: {len(targets)} eligible users")
-
-    for target in targets:
-        uid = target['user_id']
-        last_active_at = target.get('last_active_at')
-
-        if not is_user_due_in_tick(uid, last_active_at):
-            results['skipped_time'] += 1
-            continue
-
-        try:
-            success = await send_activation_nudge(uid)
-            if success:
-                await mark_activation_sent(uid)
-                results['sent'] += 1
-            else:
-                results['blocked'] += 1
-            await asyncio.sleep(BROADCAST_SEND_DELAY_SEC)
-        except Exception as e:
-            logging.error(f"Error in activation broadcast for user {uid}: {e}", exc_info=True)
-            results['failed'] += 1
-
-    if any(v for k, v in results.items() if k != 'by_segment' and v):
-        logging.info(f"Activation broadcast tick results: {results}")
-    return results
-
-
-async def send_divination_reminder_broadcast() -> dict:
-    """
-    Сегментированная рассылка Пн/Чт.
-    Отправка в персональный слот 10:00–20:00 MSK (тик каждые 30 мин).
-    """
-    results = _init_broadcast_results()
-    targets = await get_users_for_div_reminder_broadcast()
-    logging.info(f"Divination-reminder broadcast tick: {len(targets)} users loaded")
-
-    for target in targets:
-        uid = target['user_id']
-        segment = target['segment']
-        last_active_at = target.get('last_active_at')
-
-        if segment not in results['by_segment']:
-            results['by_segment'][segment] = {'sent': 0, 'failed': 0, 'blocked': 0}
-
-        if segment in DIV_REMINDER_SKIP_SEGMENTS:
-            results['skipped'] += 1
-            continue
-
-        if is_same_msk_day(target.get('last_div_reminder_broadcast_at')):
-            results['skipped_already_sent'] += 1
-            continue
-
-        if not is_user_due_in_tick(uid, last_active_at):
-            results['skipped_time'] += 1
-            continue
-
-        if segment not in DIV_REMINDER_SENDERS:
-            logging.warning(f"Unknown broadcast segment '{segment}' for user {uid}, skipping")
-            results['skipped'] += 1
-            continue
-
-        try:
-            success = await _send_div_reminder_for_segment(uid, segment)
-            if success:
-                await mark_div_reminder_broadcast_sent(uid)
-                results['sent'] += 1
-                results['by_segment'][segment]['sent'] += 1
-            else:
-                results['blocked'] += 1
-                results['by_segment'][segment]['blocked'] += 1
-            await asyncio.sleep(BROADCAST_SEND_DELAY_SEC)
-        except Exception as e:
-            logging.error(
-                f"Error in divination-reminder broadcast for user {uid} "
-                f"(segment={segment}): {e}",
-                exc_info=True,
-            )
-            results['failed'] += 1
-            results['by_segment'][segment]['failed'] += 1
-
-    if any(v for k, v in results.items() if k != 'by_segment' and v) or results['by_segment']:
-        logging.info(f"Divination-reminder broadcast tick results: {results}")
-    return results
-
-
-async def send_no_divinations_broadcast() -> dict:
-    """Устаревший alias — используйте send_divination_reminder_broadcast()."""
-    logging.warning(
-        "send_no_divinations_broadcast() is deprecated; "
-        "use send_divination_reminder_broadcast() for scheduled ticks"
-    )
-    return await send_divination_reminder_broadcast()
 
 
 async def send_discussion_announcement(user_id: int):
@@ -942,7 +956,10 @@ async def main():
         elif args.expired_sub:
             print(f"🚀 Отправка напоминаний об истёкшем доступе для {total} пользователя(ей)...")
             for uid in args.user_id:
-                await send_expired_sub_reminder(uid)
+                stage = await get_expired_access_reminder_stage_for_user(uid) or 'day0'
+                success = await send_expired_access_reminder(uid, stage=stage)
+                if success:
+                    await mark_expired_access_reminder_sent(uid, stage)
                 await asyncio.sleep(0.05)
 
         elif args.discussion:

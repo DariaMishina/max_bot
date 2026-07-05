@@ -296,14 +296,19 @@ async def use_divination(user_id: int) -> bool:
                 
                 # Если есть платные, тратим их
                 if balance['paid_divinations_remaining'] > 0:
+                    last_paid = balance['paid_divinations_remaining'] == 1
                     update_query = f"""
                         UPDATE {balances_table}
                         SET paid_divinations_remaining = paid_divinations_remaining - 1,
                             total_divinations_used = total_divinations_used + 1,
+                            access_expired_at = CASE
+                                WHEN $2 THEN COALESCE(access_expired_at, NOW())
+                                ELSE access_expired_at
+                            END,
                             updated_at = NOW()
                         WHERE user_id = $1
                     """
-                    await conn.execute(update_query, user_id)
+                    await conn.execute(update_query, user_id, last_paid)
                     logging.info(f"Paid divination used for user {user_id}")
                     return True
                 
@@ -639,7 +644,20 @@ PAYMENT_REMINDER_STAGES = {
     '10m': (10, 'reminder_10m_sent_at'),
     '1h': (60, 'reminder_1h_sent_at'),
     '3h': (180, 'reminder_3h_sent_at'),
+    '24h': (1440, 'reminder_24h_sent_at'),
 }
+
+
+async def ensure_payments_reminder_columns() -> None:
+    """Добавить колонку reminder_24h_sent_at для платежей."""
+    payments_table = get_table_name("payments")
+    try:
+        await Database.execute_query(
+            f"ALTER TABLE {payments_table} ADD COLUMN IF NOT EXISTS reminder_24h_sent_at TIMESTAMP NULL"
+        )
+    except Exception as e:
+        logging.error(f"Error ensuring payments reminder columns: {e}", exc_info=True)
+        raise
 
 
 async def get_payments_due_for_reminder(stage: str) -> List[Dict[str, Any]]:
@@ -663,6 +681,7 @@ async def get_payments_due_for_reminder(stage: str) -> List[Dict[str, Any]]:
     users_table = get_table_name("users")
 
     try:
+        await ensure_payments_reminder_columns()
         query = f"""
             SELECT p.payment_id, p.user_id, p.package_id, p.status, p.created_at
             FROM {payments_table} p
@@ -800,186 +819,460 @@ async def get_all_users(include_blocked: bool = False, include_unsubscribed_dail
         return []
 
 
-DIV_REMINDER_SEGMENT_ACTIVE = 'active_subscriber'
-DIV_REMINDER_SEGMENT_EXPIRED = 'expired_sub'
-DIV_REMINDER_SEGMENT_PAYWALL = 'paywall'
-DIV_REMINDER_SEGMENT_FREE_RETURN = 'free_return'
-DIV_REMINDER_SEGMENT_SKIP_PENDING = 'skip_pending'
-DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS = 'skip_no_divinations'
+FREE_DIVINATIONS_START = 3
 
-DIV_REMINDER_SKIP_SEGMENTS = frozenset({
-    DIV_REMINDER_SEGMENT_SKIP_PENDING,
-    DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS,
-})
+_users_nudge_columns_ensured = False
+_user_balances_nudge_columns_ensured = False
 
 
-async def get_users_for_div_reminder_broadcast() -> List[Dict[str, Any]]:
+async def ensure_users_nudge_columns() -> None:
+    """Добавить колонки max_users для event-driven nudge-рассылок."""
+    global _users_nudge_columns_ensured
+    if _users_nudge_columns_ensured:
+        return
+
+    users_table = get_table_name("users")
+    try:
+        await Database.execute_query(
+            f"""
+            ALTER TABLE {users_table}
+            ADD COLUMN IF NOT EXISTS paid_inactivity_1d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS paid_inactivity_3d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS paid_inactivity_5d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS paid_inactivity_10d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c1_1h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c1_3h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c1_24h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c2_3h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c2_24h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c2_48h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c3_1h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c3_3h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c3_24h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c3_48h_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c4_3d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS free_nudge_c4_7d_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS paywall_reached_at TIMESTAMP NULL
+            """
+        )
+        _users_nudge_columns_ensured = True
+    except Exception as e:
+        logging.error(f"Error ensuring users nudge columns: {e}", exc_info=True)
+        raise
+
+
+async def ensure_user_balances_nudge_columns() -> None:
+    """Добавить колонки max_user_balances для nudge-рассылок."""
+    global _user_balances_nudge_columns_ensured
+    if _user_balances_nudge_columns_ensured:
+        return
+
+    balances_table = get_table_name("user_balances")
+    try:
+        await Database.execute_query(
+            f"""
+            ALTER TABLE {balances_table}
+            ADD COLUMN IF NOT EXISTS access_expired_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS expired_access_reminder_for_until TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS expired_access_day0_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS expired_access_day1_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS expired_access_day2_sent_at TIMESTAMP NULL,
+            ADD COLUMN IF NOT EXISTS expired_access_day3_sent_at TIMESTAMP NULL
+            """
+        )
+        _user_balances_nudge_columns_ensured = True
+    except Exception as e:
+        logging.error(f"Error ensuring user_balances nudge columns: {e}", exc_info=True)
+        raise
+
+
+def _open_payment_exists_sql(payments_table: str) -> str:
+    return f"""
+        EXISTS (
+            SELECT 1 FROM {payments_table} p
+            WHERE p.user_id = u.user_id
+              AND p.status IN ('pending', 'canceled')
+              AND NOT EXISTS (
+                  SELECT 1 FROM {payments_table} s
+                  WHERE s.user_id = p.user_id
+                    AND s.status = 'succeeded'
+                    AND s.completed_at IS NOT NULL
+                    AND (
+                        s.completed_at >= p.created_at
+                        OR (
+                            s.completed_at <= p.created_at
+                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
+                        )
+                    )
+              )
+        )
     """
-    Пользователи для сегментированной рассылки Пн/Чт.
 
-    Сегменты:
-      active_subscriber   — безлимит / платные расклады / подписка → gentle nudge
-      expired_sub         — был платный доступ, сейчас нет → expired reminder + paywall
-      paywall             — исчерпал бесплатные расклады, не платил → no_divinations reminder
-      free_return         — есть бесплатные расклады, уже гадал → мягкое напоминание
-      skip_pending        — незавершённая оплата (обрабатывается payment_reminders)
-      skip_no_divinations — ни разу не гадал (активация — отдельный поток)
+
+def _active_paid_access_sql() -> str:
+    """SQL-условие: у пользователя есть активный платный доступ."""
+    subscriptions_table = get_table_name("subscriptions")
+    return f"""
+        (
+            (ub.unlimited_until IS NOT NULL AND ub.unlimited_until > NOW())
+            OR COALESCE(ub.paid_divinations_remaining, 0) > 0
+            OR EXISTS (
+                SELECT 1 FROM {subscriptions_table} s
+                WHERE s.user_id = u.user_id
+                  AND s.is_active = TRUE
+                  AND s.expires_at > NOW()
+            )
+        )
     """
+
+
+def _expiry_at_expr(prefix: str = "ub") -> str:
+    """Момент истечения платного доступа (unlimited или последний paid-пакет)."""
+    p = f"{prefix}." if prefix else ""
+    return f"""
+        COALESCE(
+            CASE
+                WHEN {p}unlimited_until IS NOT NULL AND {p}unlimited_until <= NOW()
+                THEN {p}unlimited_until
+            END,
+            {p}access_expired_at
+        )
+    """
+
+
+async def mark_paywall_reached(user_id: int) -> bool:
+    """Зафиксировать момент первого попадания на пейволл (исчерпаны бесплатные)."""
+    try:
+        await ensure_users_nudge_columns()
+        users_table = get_table_name("users")
+        await Database.execute_query(
+            f"""
+            UPDATE {users_table}
+            SET paywall_reached_at = COALESCE(paywall_reached_at, NOW())
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        return True
+    except Exception as e:
+        logging.error(f"Error marking paywall reached for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def update_user_activity_on_divination(user_id: int) -> bool:
+    """Обновить last_active_at и сбросить таймеры nudge после гадания."""
+    try:
+        await ensure_users_nudge_columns()
+        users_table = get_table_name("users")
+        await Database.execute_query(
+            f"UPDATE {users_table} SET last_active_at = NOW() WHERE user_id = $1",
+            user_id,
+        )
+        await reset_inactivity_nudge_state(user_id)
+        return True
+    except Exception as e:
+        logging.error(f"Error updating divination activity for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def reset_inactivity_nudge_state(user_id: int) -> bool:
+    """Сбросить sent_at nudge-рассылок при возвращении пользователя."""
+    try:
+        await ensure_users_nudge_columns()
+        await ensure_user_balances_nudge_columns()
+        users_table = get_table_name("users")
+        balances_table = get_table_name("user_balances")
+        await Database.execute_query(
+            f"""
+            UPDATE {users_table}
+            SET paid_inactivity_1d_sent_at = NULL,
+                paid_inactivity_3d_sent_at = NULL,
+                paid_inactivity_5d_sent_at = NULL,
+                paid_inactivity_10d_sent_at = NULL,
+                free_nudge_c2_3h_sent_at = NULL,
+                free_nudge_c2_24h_sent_at = NULL,
+                free_nudge_c2_48h_sent_at = NULL,
+                free_nudge_c4_3d_sent_at = NULL,
+                free_nudge_c4_7d_sent_at = NULL
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        await Database.execute_query(
+            f"""
+            UPDATE {balances_table}
+            SET access_expired_at = NULL,
+                updated_at = NOW()
+            WHERE user_id = $1
+              AND (unlimited_until IS NULL OR unlimited_until <= NOW())
+              AND COALESCE(free_divinations_remaining, {FREE_DIVINATIONS_START}) > 0
+            """,
+            user_id,
+        )
+        return True
+    except Exception as e:
+        logging.error(f"Error resetting nudge state for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+PAID_INACTIVITY_STAGES = {
+    '1d': (1, 'paid_inactivity_1d_sent_at'),
+    '3d': (3, 'paid_inactivity_3d_sent_at'),
+    '5d': (5, 'paid_inactivity_5d_sent_at'),
+    '10d': (10, 'paid_inactivity_10d_sent_at'),
+}
+
+PAID_INACTIVITY_PREV_SENT = {
+    '1d': None,
+    '3d': 'paid_inactivity_1d_sent_at',
+    '5d': 'paid_inactivity_3d_sent_at',
+    '10d': 'paid_inactivity_5d_sent_at',
+}
+
+FREE_NUDGE_STAGES = {
+    'c1': {
+        '1h': (1, 'free_nudge_c1_1h_sent_at', 'created_at', 'hours'),
+        '3h': (3, 'free_nudge_c1_3h_sent_at', 'created_at', 'hours'),
+        '24h': (24, 'free_nudge_c1_24h_sent_at', 'created_at', 'hours'),
+    },
+    'c2': {
+        '3h': (3, 'free_nudge_c2_3h_sent_at', 'last_active_at', 'hours'),
+        '24h': (24, 'free_nudge_c2_24h_sent_at', 'last_active_at', 'hours'),
+        '48h': (48, 'free_nudge_c2_48h_sent_at', 'last_active_at', 'hours'),
+    },
+    'c3': {
+        '1h': (1, 'free_nudge_c3_1h_sent_at', 'paywall_reached_at', 'hours'),
+        '3h': (3, 'free_nudge_c3_3h_sent_at', 'paywall_reached_at', 'hours'),
+        '24h': (24, 'free_nudge_c3_24h_sent_at', 'paywall_reached_at', 'hours'),
+        '48h': (48, 'free_nudge_c3_48h_sent_at', 'paywall_reached_at', 'hours'),
+    },
+    'c4': {
+        '3d': (3, 'free_nudge_c4_3d_sent_at', 'last_active_at', 'days'),
+        '7d': (7, 'free_nudge_c4_7d_sent_at', 'last_active_at', 'days'),
+    },
+}
+
+FREE_NUDGE_PREV_SENT = {
+    'c1': {'1h': None, '3h': 'free_nudge_c1_1h_sent_at', '24h': 'free_nudge_c1_3h_sent_at'},
+    'c2': {'3h': None, '24h': 'free_nudge_c2_3h_sent_at', '48h': 'free_nudge_c2_24h_sent_at'},
+    'c3': {'1h': None, '3h': 'free_nudge_c3_1h_sent_at', '24h': 'free_nudge_c3_3h_sent_at', '48h': 'free_nudge_c3_24h_sent_at'},
+    'c4': {'3d': None, '7d': 'free_nudge_c4_3d_sent_at'},
+}
+
+EXPIRED_ACCESS_REMINDER_STAGES = {
+    'day0': (0, 'expired_access_day0_sent_at'),
+    'day1': (1, 'expired_access_day1_sent_at'),
+    'day2': (2, 'expired_access_day2_sent_at'),
+    'day3': (3, 'expired_access_day3_sent_at'),
+}
+
+EXPIRED_ACCESS_PREV_SENT = {
+    'day0': None,
+    'day1': 'expired_access_day0_sent_at',
+    'day2': 'expired_access_day1_sent_at',
+    'day3': 'expired_access_day2_sent_at',
+}
+
+
+async def get_users_due_for_paid_inactivity_nudge(stage: str) -> List[Dict[str, Any]]:
+    """Платники с активным доступом, которые давно не гадали."""
+    if stage not in PAID_INACTIVITY_STAGES:
+        raise ValueError(f"Unknown paid inactivity stage: {stage}")
+
+    days, sent_column = PAID_INACTIVITY_STAGES[stage]
+    prev_sent = PAID_INACTIVITY_PREV_SENT[stage]
+    prev_sent_filter = f"AND u.{prev_sent} IS NOT NULL" if prev_sent else ""
     users_table = get_table_name("users")
     balances_table = get_table_name("user_balances")
-    subscriptions_table = get_table_name("subscriptions")
+    payments_table = get_table_name("payments")
+    divinations_table = get_table_name("divinations")
+    active_paid = _active_paid_access_sql()
+
+    try:
+        await ensure_users_nudge_columns()
+        query = f"""
+            SELECT u.user_id, u.last_active_at
+            FROM {users_table} u
+            JOIN {balances_table} ub ON ub.user_id = u.user_id
+            WHERE u.is_blocked = FALSE
+              AND u.last_active_at IS NOT NULL
+              AND u.last_active_at <= NOW() - INTERVAL '{int(days)} days'
+              AND {active_paid}
+              AND u.{sent_column} IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id
+              )
+              AND NOT ({_open_payment_exists_sql(payments_table)})
+              {prev_sent_filter}
+            ORDER BY u.user_id
+        """
+        results = await Database.fetch_all(query)
+        return [{'user_id': r['user_id'], 'last_active_at': r['last_active_at'], 'stage': stage} for r in results]
+    except Exception as e:
+        logging.error(f"Error getting paid inactivity nudge users ({stage}): {e}", exc_info=True)
+        return []
+
+
+async def mark_paid_inactivity_nudge_sent(user_id: int, stage: str) -> bool:
+    if stage not in PAID_INACTIVITY_STAGES:
+        raise ValueError(f"Unknown paid inactivity stage: {stage}")
+    _, sent_column = PAID_INACTIVITY_STAGES[stage]
+    try:
+        await ensure_users_nudge_columns()
+        users_table = get_table_name("users")
+        await Database.execute_query(
+            f"UPDATE {users_table} SET {sent_column} = NOW() WHERE user_id = $1 AND {sent_column} IS NULL",
+            user_id,
+        )
+        return True
+    except Exception as e:
+        logging.error(f"Error marking paid inactivity nudge ({stage}) for user {user_id}: {e}", exc_info=True)
+        return False
+
+
+async def get_users_due_for_free_nudge(category: str, stage: str) -> List[Dict[str, Any]]:
+    """Бесплатные пользователи для nudge C1–C4."""
+    if category not in FREE_NUDGE_STAGES or stage not in FREE_NUDGE_STAGES[category]:
+        raise ValueError(f"Unknown free nudge category/stage: {category}/{stage}")
+
+    amount, sent_column, anchor, unit = FREE_NUDGE_STAGES[category][stage]
+    interval = f"{int(amount)} {unit}"
+    users_table = get_table_name("users")
+    balances_table = get_table_name("user_balances")
     payments_table = get_table_name("payments")
     divinations_table = get_table_name("divinations")
 
-    try:
-        query = f"""
-            WITH user_ctx AS (
-                SELECT
-                    u.user_id,
-                    u.last_active_at,
-                    u.last_div_reminder_broadcast_at,
-                    COALESCE(ub.free_divinations_remaining, 3) AS free_divinations_remaining,
-                    COALESCE(ub.paid_divinations_remaining, 0) AS paid_divinations_remaining,
-                    (
-                        ub.unlimited_until IS NOT NULL AND ub.unlimited_until > NOW()
-                    ) AS has_active_unlimited,
-                    (
-                        COALESCE(ub.paid_divinations_remaining, 0) > 0
-                    ) AS has_paid_divinations,
-                    (
-                        EXISTS (
-                            SELECT 1 FROM {subscriptions_table} s
-                            WHERE s.user_id = u.user_id
-                              AND s.is_active = TRUE
-                              AND s.expires_at > NOW()
-                        )
-                    ) AS has_active_subscription,
-                    (
-                        ub.unlimited_until IS NOT NULL AND ub.unlimited_until <= NOW()
-                    ) AS had_expired_unlimited,
-                    (
-                        EXISTS (
-                            SELECT 1 FROM {subscriptions_table} s
-                            WHERE s.user_id = u.user_id
-                              AND s.expires_at <= NOW()
-                        )
-                    ) AS had_expired_subscription,
-                    (
-                        EXISTS (
-                            SELECT 1 FROM {payments_table} p
-                            WHERE p.user_id = u.user_id
-                              AND p.status = 'succeeded'
-                        )
-                    ) AS had_successful_payment,
-                    (
-                        EXISTS (
-                            SELECT 1 FROM {divinations_table} d
-                            WHERE d.user_id = u.user_id
-                        )
-                    ) AS has_divinations,
-                    (
-                        EXISTS (
-                            SELECT 1 FROM {payments_table} p
-                            WHERE p.user_id = u.user_id
-                              AND p.status IN ('pending', 'canceled')
-                              AND NOT EXISTS (
-                                  SELECT 1 FROM {payments_table} s
-                                  WHERE s.user_id = p.user_id
-                                    AND s.status = 'succeeded'
-                                    AND s.completed_at IS NOT NULL
-                                    AND (
-                                        s.completed_at >= p.created_at
-                                        OR (
-                                            s.completed_at <= p.created_at
-                                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
-                                        )
-                                    )
-                              )
-                        )
-                    ) AS has_open_payment
-                FROM {users_table} u
-                LEFT JOIN {balances_table} ub ON ub.user_id = u.user_id
-                WHERE u.is_blocked = FALSE
+    anchor_expr = {
+        'created_at': 'u.created_at',
+        'last_active_at': 'u.last_active_at',
+        'paywall_reached_at': 'u.paywall_reached_at',
+    }[anchor]
+
+    category_filter = {
+        'c1': f"""
+            NOT EXISTS (SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id)
+        """,
+        'c2': f"""
+            EXISTS (SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id)
+            AND COALESCE(ub.free_divinations_remaining, {FREE_DIVINATIONS_START}) > 0
+        """,
+        'c3': f"""
+            COALESCE(ub.free_divinations_remaining, 0) = 0
+            AND NOT EXISTS (
+                SELECT 1 FROM {payments_table} p
+                WHERE p.user_id = u.user_id AND p.status = 'succeeded'
             )
-            SELECT
-                user_id,
-                last_active_at,
-                last_div_reminder_broadcast_at,
-                CASE
-                    WHEN has_open_payment THEN '{DIV_REMINDER_SEGMENT_SKIP_PENDING}'
-                    WHEN NOT has_divinations THEN '{DIV_REMINDER_SEGMENT_SKIP_NO_DIVINATIONS}'
-                    WHEN has_active_unlimited OR has_paid_divinations OR has_active_subscription
-                        THEN '{DIV_REMINDER_SEGMENT_ACTIVE}'
-                    WHEN had_expired_unlimited OR had_expired_subscription OR (
-                        had_successful_payment
-                        AND NOT has_active_unlimited
-                        AND NOT has_paid_divinations
-                        AND NOT has_active_subscription
-                    ) THEN '{DIV_REMINDER_SEGMENT_EXPIRED}'
-                    WHEN free_divinations_remaining = 0 AND NOT had_successful_payment
-                        THEN '{DIV_REMINDER_SEGMENT_PAYWALL}'
-                    ELSE '{DIV_REMINDER_SEGMENT_FREE_RETURN}'
-                END AS segment
-            FROM user_ctx
-            ORDER BY user_id
+            AND u.paywall_reached_at IS NOT NULL
+        """,
+        'c4': f"""
+            EXISTS (SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id)
+            AND COALESCE(ub.free_divinations_remaining, {FREE_DIVINATIONS_START}) > 0
+        """,
+    }[category]
+
+    prev_sent = FREE_NUDGE_PREV_SENT[category].get(stage)
+    prev_sent_filter = f"AND u.{prev_sent} IS NOT NULL" if prev_sent else ""
+    active_paid = _active_paid_access_sql()
+
+    try:
+        await ensure_users_nudge_columns()
+        query = f"""
+            SELECT u.user_id, {anchor_expr} AS anchor_at
+            FROM {users_table} u
+            JOIN {balances_table} ub ON ub.user_id = u.user_id
+            WHERE u.is_blocked = FALSE
+              AND NOT ({active_paid})
+              AND u.{sent_column} IS NULL
+              AND {anchor_expr} IS NOT NULL
+              AND {anchor_expr} <= NOW() - INTERVAL '{interval}'
+              AND {category_filter}
+              AND NOT ({_open_payment_exists_sql(payments_table)})
+              {prev_sent_filter}
+            ORDER BY u.user_id
         """
         results = await Database.fetch_all(query)
         return [
             {
                 'user_id': r['user_id'],
-                'segment': r['segment'],
-                'last_active_at': r['last_active_at'],
-                'last_div_reminder_broadcast_at': r['last_div_reminder_broadcast_at'],
+                'anchor_at': r['anchor_at'],
+                'category': category,
+                'stage': stage,
             }
             for r in results
         ]
     except Exception as e:
-        logging.error(f"Error getting users for div reminder broadcast: {e}", exc_info=True)
+        logging.error(f"Error getting free nudge users ({category}/{stage}): {e}", exc_info=True)
         return []
 
 
-ACTIVATION_DELAY_HOURS = 24
+async def mark_free_nudge_sent(user_id: int, category: str, stage: str) -> bool:
+    if category not in FREE_NUDGE_STAGES or stage not in FREE_NUDGE_STAGES[category]:
+        raise ValueError(f"Unknown free nudge category/stage: {category}/{stage}")
+    _, sent_column, _, _ = FREE_NUDGE_STAGES[category][stage]
+    try:
+        await ensure_users_nudge_columns()
+        users_table = get_table_name("users")
+        await Database.execute_query(
+            f"UPDATE {users_table} SET {sent_column} = NOW() WHERE user_id = $1 AND {sent_column} IS NULL",
+            user_id,
+        )
+        return True
+    except Exception as e:
+        logging.error(
+            f"Error marking free nudge ({category}/{stage}) for user {user_id}: {e}",
+            exc_info=True,
+        )
+        return False
 
 
-async def get_users_for_activation_broadcast() -> List[Dict[str, Any]]:
-    """
-    Пользователи для welcome-активации: зарегистрировались ≥24ч назад,
-    ни разу не гадали, активация ещё не отправлялась.
-    """
+async def get_users_due_for_expired_access_reminder(stage: str) -> List[Dict[str, Any]]:
+    """Платники без доступа — серия day0–day3 после истечения."""
+    if stage not in EXPIRED_ACCESS_REMINDER_STAGES:
+        raise ValueError(f"Unknown expired access reminder stage: {stage}")
+
+    day_offset, sent_column = EXPIRED_ACCESS_REMINDER_STAGES[stage]
+    prev_sent = EXPIRED_ACCESS_PREV_SENT[stage]
     users_table = get_table_name("users")
+    balances_table = get_table_name("user_balances")
     payments_table = get_table_name("payments")
     divinations_table = get_table_name("divinations")
+    expiry_at = _expiry_at_expr("ub")
+    active_paid = _active_paid_access_sql()
+
+    if stage == 'day0':
+        stage_extra = f"""
+              AND (ub.expired_access_reminder_for_until IS NULL
+                   OR ub.expired_access_reminder_for_until != ({expiry_at}))
+        """
+    else:
+        stage_extra = f"""
+              AND ub.expired_access_reminder_for_until = {expiry_at}
+              AND ub.{prev_sent} IS NOT NULL
+        """
 
     try:
+        await ensure_user_balances_nudge_columns()
         query = f"""
             SELECT
                 u.user_id,
                 u.last_active_at,
-                u.created_at
+                {expiry_at} AS expiry_at
             FROM {users_table} u
+            INNER JOIN {balances_table} ub ON ub.user_id = u.user_id
             WHERE u.is_blocked = FALSE
-              AND u.activation_sent_at IS NULL
-              AND u.created_at <= NOW() - INTERVAL '{ACTIVATION_DELAY_HOURS} hours'
-              AND NOT EXISTS (
-                  SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id
-              )
-              AND NOT EXISTS (
+              AND {expiry_at} IS NOT NULL
+              AND NOT ({active_paid})
+              AND (NOW() AT TIME ZONE 'Europe/Moscow')::date
+                  >= ({expiry_at} AT TIME ZONE 'Europe/Moscow')::date + {int(day_offset)}
+              AND ub.{sent_column} IS NULL
+              {stage_extra}
+              AND EXISTS (
                   SELECT 1 FROM {payments_table} p
-                  WHERE p.user_id = u.user_id
-                    AND p.status IN ('pending', 'canceled')
-                    AND NOT EXISTS (
-                        SELECT 1 FROM {payments_table} s
-                        WHERE s.user_id = p.user_id
-                          AND s.status = 'succeeded'
-                          AND s.completed_at IS NOT NULL
-                          AND (
-                              s.completed_at >= p.created_at
-                              OR (
-                                  s.completed_at <= p.created_at
-                                  AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
-                              )
-                          )
-                    )
+                  WHERE p.user_id = u.user_id AND p.status = 'succeeded'
+              )
+              AND EXISTS (
+                  SELECT 1 FROM {divinations_table} d
+                  WHERE d.user_id = u.user_id
               )
             ORDER BY u.user_id
         """
@@ -988,44 +1281,62 @@ async def get_users_for_activation_broadcast() -> List[Dict[str, Any]]:
             {
                 'user_id': r['user_id'],
                 'last_active_at': r['last_active_at'],
-                'created_at': r['created_at'],
+                'expiry_at': r['expiry_at'],
+                'stage': stage,
             }
             for r in results
         ]
     except Exception as e:
-        logging.error(f"Error getting users for activation broadcast: {e}", exc_info=True)
+        logging.error(f"Error getting expired access reminder users ({stage}): {e}", exc_info=True)
         return []
 
 
-async def mark_activation_sent(user_id: int) -> bool:
-    """Отметить, что welcome-активация отправлена."""
-    try:
-        users_table = get_table_name("users")
-        query = f"""
-            UPDATE {users_table}
-            SET activation_sent_at = NOW()
-            WHERE user_id = $1
-        """
-        await Database.execute_query(query, user_id)
-        return True
-    except Exception as e:
-        logging.error(f"Error marking activation sent for user {user_id}: {e}", exc_info=True)
-        return False
+async def get_expired_access_reminder_stage_for_user(user_id: int) -> Optional[str]:
+    """Какой этап expiry-серии сейчас due для пользователя (или None)."""
+    for stage in EXPIRED_ACCESS_REMINDER_STAGES:
+        due = await get_users_due_for_expired_access_reminder(stage)
+        if any(u['user_id'] == user_id for u in due):
+            return stage
+    return None
 
 
-async def mark_div_reminder_broadcast_sent(user_id: int) -> bool:
-    """Отметить отправку Пн/Чт рассылки."""
+async def mark_expired_access_reminder_sent(user_id: int, stage: str) -> bool:
+    """Отметить отправку expiry-напоминания на данном этапе."""
+    if stage not in EXPIRED_ACCESS_REMINDER_STAGES:
+        raise ValueError(f"Unknown expired access reminder stage: {stage}")
+
+    _, sent_column = EXPIRED_ACCESS_REMINDER_STAGES[stage]
+    balances_table = get_table_name("user_balances")
+    expiry_set = _expiry_at_expr("")
+
     try:
-        users_table = get_table_name("users")
-        query = f"""
-            UPDATE {users_table}
-            SET last_div_reminder_broadcast_at = NOW()
-            WHERE user_id = $1
-        """
+        await ensure_user_balances_nudge_columns()
+        if stage == 'day0':
+            query = f"""
+                UPDATE {balances_table}
+                SET expired_access_reminder_for_until = {expiry_set},
+                    {sent_column} = NOW(),
+                    updated_at = NOW()
+                WHERE user_id = $1
+                  AND {sent_column} IS NULL
+            """
+        else:
+            query = f"""
+                UPDATE {balances_table}
+                SET {sent_column} = NOW(),
+                    updated_at = NOW()
+                WHERE user_id = $1
+                  AND expired_access_reminder_for_until = {expiry_set}
+                  AND {sent_column} IS NULL
+            """
         await Database.execute_query(query, user_id)
+        logging.info(f"Expired access reminder marked sent: user={user_id} stage={stage}")
         return True
     except Exception as e:
-        logging.error(f"Error marking div reminder broadcast sent for user {user_id}: {e}", exc_info=True)
+        logging.error(
+            f"Error marking expired access reminder sent ({user_id}, {stage}): {e}",
+            exc_info=True,
+        )
         return False
 
 

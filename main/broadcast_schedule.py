@@ -26,17 +26,23 @@ def _to_msk(dt: datetime) -> datetime:
     return dt.astimezone(MSK)
 
 
-def compute_user_send_minute(user_id: int, last_active_at: Optional[datetime] = None) -> int:
+def compute_user_send_minute(
+    user_id: int,
+    anchor_at: Optional[datetime] = None,
+    *,
+    last_active_at: Optional[datetime] = None,
+) -> int:
     """
     Минута отправки от полуночи MSK в диапазоне [10:00, 20:00).
 
-    last_active_at вне окна маппится в окно через modulo.
+    anchor_at (или last_active_at) вне окна маппится в окно через modulo.
     """
+    anchor = anchor_at if anchor_at is not None else last_active_at
     window_start = BROADCAST_WINDOW_START_HOUR * 60
     window_size = (BROADCAST_WINDOW_END_HOUR - BROADCAST_WINDOW_START_HOUR) * 60
 
-    if last_active_at is not None:
-        la = _to_msk(last_active_at)
+    if anchor is not None:
+        la = _to_msk(anchor)
         minute = _minutes_from_midnight(la)
         if window_start <= minute < window_start + window_size:
             return minute
@@ -45,16 +51,31 @@ def compute_user_send_minute(user_id: int, last_active_at: Optional[datetime] = 
     return window_start + (user_id % window_size)
 
 
+def is_in_broadcast_window(now: Optional[datetime] = None) -> bool:
+    """True, если текущее время попадает в окно рассылок 10:00–20:00 MSK."""
+    now = _to_msk(now or datetime.now(MSK))
+    current = _minutes_from_midnight(now)
+    window_start = BROADCAST_WINDOW_START_HOUR * 60
+    window_end = BROADCAST_WINDOW_END_HOUR * 60
+    return window_start <= current < window_end
+
+
 def is_user_due_in_tick(
     user_id: int,
-    last_active_at: Optional[datetime] = None,
+    anchor_at: Optional[datetime] = None,
     now: Optional[datetime] = None,
     tick_minutes: int = BROADCAST_TICK_MINUTES,
+    *,
+    last_active_at: Optional[datetime] = None,
 ) -> bool:
     """True, если текущий 30-минутный тик — время отправки для пользователя."""
     now = _to_msk(now or datetime.now(MSK))
     current = _minutes_from_midnight(now)
-    send_minute = compute_user_send_minute(user_id, last_active_at)
+    send_minute = compute_user_send_minute(
+        user_id,
+        anchor_at=anchor_at,
+        last_active_at=last_active_at,
+    )
     return send_minute <= current < send_minute + tick_minutes
 
 

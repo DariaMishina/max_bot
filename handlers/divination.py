@@ -36,6 +36,7 @@ from handlers.hexagrams import (
 from main.database import (
     can_user_divinate, use_divination, save_divination, get_user_balance,
     update_divination_interpretation, save_pending_question, get_pending_question,
+    mark_paywall_reached, update_user_activity_on_divination,
     get_and_delete_webapp_follow_up_context,
 )
 from main.conversions import save_conversion, save_paywall_conversion
@@ -154,6 +155,7 @@ async def process_divination_internal(message: aiomax.Message, cursor: fsm.FSMCu
     can_div, access_type = await can_user_divinate(user_id)
     if not can_div:
         try:
+            await mark_paywall_reached(user_id)
             data = cursor.get_data() or {}
             divination_type = data.get("divination_type", "неизвестно")
             await save_paywall_conversion(
@@ -257,6 +259,8 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
                 asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
             except Exception as e:
                 logging.error(f"Error saving conversion: {e}", exc_info=True)
+
+        await update_user_activity_on_divination(user_id)
         
         follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
         conversation_history = [
@@ -394,6 +398,8 @@ async def _finish_tarot_reading(
                 asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
             except Exception as e:
                 logging.error(f"Error saving conversion: {e}", exc_info=True)
+
+        await update_user_activity_on_divination(user_id)
 
         conversation_history = [
             {"role": "user", "content": f"Мой вопрос: {question}"},

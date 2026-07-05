@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS max_payments (
     completed_at          TIMESTAMP,
     reminder_10m_sent_at  TIMESTAMP,
     reminder_1h_sent_at   TIMESTAMP,
-    reminder_3h_sent_at   TIMESTAMP
+    reminder_3h_sent_at   TIMESTAMP,
+    reminder_24h_sent_at  TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_max_payments_payment_id  ON max_payments(payment_id);
@@ -153,6 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_max_users_yclid ON max_users(yclid);
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_24h_sent_at TIMESTAMP NULL;
 
 -- Одноразовый backfill для старых pending/canceled — только migrations/20260530_payment_reminders.sql
 -- НЕ делать UPDATE здесь: при повторном init_db.sql (миграция, деплой) напоминания «ломаются» без отправки.
@@ -174,6 +176,105 @@ WHERE activation_sent_at IS NULL
   AND created_at < NOW() - INTERVAL '7 days'
   AND NOT EXISTS (
       SELECT 1 FROM max_divinations d WHERE d.user_id = u.user_id
+  );
+
+-- Event-driven nudges (20260705)
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS access_expired_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_reminder_for_until TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day0_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day1_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day2_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day3_sent_at TIMESTAMP NULL;
+
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_1d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_3d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_5d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_10d_sent_at TIMESTAMP NULL;
+
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_1h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_24h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_24h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_48h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_1h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_24h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_48h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c4_3d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c4_7d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paywall_reached_at TIMESTAMP NULL;
+
+-- Anti-spam backfill (см. migrations/20260705_event_driven_nudges.sql)
+UPDATE max_users
+SET paid_inactivity_1d_sent_at = NOW(),
+    paid_inactivity_3d_sent_at = NOW(),
+    paid_inactivity_5d_sent_at = NOW(),
+    paid_inactivity_10d_sent_at = NOW()
+WHERE paid_inactivity_1d_sent_at IS NULL;
+
+UPDATE max_users u
+SET free_nudge_c1_1h_sent_at = NOW(),
+    free_nudge_c1_3h_sent_at = NOW(),
+    free_nudge_c1_24h_sent_at = NOW()
+WHERE free_nudge_c1_1h_sent_at IS NULL
+  AND u.created_at < NOW() - INTERVAL '1 hour'
+  AND NOT EXISTS (
+      SELECT 1 FROM max_divinations d WHERE d.user_id = u.user_id
+  );
+
+UPDATE max_users u
+SET free_nudge_c2_3h_sent_at = NOW(),
+    free_nudge_c2_24h_sent_at = NOW(),
+    free_nudge_c2_48h_sent_at = NOW(),
+    free_nudge_c4_3d_sent_at = NOW(),
+    free_nudge_c4_7d_sent_at = NOW()
+WHERE free_nudge_c2_3h_sent_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM max_divinations d WHERE d.user_id = u.user_id
+  );
+
+UPDATE max_users u
+SET free_nudge_c3_1h_sent_at = NOW(),
+    free_nudge_c3_3h_sent_at = NOW(),
+    free_nudge_c3_24h_sent_at = NOW(),
+    free_nudge_c3_48h_sent_at = NOW(),
+    paywall_reached_at = COALESCE(u.paywall_reached_at, NOW())
+FROM max_user_balances ub
+WHERE u.user_id = ub.user_id
+  AND u.free_nudge_c3_1h_sent_at IS NULL
+  AND COALESCE(ub.free_divinations_remaining, 0) = 0
+  AND NOT EXISTS (
+      SELECT 1 FROM max_payments p
+      WHERE p.user_id = u.user_id AND p.status = 'succeeded'
+  );
+
+UPDATE max_user_balances ub
+SET expired_access_day0_sent_at = NOW(),
+    expired_access_day1_sent_at = NOW(),
+    expired_access_day2_sent_at = NOW(),
+    expired_access_day3_sent_at = NOW(),
+    expired_access_reminder_for_until = COALESCE(
+        expired_access_reminder_for_until,
+        CASE
+            WHEN ub.unlimited_until IS NOT NULL AND ub.unlimited_until <= NOW()
+            THEN ub.unlimited_until
+        END,
+        ub.access_expired_at
+    ),
+    updated_at = NOW()
+WHERE expired_access_day0_sent_at IS NULL
+  AND NOT (
+      (ub.unlimited_until IS NOT NULL AND ub.unlimited_until > NOW())
+      OR COALESCE(ub.paid_divinations_remaining, 0) > 0
+  )
+  AND (
+      (ub.unlimited_until IS NOT NULL AND ub.unlimited_until <= NOW())
+      OR ub.access_expired_at IS NOT NULL
+  )
+  AND EXISTS (
+      SELECT 1 FROM max_payments p
+      WHERE p.user_id = ub.user_id AND p.status = 'succeeded'
   );
 
 

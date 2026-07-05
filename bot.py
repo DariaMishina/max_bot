@@ -109,50 +109,46 @@ async def main():
         except Exception as e:
             logging.error(f"Error in reconcile_pending_payments_job: {e}", exc_info=True)
 
-    # ==================== РАССЫЛКИ (активация + Пн/Чт) ====================
-    # Окно 10:00–20:00 MSK, тик каждые 30 мин — персональный слот на пользователя
+    # ==================== EVENT-DRIVEN NUDGES ====================
     BROADCAST_CRON_HOURS = '10-20'
     BROADCAST_CRON_MINUTES = '0,30'
-    # ========================================================================
+    # =============================================================
 
-    async def activation_broadcast_job():
-        """Welcome-активация: ≥24ч после регистрации, без гаданий."""
+    async def inactivity_nudges_job():
+        """Event-driven nudges: платники (B) + бесплатные (C1–C4)."""
         try:
-            from send_message import send_activation_broadcast
-            await send_activation_broadcast()
+            from main.inactivity_nudges import process_inactivity_nudges
+            await process_inactivity_nudges()
         except Exception as e:
-            logging.error(f"Error in activation broadcast job: {e}", exc_info=True)
+            logging.error(f"Error in inactivity nudges job: {e}", exc_info=True)
 
     scheduler.add_job(
-        activation_broadcast_job,
-        trigger=CronTrigger(
-            hour=BROADCAST_CRON_HOURS,
-            minute=BROADCAST_CRON_MINUTES,
-            timezone='Europe/Moscow'
-        ),
-        id='activation_broadcast',
-        name='Welcome-активация (ежедневно, 10:00–20:00 MSK)',
-        replace_existing=True
+        inactivity_nudges_job,
+        trigger=IntervalTrigger(minutes=2),
+        id='inactivity_nudges',
+        name='Event-driven nudges (платники + бесплатные)',
+        replace_existing=True,
     )
 
-    async def divination_reminder_broadcast_job():
-        """Сегментированная рассылка Пн/Чт."""
+    async def expired_access_reminder_job():
+        """Триггер A: серия day0–day3 после истечения платного доступа."""
         try:
-            from send_message import send_divination_reminder_broadcast
-            await send_divination_reminder_broadcast()
+            from main.expired_access_reminders import process_expired_access_reminders
+            results = await process_expired_access_reminders()
+            if any(v for k, v in results.items() if k != 'by_stage' and v) or results.get('by_stage'):
+                logging.info(f"Expired access reminders job completed: {results}")
         except Exception as e:
-            logging.error(f"Error in divination-reminder broadcast job: {e}", exc_info=True)
+            logging.error(f"Error in expired access reminders job: {e}", exc_info=True)
 
     scheduler.add_job(
-        divination_reminder_broadcast_job,
+        expired_access_reminder_job,
         trigger=CronTrigger(
-            day_of_week='mon,thu',
             hour=BROADCAST_CRON_HOURS,
             minute=BROADCAST_CRON_MINUTES,
             timezone='Europe/Moscow'
         ),
-        id='divination_reminder_broadcast',
-        name='Сегментированная рассылка (Пн, Чт, 10:00–20:00 MSK)',
+        id='expired_access_reminders',
+        name='Expired access reminders (10:00–20:00 MSK, day0–day3)',
         replace_existing=True
     )
 
@@ -165,12 +161,8 @@ async def main():
     )
 
     async def payment_reminders_job():
-        """Напоминания о незавершённой оплате: 10м, 1ч, 3ч после создания платежа."""
+        """Напоминания о незавершённой оплате: 10м, 1ч, 3ч, 24ч после создания платежа."""
         try:
-            from main.config_reader import config as cfg
-            if not cfg.payment_reminders_enabled:
-                return
-
             from main.payment_reminders import process_payment_reminders
             results = await process_payment_reminders()
             if results['sent'] or results['failed']:
@@ -178,31 +170,23 @@ async def main():
         except Exception as e:
             logging.error(f"Error in payment reminders job: {e}", exc_info=True)
 
-    from main.config_reader import config as app_config
-    if app_config.payment_reminders_enabled:
-        scheduler.add_job(
-            payment_reminders_job,
-            trigger=IntervalTrigger(minutes=2),
-            id='payment_reminders',
-            name='Напоминания о незавершённой оплате (10м / 1ч / 3ч)',
-            replace_existing=True
-        )
+    scheduler.add_job(
+        payment_reminders_job,
+        trigger=IntervalTrigger(minutes=2),
+        id='payment_reminders',
+        name='Напоминания о незавершённой оплате (10м / 1ч / 3ч / 24ч)',
+        replace_existing=True
+    )
 
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
+    logging.info("APScheduler: inactivity nudges every 2 minutes (paid + free segments)")
     logging.info(
-        f"APScheduler: activation broadcast daily {BROADCAST_CRON_HOURS} MSK "
-        f"(every {BROADCAST_CRON_MINUTES} min)"
-    )
-    logging.info(
-        f"APScheduler: divination-reminder broadcast Mon/Thu {BROADCAST_CRON_HOURS} MSK "
-        f"(every {BROADCAST_CRON_MINUTES} min)"
+        f"APScheduler: expired access reminders daily {BROADCAST_CRON_HOURS} MSK "
+        f"(every {BROADCAST_CRON_MINUTES} min, day0–day3)"
     )
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
-    if app_config.payment_reminders_enabled:
-        logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h stages)")
-    else:
-        logging.info("APScheduler: payment reminders DISABLED (PAYMENT_REMINDERS_ENABLED=false)")
+    logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h / 24h stages)")
 
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
     webhook_runner = None
