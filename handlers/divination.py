@@ -33,7 +33,11 @@ from handlers.hexagrams import (
     get_all_available_hexagrams, get_hexagram_image_path,
     send_hexagram_image, get_hexagram_info, HEXAGRAMS
 )
-from main.database import can_user_divinate, use_divination, save_divination, get_user_balance, update_divination_interpretation, save_pending_question, get_and_delete_webapp_follow_up_context
+from main.database import (
+    can_user_divinate, use_divination, save_divination, get_user_balance,
+    update_divination_interpretation, save_pending_question, get_pending_question,
+    get_and_delete_webapp_follow_up_context,
+)
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
 
@@ -428,26 +432,80 @@ async def _finish_tarot_reading(
         return False
 
 
+async def _safe_callback_answer(cb: aiomax.Callback, text: str) -> None:
+    """Ответ на callback у сообщения с WebApp-кнопкой — всегда с keyboard=[]."""
+    try:
+        await cb.answer(text, text=text, keyboard=[])
+    except Exception as e:
+        logging.warning(f"cb.answer failed: {e}")
+
+
+async def _restore_tarot_question(
+    data: dict,
+    user_id: int,
+    cursor: fsm.FSMCursor,
+) -> str | None:
+    """Вопрос из FSM или pending_questions в БД, если FSM потерял контекст."""
+    question = (data.get('question') or '').strip()
+    if question:
+        return question
+
+    pending = await get_pending_question(user_id)
+    if not pending:
+        return None
+
+    question = pending.strip()
+    if not question:
+        return None
+
+    data['question'] = question
+    cursor.change_data(data)
+    logging.info(f"Restored tarot question from DB for user {user_id}")
+    return question
+
+
+async def _handle_stale_tarot_selection(
+    cb: aiomax.Callback,
+    cursor: fsm.FSMCursor,
+    *,
+    handler: str,
+) -> None:
+    """Экран выбора Таро устарел или контекст вопроса потерян."""
+    from main.botdef import bot
+
+    user_id = cb.user.user_id
+    logging.warning(
+        f"Stale tarot selection: handler={handler}, user_id={user_id}, "
+        f"fsm_state={cursor.get_state()!r}"
+    )
+    await _safe_callback_answer(cb, "Экран устарел — начните новый расклад")
+    cursor.clear()
+    await bot.send_message(
+        "⏳ <b>Это сообщение устарело</b>\n\n"
+        "Нажми <b>Новый расклад 🃏</b>, напиши вопрос и снова выбери «Таро».",
+        chat_id=cb.message.recipient.chat_id,
+        keyboard=make_back_to_menu_kb(),
+        format='html',
+    )
+
+
 @router.on_button_callback(lambda data: data.payload == 'tarot_name_cards')
 async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Переход к текстовому вводу названий карт."""
     from main.botdef import bot
 
+    user_id = cb.user.user_id
     data = cursor.get_data() or {}
-    question = data.get('question', '')
+    question = await _restore_tarot_question(data, user_id, cursor)
     if not question:
-        await cb.answer("Пожалуйста, начните гадание заново.")
-        cursor.clear()
+        await _handle_stale_tarot_selection(cb, cursor, handler='tarot_name_cards')
         return
 
     chat_id = cb.message.recipient.chat_id
     data['cards_input_attempts'] = 0
     cursor.change_data(data)
     cursor.change_state(STATE_WAITING_FOR_CARDS_INPUT)
-    try:
-        await cb.answer("✍️ Жду ваши карты", text="✍️ Жду ваши карты", keyboard=[])
-    except Exception as e:
-        logging.warning(f"cb.answer failed in tarot_name_cards: {e}")
+    await _safe_callback_answer(cb, "✍️ Жду ваши карты")
     await bot.send_message(
         f"✍️ <b>Напишите свои карты</b>\n\n"
         f"Ваш вопрос: <i>«{question}»</i>\n\n"
@@ -485,10 +543,21 @@ async def handle_cards_input(message: aiomax.Message, cursor: fsm.FSMCursor):
             await message.reply("❌ Гадание отменено.", keyboard=make_back_to_menu_kb())
         return
 
-    data = cursor.get_data() or {}
-    question = data.get('question', '')
     user_id = message.sender.user_id
+    data = cursor.get_data() or {}
+    question = await _restore_tarot_question(data, user_id, cursor)
     chat_id = message.recipient.chat_id
+
+    if not question:
+        logging.warning(f"Cards input without question for user {user_id}")
+        await message.reply(
+            "⏳ <b>Не удалось найти ваш вопрос</b>\n\n"
+            "Нажми <b>Новый расклад 🃏</b> и начни гадание заново.",
+            keyboard=make_back_to_menu_kb(),
+            format='html',
+        )
+        cursor.clear()
+        return
 
     processing_msg = await message.reply("🔍 Распознаю карты...")
 
@@ -569,14 +638,13 @@ async def handle_tarot_random(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     
     user_id = cb.user.user_id
     data = cursor.get_data() or {}
-    question = data.get('question', '')
-    
+    question = await _restore_tarot_question(data, user_id, cursor)
+
     if not question:
-        await cb.answer("Пожалуйста, начните гадание заново.", text="Пожалуйста, начните гадание заново.", keyboard=[])
-        cursor.clear()
+        await _handle_stale_tarot_selection(cb, cursor, handler='tarot_random')
         return
-    
-    await cb.answer("🔮 Тяну карты...", text="🔮 Тяну карты...", keyboard=[])
+
+    await _safe_callback_answer(cb, "🔮 Тяну карты...")
     
     try:
         card_ids = get_random_cards(3)

@@ -465,6 +465,28 @@ async def send_discussion_announcement(user_id: int):
         return False
 
 
+async def send_own_cards_announcement(user_id: int):
+    """Объявление о функции «Написать свои карты»"""
+    from keyboards.main_menu import make_main_menu
+
+    text = (
+        "✨ <b>Новое в боте!</b>\n\n"
+        "Теперь в раскладе Таро можно <b>написать свои карты</b> ✍️\n\n"
+        "Если ты уже разложил(а) карты и они лежат перед тобой — "
+        "не нужно тянуть их заново в боте.\n\n"
+        "<b>Как это работает:</b>\n"
+        "1. Нажми <b>Новый расклад 🃏</b>\n"
+        "2. Напиши свой вопрос\n"
+        "3. Выбери «Таро» → <b>✍️ Написать свои карты</b>\n"
+        "4. Отправь три названия через запятую или пробел, например:\n"
+        "   <i>Башня, Туз Кубков, Десятка Мечей</i>\n"
+        "   или <i>Башня семерка чаш повешенный</i>\n\n"
+        "Бот распознает карты и сделает толкование 🔮"
+    )
+    print(f"📤 Отправляю объявление «Написать свои карты» пользователю {user_id}...")
+    return await send_message_to_user(user_id, text, keyboard=make_main_menu())
+
+
 async def send_bot_restored(user_id: int):
     """Сообщение о восстановлении работы бота"""
     from keyboards.main_menu import make_main_menu
@@ -821,6 +843,10 @@ async def main():
         help='Объявление о функции обсуждения расклада (+ меню оплаты)'
     )
     parser.add_argument(
+        '--own-cards', action='store_true',
+        help='Объявление о функции «Написать свои карты» (+ главное меню)'
+    )
+    parser.add_argument(
         '--restored', action='store_true',
         help='Сообщение о восстановлении работы бота'
     )
@@ -925,6 +951,12 @@ async def main():
                 await send_discussion_announcement(uid)
                 await asyncio.sleep(0.05)
 
+        elif args.own_cards:
+            print(f"✍️ Отправка объявлений «Написать свои карты» для {total} пользователя(ей)...")
+            for uid in args.user_id:
+                await send_own_cards_announcement(uid)
+                await asyncio.sleep(0.05)
+
         elif args.restored:
             print(f"🔮 Отправка сообщений о восстановлении бота для {total} пользователя(ей)...")
             for uid in args.user_id:
@@ -970,7 +1002,7 @@ async def main():
                     "❌ Ошибка: укажите --text или используйте один из флагов: "
                     "--payment-reminder / --no-divinations / --activation / --gentle-nudge / "
                     "--free-return / "
-                    "--expired-sub / --discussion / --restored / "
+                    "--expired-sub / --discussion / --own-cards / --restored / "
                     "--friday13 / --fullmoon / --tarologist-intro / --tarologist-reminder / "
                     "--consult-diana-contact / --feedback-request"
                 )
