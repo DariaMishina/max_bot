@@ -6,6 +6,7 @@
 import asyncio
 import logging
 
+from main.broadcast_delivery import finalize_broadcast_send
 from main.database import (
     PAYMENT_REMINDER_STAGES,
     get_payment_by_id,
@@ -19,7 +20,7 @@ REMINDER_DELAY_SEC = 0.05
 
 async def process_payment_reminders() -> dict:
     """Проверить все этапы и отправить напоминания."""
-    results = {'sent': 0, 'skipped': 0, 'failed': 0}
+    results = {'sent': 0, 'skipped': 0, 'failed': 0, 'blocked': 0}
 
     for stage in PAYMENT_REMINDER_STAGES:
         due = await get_payments_due_for_reminder(stage)
@@ -38,10 +39,16 @@ async def process_payment_reminders() -> dict:
                 continue
 
             try:
-                success = await send_payment_reminder(user_id, stage=stage)
-                if success:
-                    await mark_payment_reminder_sent(payment_id, stage)
+                success, unreachable = await send_payment_reminder(user_id, stage=stage)
+                outcome = await finalize_broadcast_send(
+                    success,
+                    unreachable,
+                    lambda pid=payment_id, st=stage: mark_payment_reminder_sent(pid, st),
+                )
+                if outcome == 'sent':
                     results['sent'] += 1
+                elif outcome == 'blocked':
+                    results['blocked'] += 1
                 else:
                     results['failed'] += 1
             except Exception as e:

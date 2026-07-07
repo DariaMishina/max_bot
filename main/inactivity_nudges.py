@@ -10,6 +10,7 @@ Event-driven nudge-рассылки: платники (B) и бесплатны�
 import asyncio
 import logging
 
+from main.broadcast_delivery import finalize_broadcast_send
 from main.broadcast_schedule import is_in_broadcast_window, is_user_due_in_tick
 from main.database import (
     FREE_NUDGE_STAGES,
@@ -65,15 +66,22 @@ async def process_inactivity_nudges() -> dict:
                 continue
 
             try:
-                success = await send_paid_inactivity_nudge(user_id, stage=stage)
-                if success:
-                    await mark_paid_inactivity_nudge_sent(user_id, stage)
+                success, unreachable = await send_paid_inactivity_nudge(user_id, stage=stage)
+                outcome = await finalize_broadcast_send(
+                    success,
+                    unreachable,
+                    lambda uid=user_id, st=stage: mark_paid_inactivity_nudge_sent(uid, st),
+                )
+                if outcome == 'sent':
                     results['sent'] += 1
                     results['by_type'][key]['sent'] += 1
                     sent_paid_this_run.add(user_id)
-                else:
+                elif outcome == 'blocked':
                     results['blocked'] += 1
                     results['by_type'][key]['blocked'] += 1
+                else:
+                    results['failed'] += 1
+                    results['by_type'][key]['failed'] += 1
             except Exception as e:
                 logging.error(f"Paid inactivity nudge error ({stage}) user={user_id}: {e}", exc_info=True)
                 results['failed'] += 1
@@ -101,19 +109,28 @@ async def process_inactivity_nudges() -> dict:
                     continue
 
                 try:
-                    success = await send_free_user_nudge(
+                    success, unreachable = await send_free_user_nudge(
                         user_id,
                         category=category,
                         stage=stage,
                     )
-                    if success:
-                        await mark_free_nudge_sent(user_id, category, stage)
+                    outcome = await finalize_broadcast_send(
+                        success,
+                        unreachable,
+                        lambda uid=user_id, cat=category, st=stage: mark_free_nudge_sent(
+                            uid, cat, st
+                        ),
+                    )
+                    if outcome == 'sent':
                         results['sent'] += 1
                         results['by_type'][key]['sent'] += 1
                         sent_this_category.add(user_id)
-                    else:
+                    elif outcome == 'blocked':
                         results['blocked'] += 1
                         results['by_type'][key]['blocked'] += 1
+                    else:
+                        results['failed'] += 1
+                        results['by_type'][key]['failed'] += 1
                 except Exception as e:
                     logging.error(
                         f"Free nudge error ({category}/{stage}) user={user_id}: {e}",

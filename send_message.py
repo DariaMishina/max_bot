@@ -21,10 +21,12 @@ from main.database import (
     update_user_blocked_status,
     get_all_users,
     get_paid_users,
-    is_send_blocked_error,
     mark_expired_access_reminder_sent,
     get_expired_access_reminder_stage_for_user,
 )
+from main.send_errors import is_unreachable_user_error, mark_user_unreachable
+
+SendOutcome = tuple[bool, bool]  # (delivered, unreachable_user)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,16 +38,13 @@ async def send_message_to_user(
     user_id: int,
     text: str,
     format: str = "html",
-    keyboard=None
-):
+    keyboard=None,
+) -> SendOutcome:
     """
     Отправить сообщение одному пользователю в Max.
 
-    Args:
-        user_id: Max User ID
-        text: Текст сообщения
-        format: Формат текста ('html', 'markdown' или None)
-        keyboard: KeyboardBuilder (опционально)
+    Returns:
+        (delivered, unreachable_user)
     """
     try:
         await bot.send_message(
@@ -59,22 +58,16 @@ async def send_message_to_user(
             await update_user_blocked_status(user_id, False)
         except Exception as db_error:
             logging.warning(f"Failed to update blocked status for user {user_id}: {db_error}")
-        return True
+        return True, False
     except Exception as e:
-        error_msg = str(e).lower()
-        if "chat not found" in error_msg or "user not found" in error_msg:
-            print(f"❌ Пользователь {user_id} не найден или не начинал диалог с ботом")
-        elif is_send_blocked_error(e):
-            print(f"❌ Пользователь {user_id} заблокировал бота или диалог приостановлен")
-            try:
-                await update_user_blocked_status(user_id, True)
-                print(f"   Статус блокировки обновлен в БД: is_blocked=True")
-            except Exception as db_error:
-                logging.error(f"Failed to update blocked status for user {user_id}: {db_error}")
+        unreachable = is_unreachable_user_error(e)
+        if unreachable:
+            print(f"❌ Пользователь {user_id} недоступен: {e}")
+            await mark_user_unreachable(user_id, e)
         else:
             print(f"❌ Ошибка отправки сообщению пользователю {user_id}: {e}")
-        logging.error(f"Error sending message to user {user_id}: {e}", exc_info=True)
-        return False
+            logging.error(f"Error sending message to user {user_id}: {e}", exc_info=True)
+        return False, unreachable
 
 
 async def send_message_to_multiple_users(
@@ -90,7 +83,7 @@ async def send_message_to_multiple_users(
     DELAY = 0.05
 
     for user_id in user_ids:
-        success = await send_message_to_user(user_id, text, format, keyboard)
+        success, _ = await send_message_to_user(user_id, text, format, keyboard)
         if success:
             results['success'] += 1
         else:
@@ -104,7 +97,7 @@ async def send_message_to_multiple_users(
     return results
 
 
-async def send_payment_reminder(user_id: int, stage: str = '10m'):
+async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome:
     """Напоминание об оплате с кнопкой «Оплатить».
 
     stage: '10m' | '1h' | '3h' | '24h' — этап автоматической рассылки.
@@ -136,7 +129,7 @@ async def send_payment_reminder(user_id: int, stage: str = '10m'):
     return await send_message_to_user(user_id, text, keyboard=kb)
 
 
-async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d'):
+async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOutcome:
     """Мягкое напоминание платнику, который давно не делал расклад."""
     texts = {
         '1d': (
@@ -162,7 +155,7 @@ async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d'):
     return await send_message_to_user(user_id, text, format=None)
 
 
-async def send_free_user_nudge(user_id: int, category: str, stage: str):
+async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendOutcome:
     """Nudge для бесплатных пользователей (C1–C4)."""
     if category == 'c1':
         from keyboards.main_menu import make_main_menu
@@ -235,9 +228,21 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str):
             await send_conversion_event(user_id, 'paywall')
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
-        await bot.send_message(text, user_id=user_id, format=None)
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
-        return True
+        try:
+            await bot.send_message(text, user_id=user_id, format=None)
+            await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+            try:
+                await update_user_blocked_status(user_id, False)
+            except Exception as db_error:
+                logging.warning(f"Failed to update blocked status for user {user_id}: {db_error}")
+            return True, False
+        except Exception as e:
+            unreachable = is_unreachable_user_error(e)
+            if unreachable:
+                await mark_user_unreachable(user_id, e)
+            else:
+                logging.error(f"Error sending free nudge C3 to user {user_id}: {e}", exc_info=True)
+            return False, unreachable
 
     if category == 'c4':
         texts = {
@@ -255,7 +260,7 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str):
         return await send_message_to_user(user_id, text, format=None)
 
     logging.warning(f"Unknown free nudge category {category} for user {user_id}")
-    return False
+    return False, False
 
 
 async def send_expired_access_reminder(
@@ -263,7 +268,7 @@ async def send_expired_access_reminder(
     stage: str = 'day0',
     *,
     sent_via: str = 'send_message_script',
-):
+) -> SendOutcome:
     """Напоминание пользователям с истёкшим платным доступом — серия day0–day3."""
     from keyboards.pay import make_payment_kb
     from main.conversions import save_paywall_conversion
@@ -310,10 +315,21 @@ async def send_expired_access_reminder(
         await bot.send_message(reminder_text, user_id=user_id, format=None)
         await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
         print(f"✅ Напоминание об истёкшем доступе ({stage}) отправлено пользователю {user_id}")
-        return True
+        try:
+            await update_user_blocked_status(user_id, False)
+        except Exception as db_error:
+            logging.warning(f"Failed to update blocked status for user {user_id}: {db_error}")
+        return True, False
     except Exception as e:
-        _handle_send_error(user_id, e, "напоминания об истёкшем доступе")
-        return False
+        unreachable = is_unreachable_user_error(e)
+        if unreachable:
+            await mark_user_unreachable(user_id, e)
+        else:
+            logging.error(
+                f"Error sending напоминания об истёкшем доступе to user {user_id}: {e}",
+                exc_info=True,
+            )
+        return False, unreachable
 
 
 async def send_no_divinations_reminder(
@@ -355,7 +371,7 @@ async def send_no_divinations_reminder(
         print(f"✅ Напоминание и меню оплаты отправлены пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "напоминания о закончившихся гаданиях")
+        await _handle_send_error(user_id, e, "напоминания о закончившихся гаданиях")
         return False
 
 
@@ -475,7 +491,7 @@ async def send_discussion_announcement(user_id: int):
         print(f"✅ Объявление и меню оплаты отправлены пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "объявления об обсуждении расклада")
+        await _handle_send_error(user_id, e, "объявления об обсуждении расклада")
         return False
 
 
@@ -561,7 +577,7 @@ async def send_friday13_promo(user_id: int):
         print(f"✅ Промо «Пятница 13» отправлено пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "промо «Пятница 13»")
+        await _handle_send_error(user_id, e, "промо «Пятница 13»")
         return False
 
 
@@ -620,7 +636,7 @@ async def send_tarologist_intro(user_id: int):
         print(f"✅ Представление таролога отправлено пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "представления таролога Дианы")
+        await _handle_send_error(user_id, e, "представления таролога Дианы")
         return False
 
 
@@ -673,7 +689,7 @@ async def send_consult_diana_contact(user_id: int, package: str = 'detailed'):
         print(f"✅ Контакт Дианы отправлен пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, f"контакта Дианы ({package_name})")
+        await _handle_send_error(user_id, e, f"контакта Дианы ({package_name})")
         return False
 
 
@@ -721,7 +737,7 @@ async def send_tarologist_reminder(user_id: int):
         print(f"✅ Напоминание о тарологе отправлено пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "напоминания о тарологе Диане")
+        await _handle_send_error(user_id, e, "напоминания о тарологе Диане")
         return False
 
 
@@ -771,7 +787,7 @@ async def send_full_moon_promo(user_id: int):
         print(f"✅ Промо «Полнолуние» отправлено пользователю {user_id}")
         return True
     except Exception as e:
-        _handle_send_error(user_id, e, "промо «Полнолуние»")
+        await _handle_send_error(user_id, e, "промо «Полнолуние»")
         return False
 
 
@@ -794,20 +810,15 @@ async def send_feedback_request(user_id: int):
     return await send_message_to_user(user_id, text, format=None, keyboard=kb)
 
 
-def _handle_send_error(user_id: int, error: Exception, action_desc: str):
-    """Общая обработка ошибок отправки — логирование и обновление статуса блокировки."""
-    error_msg = str(error).lower()
-    if "chat not found" in error_msg or "user not found" in error_msg:
-        print(f"❌ Пользователь {user_id} не найден или не начинал диалог с ботом")
-    elif is_send_blocked_error(error):
-        print(f"❌ Пользователь {user_id} заблокировал бота или диалог приостановлен")
-        try:
-            asyncio.get_event_loop().run_until_complete(update_user_blocked_status(user_id, True))
-        except Exception:
-            pass
-    else:
-        print(f"❌ Ошибка отправки {action_desc} пользователю {user_id}: {error}")
+async def _handle_send_error(user_id: int, error: Exception, action_desc: str) -> bool:
+    """Общая обработка ошибок отправки. Returns unreachable."""
+    if is_unreachable_user_error(error):
+        print(f"❌ Пользователь {user_id} недоступен ({action_desc})")
+        await mark_user_unreachable(user_id, error)
+        return True
+    print(f"❌ Ошибка отправки {action_desc} пользователю {user_id}: {error}")
     logging.error(f"Error sending {action_desc} to user {user_id}: {error}", exc_info=True)
+    return False
 
 
 async def main():
@@ -957,7 +968,7 @@ async def main():
             print(f"🚀 Отправка напоминаний об истёкшем доступе для {total} пользователя(ей)...")
             for uid in args.user_id:
                 stage = await get_expired_access_reminder_stage_for_user(uid) or 'day0'
-                success = await send_expired_access_reminder(uid, stage=stage)
+                success, _ = await send_expired_access_reminder(uid, stage=stage)
                 if success:
                     await mark_expired_access_reminder_sent(uid, stage)
                 await asyncio.sleep(0.05)

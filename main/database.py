@@ -1373,17 +1373,10 @@ async def get_paid_users() -> List[Dict[str, Any]]:
 
 
 def is_send_blocked_error(exc: Exception) -> bool:
-    """
-    Проверить, означает ли исключение при отправке сообщения,
-    что пользователь заблокировал бота или диалог приостановлен (Max: chat.denied / dialog.suspended).
-    """
-    msg = str(exc).lower()
-    return (
-        "blocked" in msg
-        or "forbidden" in msg
-        or "chat.denied" in msg
-        or "dialog.suspended" in msg
-    )
+    """Пользователь недоступен для отправки (блок, chat.denied, chat not found и т.д.)."""
+    from main.send_errors import is_unreachable_user_error
+
+    return is_unreachable_user_error(exc)
 
 
 async def update_user_blocked_status(user_id: int, is_blocked: bool) -> bool:

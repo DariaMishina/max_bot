@@ -7,6 +7,7 @@
 import asyncio
 import logging
 
+from main.broadcast_delivery import finalize_broadcast_send
 from main.broadcast_schedule import is_in_broadcast_window, is_user_due_in_tick
 from main.database import (
     EXPIRED_ACCESS_REMINDER_STAGES,
@@ -49,14 +50,21 @@ async def process_expired_access_reminders() -> dict:
                 continue
 
             try:
-                success = await send_expired_access_reminder(user_id, stage=stage)
-                if success:
-                    await mark_expired_access_reminder_sent(user_id, stage)
+                success, unreachable = await send_expired_access_reminder(user_id, stage=stage)
+                outcome = await finalize_broadcast_send(
+                    success,
+                    unreachable,
+                    lambda uid=user_id, st=stage: mark_expired_access_reminder_sent(uid, st),
+                )
+                if outcome == 'sent':
                     results['sent'] += 1
                     results['by_stage'][stage]['sent'] += 1
-                else:
+                elif outcome == 'blocked':
                     results['blocked'] += 1
                     results['by_stage'][stage]['blocked'] += 1
+                else:
+                    results['failed'] += 1
+                    results['by_stage'][stage]['failed'] += 1
             except Exception as e:
                 logging.error(
                     f"Expired access reminder error ({stage}) user={user_id}: {e}",

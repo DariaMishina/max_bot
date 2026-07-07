@@ -21,12 +21,12 @@ from main.botdef import bot
 from main.database import (
     get_all_users,
     update_user_blocked_status,
-    is_send_blocked_error,
     get_user_balance,
     can_user_divinate,
     update_user_daily_card_subscription,
-    get_user_daily_card_subscription
+    get_user_daily_card_subscription,
 )
+from main.send_errors import is_unreachable_user_error
 from handlers.tarot_cards import get_all_available_cards, get_card_info, get_card_image_path
 
 router = aiomax.Router()
@@ -72,8 +72,7 @@ async def send_daily_card_message(user_id: int, auto_update_blocked_status: bool
         )
         return True
     except Exception as e:
-        error_str = str(e).lower()
-        if is_send_blocked_error(e) or 'chat not found' in error_str:
+        if is_unreachable_user_error(e):
             if auto_update_blocked_status:
                 await update_user_blocked_status(user_id, True)
                 logging.info(f"User {user_id} blocked the bot, updated status")
