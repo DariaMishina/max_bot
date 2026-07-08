@@ -19,6 +19,7 @@ psql -U max_bot_user -d max_bot_db -h HOST -f migrations/20260705_event_driven_n
 | Карта дня | 09:25 ежедневно | `handlers/daily_card.py` | Карта дня подписчикам |
 | Event-driven nudges | каждые 2 мин | `main/inactivity_nudges.py` | Платники (B) + бесплатные (C1–C4) |
 | Expired access reminders | :00/:30 10–20 ежедневно | `main/expired_access_reminders.py` | day0–day3 после истечения доступа |
+| Tarologist reminder | ср/вс 16:30 MSK | `main/tarologist_reminders.py` | Напоминание о тарологе Диане (всем незаблокированным) |
 | Payment reminders | каждые 2 мин | `main/payment_reminders.py` | 10м / 1ч / 3ч / 24ч после pending-платежа |
 | Reconcile payments | каждые 10 мин | `bot.py` | Сверка pending с ЮKassa |
 
@@ -80,4 +81,5 @@ python send_message.py USER_ID --gentle-nudge
 python send_message.py USER_ID --free-return
 python send_message.py USER_ID --activation
 python send_message.py USER_ID --payment-reminder
+python send_message.py --broadcast --tarologist-reminder
 ```

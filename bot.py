@@ -178,6 +178,31 @@ async def main():
         replace_existing=True
     )
 
+    TAROLOGIST_REMINDER_HOUR = 16
+    TAROLOGIST_REMINDER_MINUTE = 30
+
+    async def tarologist_reminder_job():
+        """Рассылка напоминания о тарологе: ср/вс 16:30 MSK."""
+        try:
+            from main.tarologist_reminders import process_tarologist_reminders
+            results = await process_tarologist_reminders()
+            logging.info(f"Tarologist reminder job completed: {results}")
+        except Exception as e:
+            logging.error(f"Error in tarologist reminder job: {e}", exc_info=True)
+
+    scheduler.add_job(
+        tarologist_reminder_job,
+        trigger=CronTrigger(
+            day_of_week='wed,sun',
+            hour=TAROLOGIST_REMINDER_HOUR,
+            minute=TAROLOGIST_REMINDER_MINUTE,
+            timezone='Europe/Moscow',
+        ),
+        id='tarologist_reminder',
+        name='Напоминание о тарологе Диане (ср/вс 16:30 MSK)',
+        replace_existing=True,
+    )
+
     scheduler.start()
     logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
     logging.info("APScheduler: inactivity nudges every 2 minutes (paid + free segments)")
@@ -187,6 +212,10 @@ async def main():
     )
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
     logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h / 24h stages)")
+    logging.info(
+        f"APScheduler: tarologist reminder Wed/Sun "
+        f"{TAROLOGIST_REMINDER_HOUR:02d}:{TAROLOGIST_REMINDER_MINUTE:02d} MSK"
+    )
 
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
     webhook_runner = None

@@ -693,7 +693,11 @@ async def send_consult_diana_contact(user_id: int, package: str = 'detailed'):
         return False
 
 
-async def send_tarologist_reminder(user_id: int):
+async def send_tarologist_reminder(
+    user_id: int,
+    *,
+    sent_via: str = 'send_message_script',
+):
     """Повторное напоминание о тарологе Диане — для тех, кто уже видел представление."""
     from keyboards.pay import make_consultation_kb
     from main.conversions import save_paywall_conversion
@@ -726,7 +730,7 @@ async def send_tarologist_reminder(user_id: int):
             await save_paywall_conversion(
                 user_id=user_id,
                 paywall_source="tarologist_reminder",
-                metadata={'reminder_type': 'tarologist_reminder', 'sent_via': 'send_message_script'}
+                metadata={'reminder_type': 'tarologist_reminder', 'sent_via': sent_via}
             )
             from main.metrika_mp import send_conversion_event
             await send_conversion_event(user_id, 'paywall')
