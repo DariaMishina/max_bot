@@ -22,10 +22,12 @@ import aiomax
 from aiomax import fsm, filters, buttons
 
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
+from keyboards.pay import make_payment_kb
 from main.database import (
     create_or_update_user, get_user_balance, can_user_divinate,
     create_user_balance, get_and_delete_webapp_follow_up_context,
     has_paid_access, mark_channel_subscribed, clear_channel_subscribed,
+    mark_paywall_reached,
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import generate_metrika_client_id, send_pageview, send_conversion_event
@@ -336,6 +338,28 @@ async def show_balance_button(message: aiomax.Message, cursor: fsm.FSMCursor):
 @router.on_message(filters.equals("Новый расклад 🃏"))
 async def new_divination_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Новый расклад 🃏» — просит ввести вопрос"""
+    user_id = message.sender.user_id
+    can_div, _ = await can_user_divinate(user_id)
+    if not can_div:
+        try:
+            await mark_paywall_reached(user_id)
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="divination_blocked",
+                metadata={'entry': 'new_divination_button'},
+            )
+            asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+        from handlers.divination import PAYWALL_NO_DIVINATIONS_TEXT
+        cursor.clear()
+        await message.reply(
+            PAYWALL_NO_DIVINATIONS_TEXT,
+            keyboard=make_payment_kb(),
+            format='html',
+        )
+        return
+
     cursor.clear()
     await message.reply(
         "🔮 Напиши свой вопрос — о чём хочешь узнать?",
@@ -443,7 +467,7 @@ async def _show_balance(msg, cursor: fsm.FSMCursor):
             
             can_divinate, access_type = await can_user_divinate(user_id)
             if not can_divinate:
-                balance_text += "Гадания закончились — нажми ◀ В меню → Купить расклады 💎"
+                balance_text += "Гадания закончились — выбери пакет, чтобы продолжить 👇"
                 
                 try:
                     await save_paywall_conversion(
@@ -459,19 +483,21 @@ async def _show_balance(msg, cursor: fsm.FSMCursor):
                     asyncio.create_task(send_conversion_event(user_id, 'paywall'))
                 except Exception as e:
                     logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+                balance_kb = make_payment_kb()
             else:
                 balance_text += "Можешь начинать гадать! Просто напиши свой вопрос в чат."
+                balance_kb = make_back_to_menu_kb()
             
             if hasattr(msg, 'reply'):
-                await msg.reply(balance_text, keyboard=make_back_to_menu_kb(), format='html')
+                await msg.reply(balance_text, keyboard=balance_kb, format='html')
             else:
-                await msg.send(balance_text, keyboard=make_back_to_menu_kb(), format='html')
+                await msg.send(balance_text, keyboard=balance_kb, format='html')
         else:
             await create_user_balance(user_id)
             text = (
                 "🔮 <b>Ваш баланс гаданий</b>\n\n"
                 "У вас осталось <b>3 бесплатных гадания</b>\n\n"
-                "Гадания закончились — нажми ◀ В меню → Купить расклады 💎"
+                "Можешь начинать гадать! Просто напиши свой вопрос в чат."
             )
             if hasattr(msg, 'reply'):
                 await msg.reply(text, keyboard=make_back_to_menu_kb(), format='html')

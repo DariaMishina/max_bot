@@ -18,6 +18,7 @@ from aiomax import fsm, filters, buttons
 
 from keyboards.divination import make_divination_kb
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
+from keyboards.pay import make_payment_kb
 from handlers.tarot_cards import (
     create_card_selection_keyboard, interpret_cards, get_card_image_path,
     get_all_available_cards, send_card_images, get_card_info, TAROT_CARDS,
@@ -46,6 +47,30 @@ from main.metrika_mp import send_conversion_event
 FOLLOW_UP_LIMIT_FREE = 2
 FOLLOW_UP_LIMIT_PAID = 5
 
+PAYWALL_NO_DIVINATIONS_TEXT = (
+    "❌ <b>У вас закончились гадания</b>\n\n"
+    "Выбери пакет, чтобы продолжить 👇"
+)
+
+
+def _build_free_divinations_hint(free_remaining_after: int | None, *, was_free: bool) -> str:
+    """Подсказка об остатке бесплатных раскладов (только для бесплатных)."""
+    if not was_free or free_remaining_after is None:
+        return ""
+    if free_remaining_after == 0:
+        return (
+            "\n\n<i>Это был последний бесплатный расклад. "
+            "Чтобы гадать дальше — выбери пакет 👇</i>"
+        )
+    if free_remaining_after == 1:
+        return "\n\n<i>Остался 1 бесплатный расклад.</i>"
+    return f"\n\n<i>Осталось {free_remaining_after} бесплатных расклада.</i>"
+
+
+def _result_keyboard(*, free_limit_reached: bool):
+    return make_payment_kb() if free_limit_reached else make_back_to_menu_kb()
+
+
 # FSM состояния (строковые для aiomax)
 STATE_CHOOSING_DIVINATION = 'choosing_divination'
 STATE_WAITING_FOR_QUESTION = 'waiting_for_question'
@@ -67,6 +92,22 @@ async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
 
     if not await check_channel_subscription(user_id):
         await send_channel_sub_prompt(ctx)
+        return
+
+    can_div, _ = await can_user_divinate(user_id)
+    if not can_div:
+        try:
+            await mark_paywall_reached(user_id)
+            await save_paywall_conversion(
+                user_id=user_id,
+                paywall_source="divination_blocked",
+                metadata={'entry': 'command_divination'},
+            )
+            import asyncio
+            asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+        except Exception as e:
+            logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+        await ctx.reply(PAYWALL_NO_DIVINATIONS_TEXT, keyboard=make_payment_kb(), format='html')
         return
 
     cursor.clear()
@@ -169,9 +210,8 @@ async def process_divination_internal(message: aiomax.Message, cursor: fsm.FSMCu
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
         
         await message.reply(
-            "❌ <b>У вас закончились гадания</b>\n\n"
-            "Нажми ◀ В меню → Купить расклады 💎",
-            keyboard=make_back_to_menu_kb(),
+            PAYWALL_NO_DIVINATIONS_TEXT,
+            keyboard=make_payment_kb(),
             format='html'
         )
         cursor.clear()
@@ -237,6 +277,24 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
             await message.reply("❌ Произошла ошибка при списании гадания.", keyboard=make_back_to_menu_kb())
             cursor.clear()
             return
+
+        balance_after = await get_user_balance(user_id)
+        free_remaining_after = (
+            balance_after['free_divinations_remaining'] if balance_after else None
+        )
+        free_limit_reached = bool(is_free and free_remaining_after == 0)
+        if free_limit_reached:
+            try:
+                await mark_paywall_reached(user_id)
+                await save_paywall_conversion(
+                    user_id=user_id,
+                    paywall_source="last_free_divination",
+                    metadata={'divination_type': 'Ицзин'},
+                )
+                import asyncio
+                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+            except Exception as e:
+                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
         
         # Сохраняем в БД
         divination_id = await save_divination(
@@ -277,6 +335,8 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
             'original_interpretation': chatgpt_response
         })
         cursor.change_data(data)
+
+        free_hint = _build_free_divinations_hint(free_remaining_after, was_free=is_free)
         
         await message.reply(
             f"☯️ <b>Результат гадания по Ицзин</b>\n\n"
@@ -284,8 +344,9 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
             f"<b>Выпавшая гексаграмма:</b> {hexagram_name}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
             "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню",
-            keyboard=make_back_to_menu_kb(),
+            "🔮 Новый расклад — нажми ◀ В меню"
+            f"{free_hint}",
+            keyboard=_result_keyboard(free_limit_reached=free_limit_reached),
             format='html'
         )
         
@@ -378,6 +439,24 @@ async def _finish_tarot_reading(
             cursor.clear()
             return False
 
+        balance_after = await get_user_balance(user_id)
+        free_remaining_after = (
+            balance_after['free_divinations_remaining'] if balance_after else None
+        )
+        free_limit_reached = bool(is_free and free_remaining_after == 0)
+        if free_limit_reached:
+            try:
+                await mark_paywall_reached(user_id)
+                await save_paywall_conversion(
+                    user_id=user_id,
+                    paywall_source="last_free_divination",
+                    metadata={'divination_type': 'Таро', 'method': method},
+                )
+                import asyncio
+                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+            except Exception as e:
+                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+
         divination_id = await save_divination(
             user_id=user_id, divination_type="Таро", question=question,
             selected_cards=card_ids, interpretation=chatgpt_response, is_free=is_free
@@ -412,6 +491,7 @@ async def _finish_tarot_reading(
         })
         cursor.change_data(data)
 
+        free_hint = _build_free_divinations_hint(free_remaining_after, was_free=is_free)
         cards_names = [get_card_info(cid)['name'] for cid in card_ids]
         await bot.send_message(
             f"🃏 <b>Результат гадания на Таро</b>\n\n"
@@ -419,9 +499,10 @@ async def _finish_tarot_reading(
             f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
             "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню",
+            "🔮 Новый расклад — нажми ◀ В меню"
+            f"{free_hint}",
             chat_id=chat_id,
-            keyboard=make_back_to_menu_kb(),
+            keyboard=_result_keyboard(free_limit_reached=free_limit_reached),
             format='html'
         )
 
@@ -764,11 +845,32 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
     follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
     
     if follow_up_count >= follow_up_limit:
-        await message.reply(
-            f"💬 Лимит уточняющих вопросов ({follow_up_limit}) исчерпан.\n\n"
-            "Нажми ◀ В меню, чтобы начать новый расклад или купить дополнительные.",
-            keyboard=make_back_to_menu_kb()
-        )
+        user_id = message.sender.user_id
+        can_div, _ = await can_user_divinate(user_id)
+        if can_div:
+            await message.reply(
+                f"💬 Лимит уточняющих вопросов ({follow_up_limit}) исчерпан.\n\n"
+                "Нажми ◀ В меню, чтобы начать новый расклад.",
+                keyboard=make_back_to_menu_kb()
+            )
+        else:
+            try:
+                await mark_paywall_reached(user_id)
+                await save_paywall_conversion(
+                    user_id=user_id,
+                    paywall_source="follow_up_limit",
+                    metadata={'follow_up_limit': follow_up_limit},
+                )
+                import asyncio
+                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
+            except Exception as e:
+                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
+            await message.reply(
+                f"💬 Лимит уточняющих вопросов ({follow_up_limit}) исчерпан.\n\n"
+                "Выбери пакет, чтобы сделать новый расклад 👇",
+                keyboard=make_payment_kb(),
+                format='html',
+            )
         cursor.clear()
         return
     
