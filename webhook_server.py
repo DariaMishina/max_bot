@@ -9,7 +9,10 @@ Webhook сервер для приема уведомлений от ЮKassa —
 import asyncio
 import logging
 import json
+import os
+import ssl
 import aiohttp
+import aiomax
 from aiohttp import web
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response
@@ -30,6 +33,18 @@ from main.conversions import save_conversion
 # Хранилище обработанных платежей для защиты от дубликатов
 processed_payments = set()
 
+_MAX_API_MESSAGES_URL = "https://platform-api2.max.ru/messages"
+_MINTSIFRA_CA = os.path.join(
+    os.path.dirname(aiomax.__file__), "russian_trusted_root_ca.cer"
+)
+
+
+def _max_api_ssl_context() -> ssl.SSLContext:
+    """SSL с встроенным в aiomax сертификатом Минцифры (для platform-api2)."""
+    ctx = ssl.create_default_context()
+    ctx.load_verify_locations(cafile=_MINTSIFRA_CA)
+    return ctx
+
 
 async def _send_message_direct(user_id: int, text: str, keyboard=None):
     """Отправить сообщение через Max API напрямую, минуя bot.session.
@@ -37,7 +52,6 @@ async def _send_message_direct(user_id: int, text: str, keyboard=None):
     start_polling(). При cold start на Render вебхук приходит раньше —
     сессии нет. Эта функция работает всегда."""
     token = config.effective_bot_token.get_secret_value()
-    url = "https://platform-api.max.ru/messages"
     params = {"user_id": user_id}
     headers = {"Authorization": token}
 
@@ -56,8 +70,11 @@ async def _send_message_direct(user_id: int, text: str, keyboard=None):
             },
         }]
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, params=params, headers=headers, json=body) as resp:
+    connector = aiohttp.TCPConnector(ssl=_max_api_ssl_context())
+    async with aiohttp.ClientSession(connector=connector) as session:
+        async with session.post(
+            _MAX_API_MESSAGES_URL, params=params, headers=headers, json=body
+        ) as resp:
             if resp.status in range(200, 300):
                 logging.info(f"Direct API: message sent to user {user_id}")
                 return True

@@ -82,6 +82,61 @@ CHANNEL_SUB_TEXT = (
 )
 
 
+def _member_matches_user(member, user_id: int) -> bool:
+    """True только если API вернул именно этого пользователя, а не чужой/первый элемент списка."""
+    if member is None:
+        return False
+    members = member if isinstance(member, list) else [member]
+    matched_ids = []
+    for m in members:
+        mid = getattr(m, "user_id", None)
+        matched_ids.append(mid)
+        if mid == user_id:
+            logging.info(
+                "Channel membership OK: requested=%s got user_id=%s name=%r",
+                user_id,
+                mid,
+                getattr(m, "name", None),
+            )
+            return True
+    logging.warning(
+        "Channel membership MISMATCH: requested=%s api_user_ids=%s "
+        "(treating as not subscribed)",
+        user_id,
+        matched_ids,
+    )
+    return False
+
+
+async def _fetch_channel_member(user_id: int):
+    """Запрос membership в канал. Логирует сырой результат."""
+    from main.botdef import bot
+
+    member = await bot.get_memberships(config.channel_chat_id, user_id)
+    if member is None:
+        logging.info(
+            "Channel membership raw: chat_id=%s user_id=%s → empty",
+            config.channel_chat_id,
+            user_id,
+        )
+    elif isinstance(member, list):
+        logging.info(
+            "Channel membership raw: chat_id=%s user_id=%s → list=%s",
+            config.channel_chat_id,
+            user_id,
+            [(getattr(m, "user_id", None), getattr(m, "name", None)) for m in member],
+        )
+    else:
+        logging.info(
+            "Channel membership raw: chat_id=%s user_id=%s → user_id=%s name=%r",
+            config.channel_chat_id,
+            user_id,
+            getattr(member, "user_id", None),
+            getattr(member, "name", None),
+        )
+    return member
+
+
 async def check_channel_subscription(user_id: int) -> bool:
     """
     Проверить, нужно ли блокировать пользователя из-за отсутствия подписки на канал.
@@ -96,10 +151,9 @@ async def check_channel_subscription(user_id: int) -> bool:
     if await has_paid_access(user_id):
         return True
 
-    from main.botdef import bot
     try:
-        member = await bot.get_memberships(config.channel_chat_id, user_id)
-        if member is not None:
+        member = await _fetch_channel_member(user_id)
+        if _member_matches_user(member, user_id):
             await mark_channel_subscribed(user_id)
             return True
         else:
@@ -130,15 +184,14 @@ async def handle_check_channel_sub(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         await cb.answer("Проверка подписки не настроена.")
         return
 
-    from main.botdef import bot
     try:
-        member = await bot.get_memberships(config.channel_chat_id, user_id)
+        member = await _fetch_channel_member(user_id)
     except Exception as e:
         logging.error(f"Error checking channel membership on callback for {user_id}: {e}", exc_info=True)
         await cb.answer("Произошла ошибка, попробуй ещё раз.")
         return
 
-    if member is not None:
+    if _member_matches_user(member, user_id):
         await mark_channel_subscribed(user_id)
         await cb.send(
             "🎉 <b>Отлично, подписка подтверждена!</b>\n\n"

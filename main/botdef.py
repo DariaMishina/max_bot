@@ -4,7 +4,8 @@ from main.config_reader import config
 
 bot = aiomax.Bot(
     config.effective_bot_token.get_secret_value(),
-    default_format='html'
+    default_format='html',
+    use_certificate=True,
 )
 
 
@@ -42,7 +43,7 @@ for _m in ("get", "post", "patch", "put", "delete"):
 
 
 # MAX API иногда не возвращает intent у callback-кнопок (поле опционально в API),
-# а aiomax 2.12.4 требует его при разборе ответов — KeyError ломает /start и кнопки.
+# а aiomax требует его при разборе ответов — KeyError ломает /start и кнопки.
 from aiomax import buttons as _aiomax_buttons
 
 

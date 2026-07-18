@@ -10,10 +10,13 @@
 """
 import asyncio
 import logging
+import os
+import ssl
 import sys
 from typing import Optional
 
 import aiohttp
+import aiomax
 from aiomax import buttons
 from main.botdef import bot
 from main.database import (
@@ -1054,7 +1057,22 @@ async def main():
 
 async def run():
     """Обёртка: создаём aiohttp-сессию для бота и запускаем main()."""
-    async with aiohttp.ClientSession() as session:
+    # aiomax 2.12.5+: API-методы используют относительные пути + base_url,
+    # для platform-api2 нужен сертификат Минцифры.
+    connector = None
+    if bot.use_certificate:
+        cert = os.path.join(
+            os.path.dirname(aiomax.__file__), "russian_trusted_root_ca.cer"
+        )
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.load_verify_locations(cafile=cert)
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+
+    async with aiohttp.ClientSession(
+        headers={"Authorization": bot.access_token},
+        connector=connector,
+        base_url=bot.api_url,
+    ) as session:
         bot.session = session
         await main()
 
