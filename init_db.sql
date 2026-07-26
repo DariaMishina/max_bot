@@ -154,7 +154,9 @@ CREATE INDEX IF NOT EXISTS idx_max_users_yclid ON max_users(yclid);
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_10m_sent_at TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_1h_sent_at  TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_3h_sent_at  TIMESTAMP NULL;
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_12h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_24h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_payments ADD COLUMN IF NOT EXISTS reminder_48h_sent_at TIMESTAMP NULL;
 
 -- Одноразовый backfill для старых pending/canceled — только migrations/20260530_payment_reminders.sql
 -- НЕ делать UPDATE здесь: при повторном init_db.sql (миграция, деплой) напоминания «ломаются» без отправки.
@@ -185,20 +187,30 @@ ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day0_sent_
 ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day1_sent_at TIMESTAMP NULL;
 ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day2_sent_at TIMESTAMP NULL;
 ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day3_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day4_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day5_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day6_sent_at TIMESTAMP NULL;
+ALTER TABLE max_user_balances ADD COLUMN IF NOT EXISTS expired_access_day7_sent_at TIMESTAMP NULL;
 
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_12h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_1d_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_48h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_3d_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_5d_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS paid_inactivity_10d_sent_at TIMESTAMP NULL;
 
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_1h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_12h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_24h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c1_48h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_12h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_24h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c2_48h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_1h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_3h_sent_at TIMESTAMP NULL;
+ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_12h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_24h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c3_48h_sent_at TIMESTAMP NULL;
 ALTER TABLE max_users ADD COLUMN IF NOT EXISTS free_nudge_c4_3d_sent_at TIMESTAMP NULL;

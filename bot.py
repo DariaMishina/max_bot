@@ -131,7 +131,7 @@ async def main():
     )
 
     async def expired_access_reminder_job():
-        """Триггер A: серия day0–day3 после истечения платного доступа."""
+        """Триггер A: серия day0–day7 после истечения платного доступа."""
         try:
             from main.expired_access_reminders import process_expired_access_reminders
             results = await process_expired_access_reminders()
@@ -148,7 +148,7 @@ async def main():
             timezone='Europe/Moscow'
         ),
         id='expired_access_reminders',
-        name='Expired access reminders (10:00–20:00 MSK, day0–day3)',
+        name='Expired access reminders (10:00–20:00 MSK, day0–day7)',
         replace_existing=True
     )
 
@@ -161,7 +161,7 @@ async def main():
     )
 
     async def payment_reminders_job():
-        """Напоминания о незавершённой оплате: 10м, 1ч, 3ч, 24ч после создания платежа."""
+        """Напоминания об оплате: 10м, 1ч, 3ч, 12ч, 24ч, 48ч."""
         try:
             from main.payment_reminders import process_payment_reminders
             results = await process_payment_reminders()
@@ -174,7 +174,7 @@ async def main():
         payment_reminders_job,
         trigger=IntervalTrigger(minutes=2),
         id='payment_reminders',
-        name='Напоминания о незавершённой оплате (10м / 1ч / 3ч / 24ч)',
+        name='Напоминания об оплате (10м / 1ч / 3ч / 12ч / 24ч / 48ч)',
         replace_existing=True
     )
 
@@ -208,10 +208,13 @@ async def main():
     logging.info("APScheduler: inactivity nudges every 2 minutes (paid + free segments)")
     logging.info(
         f"APScheduler: expired access reminders daily {BROADCAST_CRON_HOURS} MSK "
-        f"(every {BROADCAST_CRON_MINUTES} min, day0–day3)"
+        f"(every {BROADCAST_CRON_MINUTES} min, day0–day7)"
     )
     logging.info("APScheduler: pending payments reconciliation every 10 minutes")
-    logging.info("APScheduler: payment reminders every 2 minutes (10m / 1h / 3h / 24h stages)")
+    logging.info(
+        "APScheduler: payment reminders every 2 minutes "
+        "(10m / 1h / 3h / 12h / 24h / 48h stages)"
+    )
     logging.info(
         f"APScheduler: tarologist reminder Wed/Sun "
         f"{TAROLOGIST_REMINDER_HOUR:02d}:{TAROLOGIST_REMINDER_MINUTE:02d} MSK"

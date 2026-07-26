@@ -1,7 +1,7 @@
 """
 Event-driven nudge-рассылки: платники (B) и бесплатные пользователи (C1–C4).
 
-Платники: 1/3/5/10 дней молчания — слот 10:00–20:00 MSK.
+Платники: 12ч/1д/48ч/3д/5д/10д молчания — слот 10:00–20:00 MSK.
 Бесплатные: часы/дни от якорного события — без слота, проверка каждые 2 мин.
 
 Защита от catch-up: за один тик каждому пользователю уходит максимум ОДИН этап
@@ -79,6 +79,7 @@ async def process_inactivity_nudges() -> dict:
                 elif outcome == 'blocked':
                     results['blocked'] += 1
                     results['by_type'][key]['blocked'] += 1
+                    sent_paid_this_run.add(user_id)
                 else:
                     results['failed'] += 1
                     results['by_type'][key]['failed'] += 1
@@ -128,6 +129,7 @@ async def process_inactivity_nudges() -> dict:
                     elif outcome == 'blocked':
                         results['blocked'] += 1
                         results['by_type'][key]['blocked'] += 1
+                        sent_this_category.add(user_id)
                     else:
                         results['failed'] += 1
                         results['by_type'][key]['failed'] += 1

@@ -56,8 +56,18 @@ MSK_LAST_MONTH="((NOW() AT TIME ZONE '${REPORT_TZ_DISPLAY}')::date - INTERVAL '1
 # Возвращённые платежи (исключаем из статистики, чтобы не искажали цифры)
 # 07.05.2026 — Анюта Очирова (user_id=62476933), Подробный разбор, 1500₽
 # 24.05.2026 — Анюта Очирова (user_id=62476933), Базовый разбор, 500₽
-EXCLUDE_REFUNDED="AND NOT (user_id = 62476933 AND ((package_id = 'consult_detailed' AND created_at::date = '2026-05-07') OR (package_id = 'consult_basic' AND created_at::date = '2026-05-24')))"
-EXCLUDE_REFUNDED_P="AND NOT (p.user_id = 62476933 AND ((p.package_id = 'consult_detailed' AND p.created_at::date = '2026-05-07') OR (p.package_id = 'consult_basic' AND p.created_at::date = '2026-05-24')))"
+# 17.07.2026 — Ирина (user_id=93275506), Базовый разбор, 500₽
+# 17.07.2026 — Марк (user_id=16341022), Базовый разбор, 500₽
+EXCLUDE_REFUNDED="AND NOT (
+  (user_id = 62476933 AND ((package_id = 'consult_detailed' AND created_at::date = '2026-05-07') OR (package_id = 'consult_basic' AND created_at::date = '2026-05-24')))
+  OR (user_id = 93275506 AND package_id = 'consult_basic' AND created_at::date = '2026-07-17')
+  OR (user_id = 16341022 AND package_id = 'consult_basic' AND created_at::date = '2026-07-17')
+)"
+EXCLUDE_REFUNDED_P="AND NOT (
+  (p.user_id = 62476933 AND ((p.package_id = 'consult_detailed' AND p.created_at::date = '2026-05-07') OR (p.package_id = 'consult_basic' AND p.created_at::date = '2026-05-24')))
+  OR (p.user_id = 93275506 AND p.package_id = 'consult_basic' AND p.created_at::date = '2026-07-17')
+  OR (p.user_id = 16341022 AND p.package_id = 'consult_basic' AND p.created_at::date = '2026-07-17')
+)"
 
 # Функция для вывода заголовка
 print_header() {

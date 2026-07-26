@@ -644,17 +644,63 @@ PAYMENT_REMINDER_STAGES = {
     '10m': (10, 'reminder_10m_sent_at'),
     '1h': (60, 'reminder_1h_sent_at'),
     '3h': (180, 'reminder_3h_sent_at'),
+    '12h': (720, 'reminder_12h_sent_at'),
     '24h': (1440, 'reminder_24h_sent_at'),
+    '48h': (2880, 'reminder_48h_sent_at'),
 }
+
+PAYMENT_REMINDER_PREV_SENT = {
+    '10m': None,
+    '1h': 'reminder_10m_sent_at',
+    '3h': 'reminder_1h_sent_at',
+    '12h': 'reminder_3h_sent_at',
+    '24h': 'reminder_12h_sent_at',
+    '48h': 'reminder_24h_sent_at',
+}
+
+_payments_reminder_columns_ensured = False
 
 
 async def ensure_payments_reminder_columns() -> None:
-    """Добавить колонку reminder_24h_sent_at для платежей."""
+    """Добавить колонки payment reminders с anti-catch-up для новых этапов."""
+    global _payments_reminder_columns_ensured
+    if _payments_reminder_columns_ensured:
+        return
+
     payments_table = get_table_name("payments")
     try:
-        await Database.execute_query(
-            f"ALTER TABLE {payments_table} ADD COLUMN IF NOT EXISTS reminder_24h_sent_at TIMESTAMP NULL"
+        for column in (
+            'reminder_10m_sent_at',
+            'reminder_1h_sent_at',
+            'reminder_3h_sent_at',
+            'reminder_24h_sent_at',
+        ):
+            await _add_timestamp_column_if_missing(payments_table, column)
+
+        await _add_timestamp_column_if_missing(
+            payments_table,
+            'reminder_12h_sent_at',
+            f"""
+            UPDATE {payments_table}
+            SET reminder_12h_sent_at = NOW(), updated_at = NOW()
+            WHERE reminder_12h_sent_at IS NULL
+              AND status IN ('pending', 'canceled')
+              AND (reminder_24h_sent_at IS NOT NULL
+                   OR created_at <= NOW() - INTERVAL '12 hours')
+            """,
         )
+        await _add_timestamp_column_if_missing(
+            payments_table,
+            'reminder_48h_sent_at',
+            f"""
+            UPDATE {payments_table}
+            SET reminder_48h_sent_at = NOW(), updated_at = NOW()
+            WHERE reminder_48h_sent_at IS NULL
+              AND status IN ('pending', 'canceled')
+              AND created_at <= NOW() - INTERVAL '48 hours'
+            """,
+        )
+        _payments_reminder_columns_ensured = True
     except Exception as e:
         logging.error(f"Error ensuring payments reminder columns: {e}", exc_info=True)
         raise
@@ -677,8 +723,12 @@ async def get_payments_due_for_reminder(stage: str) -> List[Dict[str, Any]]:
         raise ValueError(f"Unknown reminder stage: {stage}")
 
     minutes, sent_column = PAYMENT_REMINDER_STAGES[stage]
+    prev_sent = PAYMENT_REMINDER_PREV_SENT[stage]
+    prev_sent_filter = f"AND p.{prev_sent} IS NOT NULL" if prev_sent else ""
     payments_table = get_table_name("payments")
     users_table = get_table_name("users")
+    balances_table = get_table_name("user_balances")
+    active_paid = _active_paid_access_sql()
 
     try:
         await ensure_payments_reminder_columns()
@@ -686,24 +736,14 @@ async def get_payments_due_for_reminder(stage: str) -> List[Dict[str, Any]]:
             SELECT p.payment_id, p.user_id, p.package_id, p.status, p.created_at
             FROM {payments_table} p
             INNER JOIN {users_table} u ON u.user_id = p.user_id
+            INNER JOIN {balances_table} ub ON ub.user_id = p.user_id
             WHERE p.status IN ('pending', 'canceled')
               AND u.is_blocked = FALSE
+              AND NOT ({active_paid})
               AND p.{sent_column} IS NULL
               AND p.created_at <= NOW() - INTERVAL '{int(minutes)} minutes'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM {payments_table} s
-                  WHERE s.user_id = p.user_id
-                    AND s.status = 'succeeded'
-                    AND s.completed_at IS NOT NULL
-                    AND (
-                        s.completed_at >= p.created_at
-                        OR (
-                            s.completed_at <= p.created_at
-                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
-                        )
-                    )
-              )
+              {prev_sent_filter}
+              AND NOT ({_covering_succeeded_payment_sql(payments_table, 'p')})
             ORDER BY p.created_at ASC
         """
         results = await Database.fetch_all(query)
@@ -825,36 +865,176 @@ _users_nudge_columns_ensured = False
 _user_balances_nudge_columns_ensured = False
 
 
+async def _table_has_column(table: str, column: str) -> bool:
+    return bool(
+        await Database.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = $1
+                  AND column_name = $2
+            )
+            """,
+            table,
+            column,
+        )
+    )
+
+
+async def _add_timestamp_column_if_missing(
+    table: str,
+    column: str,
+    backfill_sql: Optional[str] = None,
+) -> bool:
+    """Создать колонку и выполнить catch-up backfill только при первом создании."""
+    if await _table_has_column(table, column):
+        return False
+
+    await Database.execute_query(
+        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} TIMESTAMP NULL"
+    )
+    if backfill_sql:
+        await Database.execute_query(backfill_sql)
+        logging.info("Catch-up backfill applied for new column %s.%s", table, column)
+    return True
+
+
 async def ensure_users_nudge_columns() -> None:
-    """Добавить колонки max_users для event-driven nudge-рассылок."""
+    """Добавить колонки max_users; новые этапы безопасно закрыть backfill."""
     global _users_nudge_columns_ensured
     if _users_nudge_columns_ensured:
         return
 
     users_table = get_table_name("users")
+    divinations_table = get_table_name("divinations")
+    balances_table = get_table_name("user_balances")
+    subscriptions_table = get_table_name("subscriptions")
     try:
-        await Database.execute_query(
-            f"""
-            ALTER TABLE {users_table}
-            ADD COLUMN IF NOT EXISTS paid_inactivity_1d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS paid_inactivity_3d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS paid_inactivity_5d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS paid_inactivity_10d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c1_1h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c1_3h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c1_24h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c2_3h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c2_24h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c2_48h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c3_1h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c3_3h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c3_24h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c3_48h_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c4_3d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS free_nudge_c4_7d_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS paywall_reached_at TIMESTAMP NULL
-            """
+        for column in (
+            'paid_inactivity_1d_sent_at',
+            'paid_inactivity_3d_sent_at',
+            'paid_inactivity_5d_sent_at',
+            'paid_inactivity_10d_sent_at',
+            'free_nudge_c1_1h_sent_at',
+            'free_nudge_c1_3h_sent_at',
+            'free_nudge_c1_24h_sent_at',
+            'free_nudge_c2_3h_sent_at',
+            'free_nudge_c2_24h_sent_at',
+            'free_nudge_c2_48h_sent_at',
+            'free_nudge_c3_1h_sent_at',
+            'free_nudge_c3_3h_sent_at',
+            'free_nudge_c3_24h_sent_at',
+            'free_nudge_c3_48h_sent_at',
+            'free_nudge_c4_3d_sent_at',
+            'free_nudge_c4_7d_sent_at',
+            'paywall_reached_at',
+        ):
+            await _add_timestamp_column_if_missing(users_table, column)
+
+        new_columns = (
+            (
+                'paid_inactivity_12h_sent_at',
+                f"""
+                UPDATE {users_table} u
+                SET paid_inactivity_12h_sent_at = NOW()
+                FROM {balances_table} ub
+                WHERE ub.user_id = u.user_id
+                  AND u.paid_inactivity_12h_sent_at IS NULL
+                  AND u.last_active_at <= NOW() - INTERVAL '12 hours'
+                  AND (
+                      ub.unlimited_until > NOW()
+                      OR COALESCE(ub.paid_divinations_remaining, 0) > 0
+                      OR EXISTS (
+                          SELECT 1 FROM {subscriptions_table} s
+                          WHERE s.user_id = u.user_id
+                            AND s.is_active = TRUE
+                            AND s.expires_at > NOW()
+                      )
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM {divinations_table} d
+                      WHERE d.user_id = u.user_id
+                  )
+                """,
+            ),
+            (
+                'paid_inactivity_48h_sent_at',
+                f"""
+                UPDATE {users_table} u
+                SET paid_inactivity_48h_sent_at = NOW()
+                FROM {balances_table} ub
+                WHERE ub.user_id = u.user_id
+                  AND u.paid_inactivity_48h_sent_at IS NULL
+                  AND (u.paid_inactivity_3d_sent_at IS NOT NULL
+                       OR u.last_active_at <= NOW() - INTERVAL '48 hours')
+                  AND (
+                      ub.unlimited_until > NOW()
+                      OR COALESCE(ub.paid_divinations_remaining, 0) > 0
+                      OR EXISTS (
+                          SELECT 1 FROM {subscriptions_table} s
+                          WHERE s.user_id = u.user_id
+                            AND s.is_active = TRUE
+                            AND s.expires_at > NOW()
+                      )
+                  )
+                """,
+            ),
+            (
+                'free_nudge_c1_12h_sent_at',
+                f"""
+                UPDATE {users_table}
+                SET free_nudge_c1_12h_sent_at = NOW()
+                WHERE free_nudge_c1_12h_sent_at IS NULL
+                  AND (free_nudge_c1_24h_sent_at IS NOT NULL
+                       OR created_at <= NOW() - INTERVAL '12 hours')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {divinations_table} d
+                      WHERE d.user_id = {users_table}.user_id
+                  )
+                """,
+            ),
+            (
+                'free_nudge_c1_48h_sent_at',
+                f"""
+                UPDATE {users_table}
+                SET free_nudge_c1_48h_sent_at = NOW()
+                WHERE free_nudge_c1_48h_sent_at IS NULL
+                  AND created_at <= NOW() - INTERVAL '48 hours'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {divinations_table} d
+                      WHERE d.user_id = {users_table}.user_id
+                  )
+                """,
+            ),
+            (
+                'free_nudge_c2_12h_sent_at',
+                f"""
+                UPDATE {users_table}
+                SET free_nudge_c2_12h_sent_at = NOW()
+                WHERE free_nudge_c2_12h_sent_at IS NULL
+                  AND (free_nudge_c2_24h_sent_at IS NOT NULL
+                       OR free_nudge_c2_48h_sent_at IS NOT NULL
+                       OR last_active_at <= NOW() - INTERVAL '12 hours')
+                """,
+            ),
+            (
+                'free_nudge_c3_12h_sent_at',
+                f"""
+                UPDATE {users_table}
+                SET free_nudge_c3_12h_sent_at = NOW()
+                WHERE free_nudge_c3_12h_sent_at IS NULL
+                  AND (free_nudge_c3_24h_sent_at IS NOT NULL
+                       OR free_nudge_c3_48h_sent_at IS NOT NULL
+                       OR paywall_reached_at <= NOW() - INTERVAL '12 hours')
+                """,
+            ),
         )
+        for column, backfill_sql in new_columns:
+            await _add_timestamp_column_if_missing(
+                users_table, column, backfill_sql
+            )
         _users_nudge_columns_ensured = True
     except Exception as e:
         logging.error(f"Error ensuring users nudge columns: {e}", exc_info=True)
@@ -862,51 +1042,101 @@ async def ensure_users_nudge_columns() -> None:
 
 
 async def ensure_user_balances_nudge_columns() -> None:
-    """Добавить колонки max_user_balances для nudge-рассылок."""
+    """Добавить balance-колонки; новые expiry-этапы закрыть backfill."""
     global _user_balances_nudge_columns_ensured
     if _user_balances_nudge_columns_ensured:
         return
 
     balances_table = get_table_name("user_balances")
     try:
-        await Database.execute_query(
-            f"""
-            ALTER TABLE {balances_table}
-            ADD COLUMN IF NOT EXISTS access_expired_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS expired_access_reminder_for_until TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS expired_access_day0_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS expired_access_day1_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS expired_access_day2_sent_at TIMESTAMP NULL,
-            ADD COLUMN IF NOT EXISTS expired_access_day3_sent_at TIMESTAMP NULL
-            """
-        )
+        for column in (
+            'access_expired_at',
+            'expired_access_reminder_for_until',
+            'expired_access_day0_sent_at',
+            'expired_access_day1_sent_at',
+            'expired_access_day2_sent_at',
+            'expired_access_day3_sent_at',
+        ):
+            await _add_timestamp_column_if_missing(balances_table, column)
+
+        expiry_at = _expiry_at_expr("")
+        for day, column in (
+            (4, 'expired_access_day4_sent_at'),
+            (5, 'expired_access_day5_sent_at'),
+            (6, 'expired_access_day6_sent_at'),
+            (7, 'expired_access_day7_sent_at'),
+        ):
+            await _add_timestamp_column_if_missing(
+                balances_table,
+                column,
+                f"""
+                UPDATE {balances_table}
+                SET {column} = NOW(), updated_at = NOW()
+                WHERE {column} IS NULL
+                  AND {expiry_at} IS NOT NULL
+                  AND (NOW() AT TIME ZONE 'Europe/Moscow')::date
+                      >= ({expiry_at} AT TIME ZONE 'Europe/Moscow')::date + {day}
+                """,
+            )
         _user_balances_nudge_columns_ensured = True
     except Exception as e:
         logging.error(f"Error ensuring user_balances nudge columns: {e}", exc_info=True)
         raise
 
 
-def _open_payment_exists_sql(payments_table: str) -> str:
+ACTIVE_PAYMENT_FUNNEL_HOURS = 48
+
+
+def _covering_succeeded_payment_sql(
+    payments_table: str,
+    payment_alias: str = 'p',
+) -> str:
+    """Есть succeeded, который закрывает конкретную попытку оплаты."""
+    return f"""
+        EXISTS (
+            SELECT 1 FROM {payments_table} s
+            WHERE s.user_id = {payment_alias}.user_id
+              AND s.status = 'succeeded'
+              AND s.completed_at IS NOT NULL
+              AND (
+                  s.completed_at >= {payment_alias}.created_at
+                  OR (
+                      s.completed_at <= {payment_alias}.created_at
+                      AND s.completed_at >= {payment_alias}.created_at
+                          - INTERVAL '30 minutes'
+                  )
+              )
+        )
+    """
+
+
+def _active_payment_funnel_exists_sql(
+    payments_table: str,
+    *,
+    include_canceled: bool = True,
+    max_age_hours: int = ACTIVE_PAYMENT_FUNNEL_HOURS,
+) -> str:
+    """Свежая незавершённая оплата, пока ещё идут payment reminders."""
+    status_filter = (
+        "p.status IN ('pending', 'canceled')"
+        if include_canceled
+        else "p.status = 'pending'"
+    )
+    hours = int(max_age_hours)
     return f"""
         EXISTS (
             SELECT 1 FROM {payments_table} p
             WHERE p.user_id = u.user_id
-              AND p.status IN ('pending', 'canceled')
-              AND NOT EXISTS (
-                  SELECT 1 FROM {payments_table} s
-                  WHERE s.user_id = p.user_id
-                    AND s.status = 'succeeded'
-                    AND s.completed_at IS NOT NULL
-                    AND (
-                        s.completed_at >= p.created_at
-                        OR (
-                            s.completed_at <= p.created_at
-                            AND s.completed_at >= p.created_at - INTERVAL '30 minutes'
-                        )
-                    )
-              )
+              AND {status_filter}
+              AND p.created_at > NOW() - INTERVAL '{hours} hours'
+              AND NOT ({_covering_succeeded_payment_sql(payments_table, 'p')})
         )
     """
+
+
+def _open_payment_exists_sql(payments_table: str) -> str:
+    """Обратная совместимость для старых импортов."""
+    return _active_payment_funnel_exists_sql(payments_table)
 
 
 def _active_paid_access_sql() -> str:
@@ -985,11 +1215,14 @@ async def reset_inactivity_nudge_state(user_id: int) -> bool:
         await Database.execute_query(
             f"""
             UPDATE {users_table}
-            SET paid_inactivity_1d_sent_at = NULL,
+            SET paid_inactivity_12h_sent_at = NULL,
+                paid_inactivity_1d_sent_at = NULL,
+                paid_inactivity_48h_sent_at = NULL,
                 paid_inactivity_3d_sent_at = NULL,
                 paid_inactivity_5d_sent_at = NULL,
                 paid_inactivity_10d_sent_at = NULL,
                 free_nudge_c2_3h_sent_at = NULL,
+                free_nudge_c2_12h_sent_at = NULL,
                 free_nudge_c2_24h_sent_at = NULL,
                 free_nudge_c2_48h_sent_at = NULL,
                 free_nudge_c4_3d_sent_at = NULL,
@@ -1016,15 +1249,19 @@ async def reset_inactivity_nudge_state(user_id: int) -> bool:
 
 
 PAID_INACTIVITY_STAGES = {
-    '1d': (1, 'paid_inactivity_1d_sent_at'),
-    '3d': (3, 'paid_inactivity_3d_sent_at'),
-    '5d': (5, 'paid_inactivity_5d_sent_at'),
-    '10d': (10, 'paid_inactivity_10d_sent_at'),
+    '12h': (12, 'paid_inactivity_12h_sent_at'),
+    '1d': (24, 'paid_inactivity_1d_sent_at'),
+    '48h': (48, 'paid_inactivity_48h_sent_at'),
+    '3d': (72, 'paid_inactivity_3d_sent_at'),
+    '5d': (120, 'paid_inactivity_5d_sent_at'),
+    '10d': (240, 'paid_inactivity_10d_sent_at'),
 }
 
 PAID_INACTIVITY_PREV_SENT = {
-    '1d': None,
-    '3d': 'paid_inactivity_1d_sent_at',
+    '12h': None,
+    '1d': 'paid_inactivity_12h_sent_at',
+    '48h': 'paid_inactivity_1d_sent_at',
+    '3d': 'paid_inactivity_48h_sent_at',
     '5d': 'paid_inactivity_3d_sent_at',
     '10d': 'paid_inactivity_5d_sent_at',
 }
@@ -1033,16 +1270,20 @@ FREE_NUDGE_STAGES = {
     'c1': {
         '1h': (1, 'free_nudge_c1_1h_sent_at', 'created_at', 'hours'),
         '3h': (3, 'free_nudge_c1_3h_sent_at', 'created_at', 'hours'),
+        '12h': (12, 'free_nudge_c1_12h_sent_at', 'created_at', 'hours'),
         '24h': (24, 'free_nudge_c1_24h_sent_at', 'created_at', 'hours'),
+        '48h': (48, 'free_nudge_c1_48h_sent_at', 'created_at', 'hours'),
     },
     'c2': {
         '3h': (3, 'free_nudge_c2_3h_sent_at', 'last_active_at', 'hours'),
+        '12h': (12, 'free_nudge_c2_12h_sent_at', 'last_active_at', 'hours'),
         '24h': (24, 'free_nudge_c2_24h_sent_at', 'last_active_at', 'hours'),
         '48h': (48, 'free_nudge_c2_48h_sent_at', 'last_active_at', 'hours'),
     },
     'c3': {
         '1h': (1, 'free_nudge_c3_1h_sent_at', 'paywall_reached_at', 'hours'),
         '3h': (3, 'free_nudge_c3_3h_sent_at', 'paywall_reached_at', 'hours'),
+        '12h': (12, 'free_nudge_c3_12h_sent_at', 'paywall_reached_at', 'hours'),
         '24h': (24, 'free_nudge_c3_24h_sent_at', 'paywall_reached_at', 'hours'),
         '48h': (48, 'free_nudge_c3_48h_sent_at', 'paywall_reached_at', 'hours'),
     },
@@ -1053,9 +1294,9 @@ FREE_NUDGE_STAGES = {
 }
 
 FREE_NUDGE_PREV_SENT = {
-    'c1': {'1h': None, '3h': 'free_nudge_c1_1h_sent_at', '24h': 'free_nudge_c1_3h_sent_at'},
-    'c2': {'3h': None, '24h': 'free_nudge_c2_3h_sent_at', '48h': 'free_nudge_c2_24h_sent_at'},
-    'c3': {'1h': None, '3h': 'free_nudge_c3_1h_sent_at', '24h': 'free_nudge_c3_3h_sent_at', '48h': 'free_nudge_c3_24h_sent_at'},
+    'c1': {'1h': None, '3h': 'free_nudge_c1_1h_sent_at', '12h': 'free_nudge_c1_3h_sent_at', '24h': 'free_nudge_c1_12h_sent_at', '48h': 'free_nudge_c1_24h_sent_at'},
+    'c2': {'3h': None, '12h': 'free_nudge_c2_3h_sent_at', '24h': 'free_nudge_c2_12h_sent_at', '48h': 'free_nudge_c2_24h_sent_at'},
+    'c3': {'1h': None, '3h': 'free_nudge_c3_1h_sent_at', '12h': 'free_nudge_c3_3h_sent_at', '24h': 'free_nudge_c3_12h_sent_at', '48h': 'free_nudge_c3_24h_sent_at'},
     'c4': {'3d': None, '7d': 'free_nudge_c4_3d_sent_at'},
 }
 
@@ -1064,6 +1305,10 @@ EXPIRED_ACCESS_REMINDER_STAGES = {
     'day1': (1, 'expired_access_day1_sent_at'),
     'day2': (2, 'expired_access_day2_sent_at'),
     'day3': (3, 'expired_access_day3_sent_at'),
+    'day4': (4, 'expired_access_day4_sent_at'),
+    'day5': (5, 'expired_access_day5_sent_at'),
+    'day6': (6, 'expired_access_day6_sent_at'),
+    'day7': (7, 'expired_access_day7_sent_at'),
 }
 
 EXPIRED_ACCESS_PREV_SENT = {
@@ -1071,6 +1316,10 @@ EXPIRED_ACCESS_PREV_SENT = {
     'day1': 'expired_access_day0_sent_at',
     'day2': 'expired_access_day1_sent_at',
     'day3': 'expired_access_day2_sent_at',
+    'day4': 'expired_access_day3_sent_at',
+    'day5': 'expired_access_day4_sent_at',
+    'day6': 'expired_access_day5_sent_at',
+    'day7': 'expired_access_day6_sent_at',
 }
 
 
@@ -1079,7 +1328,7 @@ async def get_users_due_for_paid_inactivity_nudge(stage: str) -> List[Dict[str, 
     if stage not in PAID_INACTIVITY_STAGES:
         raise ValueError(f"Unknown paid inactivity stage: {stage}")
 
-    days, sent_column = PAID_INACTIVITY_STAGES[stage]
+    hours, sent_column = PAID_INACTIVITY_STAGES[stage]
     prev_sent = PAID_INACTIVITY_PREV_SENT[stage]
     prev_sent_filter = f"AND u.{prev_sent} IS NOT NULL" if prev_sent else ""
     users_table = get_table_name("users")
@@ -1096,13 +1345,15 @@ async def get_users_due_for_paid_inactivity_nudge(stage: str) -> List[Dict[str, 
             JOIN {balances_table} ub ON ub.user_id = u.user_id
             WHERE u.is_blocked = FALSE
               AND u.last_active_at IS NOT NULL
-              AND u.last_active_at <= NOW() - INTERVAL '{int(days)} days'
+              AND u.last_active_at <= NOW() - INTERVAL '{int(hours)} hours'
               AND {active_paid}
               AND u.{sent_column} IS NULL
               AND EXISTS (
                   SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id
               )
-              AND NOT ({_open_payment_exists_sql(payments_table)})
+              AND NOT ({_active_payment_funnel_exists_sql(
+                  payments_table, include_canceled=False
+              )})
               {prev_sent_filter}
             ORDER BY u.user_id
         """
@@ -1186,7 +1437,9 @@ async def get_users_due_for_free_nudge(category: str, stage: str) -> List[Dict[s
               AND {anchor_expr} IS NOT NULL
               AND {anchor_expr} <= NOW() - INTERVAL '{interval}'
               AND {category_filter}
-              AND NOT ({_open_payment_exists_sql(payments_table)})
+              AND NOT ({_active_payment_funnel_exists_sql(
+                  payments_table, include_canceled=True
+              )})
               {prev_sent_filter}
             ORDER BY u.user_id
         """
@@ -1226,7 +1479,7 @@ async def mark_free_nudge_sent(user_id: int, category: str, stage: str) -> bool:
 
 
 async def get_users_due_for_expired_access_reminder(stage: str) -> List[Dict[str, Any]]:
-    """Платники без доступа — серия day0–day3 после истечения."""
+    """Платники без доступа — серия day0–day7 после истечения."""
     if stage not in EXPIRED_ACCESS_REMINDER_STAGES:
         raise ValueError(f"Unknown expired access reminder stage: {stage}")
 
@@ -1244,11 +1497,13 @@ async def get_users_due_for_expired_access_reminder(stage: str) -> List[Dict[str
               AND (ub.expired_access_reminder_for_until IS NULL
                    OR ub.expired_access_reminder_for_until != ({expiry_at}))
         """
+        sent_filter = ""
     else:
         stage_extra = f"""
               AND ub.expired_access_reminder_for_until = {expiry_at}
               AND ub.{prev_sent} IS NOT NULL
         """
+        sent_filter = f"AND ub.{sent_column} IS NULL"
 
     try:
         await ensure_user_balances_nudge_columns()
@@ -1264,7 +1519,7 @@ async def get_users_due_for_expired_access_reminder(stage: str) -> List[Dict[str
               AND NOT ({active_paid})
               AND (NOW() AT TIME ZONE 'Europe/Moscow')::date
                   >= ({expiry_at} AT TIME ZONE 'Europe/Moscow')::date + {int(day_offset)}
-              AND ub.{sent_column} IS NULL
+              {sent_filter}
               {stage_extra}
               AND EXISTS (
                   SELECT 1 FROM {payments_table} p
@@ -1315,10 +1570,19 @@ async def mark_expired_access_reminder_sent(user_id: int, stage: str) -> bool:
             query = f"""
                 UPDATE {balances_table}
                 SET expired_access_reminder_for_until = {expiry_set},
-                    {sent_column} = NOW(),
+                    expired_access_day0_sent_at = NOW(),
+                    expired_access_day1_sent_at = NULL,
+                    expired_access_day2_sent_at = NULL,
+                    expired_access_day3_sent_at = NULL,
+                    expired_access_day4_sent_at = NULL,
+                    expired_access_day5_sent_at = NULL,
+                    expired_access_day6_sent_at = NULL,
+                    expired_access_day7_sent_at = NULL,
                     updated_at = NOW()
                 WHERE user_id = $1
-                  AND {sent_column} IS NULL
+                  AND {expiry_set} IS NOT NULL
+                  AND (expired_access_reminder_for_until IS NULL
+                       OR expired_access_reminder_for_until != {expiry_set})
             """
         else:
             query = f"""

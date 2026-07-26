@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     test_mode: bool = False
     # Суффикс для таблиц БД
     db_table_suffix: str = ""
+    # LLM-персонализация автоматических nudge (fallback всегда статичный)
+    personalized_broadcasts: bool = False
     
     # Токен бота Max (получить у @MasterBot)
     bot_token: Optional[SecretStr] = None

@@ -19,6 +19,7 @@ import aiohttp
 import aiomax
 from aiomax import buttons
 from main.botdef import bot
+from main.broadcast_copy import generate_personalized_broadcast
 from main.database import (
     Database,
     update_user_blocked_status,
@@ -103,7 +104,7 @@ async def send_message_to_multiple_users(
 async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome:
     """Напоминание об оплате с кнопкой «Оплатить».
 
-    stage: '10m' | '1h' | '3h' | '24h' — этап автоматической рассылки.
+    stage: '10m' | '1h' | '3h' | '12h' | '24h' | '48h'.
     """
     texts = {
         '10m': (
@@ -119,9 +120,17 @@ async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome
             "Если сейчас не время — ничего страшного. "
             "Когда захочешь вернуться, нажми «Оплатить» ниже."
         ),
+        '12h': (
+            "Доступ к раскладам всё ещё можно открыть 🔮\n\n"
+            "Если вопрос остаётся актуальным, заверши оплату, когда будет удобно."
+        ),
         '24h': (
             "Прошли сутки — доступ к раскладам всё ещё можно открыть 🔮\n\n"
             "Если захочешь вернуться, нажми «Оплатить» ниже."
+        ),
+        '48h': (
+            "Расклады всё ещё доступны ✨\n\n"
+            "Если захочешь вернуться к вопросу, открыть доступ можно кнопкой ниже."
         ),
     }
     text = texts.get(stage, texts['10m'])
@@ -135,10 +144,18 @@ async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome
 async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOutcome:
     """Мягкое напоминание платнику, который давно не делал расклад."""
     texts = {
+        '12h': (
+            "Привет 🔮\n\n"
+            "Если после последнего расклада появился новый вопрос — карты рядом ✨"
+        ),
         '1d': (
             "Привет 🔮\n\n"
             "Просто напомню — карты здесь, если захочется новый расклад.\n\n"
             "Можно спросить о чём угодно ✨"
+        ),
+        '48h': (
+            "Два дня без новых раскладов 🔮\n\n"
+            "Если ситуация изменилась или появился новый вопрос — можно снова обратиться к картам."
         ),
         '3d': (
             "Давно не раскладывали 🔮\n\n"
@@ -153,7 +170,14 @@ async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOut
             "Если захочешь снова спросить у карт — я здесь. Без спешки ✨"
         ),
     }
-    text = texts.get(stage, texts['1d'])
+    fallback = texts.get(stage, texts['1d'])
+    text = await generate_personalized_broadcast(
+        user_id,
+        segment='B',
+        intent='вернуть активного платного пользователя к новому раскладу',
+        cta='предложи задать картам новый вопрос без упоминания оплаты',
+        fallback=fallback,
+    )
     print(f"📤 Отправляю paid inactivity nudge ({stage}) пользователю {user_id}...")
     return await send_message_to_user(user_id, text, format=None)
 
@@ -172,9 +196,16 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
                 "Можно начать с простого: «Что мне важно знать сегодня?» 🔮\n\n"
                 "Я рядом."
             ),
+            '12h': (
+                "Первый расклад всё ещё доступен 🔮\n\n"
+                "Можно начать с любого вопроса, который сейчас важен."
+            ),
             '24h': (
                 "Если захочешь попробовать — просто нажми «Новый расклад» в меню.\n\n"
                 "Я здесь, когда будешь готов(а) 💫"
+            ),
+            '48h': (
+                "Если захочешь познакомиться с картами — первый расклад всё ещё ждёт ✨"
             ),
         }
         text = texts.get(stage, texts['1h'])
@@ -187,6 +218,10 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
                 "Хочешь задать ещё один вопрос картам? "
                 "У тебя остались бесплатные расклады ✨"
             ),
+            '12h': (
+                "После прошлого расклада мог появиться новый вопрос 🔮\n\n"
+                "У тебя ещё остались бесплатные расклады."
+            ),
             '24h': (
                 "У тебя ещё есть бесплатные расклады — "
                 "можешь использовать, когда будет удобно 💫"
@@ -196,7 +231,14 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
                 "Загляни, если нужна ясность 🔮"
             ),
         }
-        text = texts.get(stage, texts['3h'])
+        fallback = texts.get(stage, texts['3h'])
+        text = await generate_personalized_broadcast(
+            user_id,
+            segment='C2',
+            intent='вернуть пользователя с оставшимися бесплатными раскладами',
+            cta='упомяни оставшиеся бесплатные расклады и предложи новый вопрос',
+            fallback=fallback,
+        )
         return await send_message_to_user(user_id, text, format=None)
 
     if category == 'c3':
@@ -209,6 +251,10 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
             '3h': (
                 "Если сейчас нужна ясность — доступ можно открыть за пару минут 💫"
             ),
+            '12h': (
+                "Если вопрос всё ещё важен, можно вернуться к картам 🔮\n\n"
+                "Доступ к новым раскладам открывается кнопкой ниже."
+            ),
             '24h': (
                 "Карты ждут твоего вопроса 🔮\n\n"
                 "Нажми «Оплатить» и продолжай раскладывать ✨"
@@ -218,7 +264,14 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
                 "Без спешки 💫"
             ),
         }
-        text = texts.get(stage, texts['1h'])
+        fallback = texts.get(stage, texts['1h'])
+        text = await generate_personalized_broadcast(
+            user_id,
+            segment='C3',
+            intent='вернуть пользователя после исчерпания бесплатных раскладов',
+            cta='сначала смысл нового расклада, затем предложи открыть доступ',
+            fallback=fallback,
+        )
         payment_text = _broadcast_payment_text()
         try:
             from main.conversions import save_paywall_conversion
@@ -259,7 +312,14 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
                 "Возвращайся, когда будет удобно 💫"
             ),
         }
-        text = texts.get(stage, texts['3d'])
+        fallback = texts.get(stage, texts['3d'])
+        text = await generate_personalized_broadcast(
+            user_id,
+            segment='C4',
+            intent='вернуть давно неактивного пользователя с бесплатными раскладами',
+            cta='предложи использовать оставшийся бесплатный расклад',
+            fallback=fallback,
+        )
         return await send_message_to_user(user_id, text, format=None)
 
     logging.warning(f"Unknown free nudge category {category} for user {user_id}")
@@ -272,7 +332,7 @@ async def send_expired_access_reminder(
     *,
     sent_via: str = 'send_message_script',
 ) -> SendOutcome:
-    """Напоминание пользователям с истёкшим платным доступом — серия day0–day3."""
+    """Напоминание пользователям с истёкшим платным доступом — day0–day7."""
     from keyboards.pay import make_payment_kb
     from main.conversions import save_paywall_conversion
 
@@ -294,8 +354,28 @@ async def send_expired_access_reminder(
             "Последнее: если захочешь вернуться — нажми кнопку ниже.\n\n"
             "Без спешки ✨"
         ),
+        'day4': (
+            "Если после последнего расклада появились новые обстоятельства — карты рядом 🔮"
+        ),
+        'day5': (
+            "Новый взгляд иногда помогает увидеть следующий шаг ✨\n\n"
+            "Вернуться к раскладам можно кнопкой ниже."
+        ),
+        'day6': (
+            "Если вопрос всё ещё не отпускает, можно снова обратиться к картам 🔮"
+        ),
+        'day7': (
+            "Напомню в последний раз: доступ к новым раскладам можно вернуть в любой момент ✨"
+        ),
     }
-    reminder_text = texts.get(stage, texts['day0'])
+    fallback = texts.get(stage, texts['day0'])
+    reminder_text = await generate_personalized_broadcast(
+        user_id,
+        segment='expired',
+        intent='вернуть пользователя после истечения платного доступа',
+        cta='сначала смысл нового расклада, затем предложи продлить доступ',
+        fallback=fallback,
+    )
     payment_text = _broadcast_payment_text()
 
     print(f"📤 Отправляю напоминание об истёкшем доступе ({stage}) пользователю {user_id}...")

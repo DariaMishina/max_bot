@@ -1,7 +1,8 @@
 """
 Автоматические напоминания о незавершённой оплате (pending / canceled).
 
-Этапы: 10 минут, 1 час, 3 часа, 24 часа после создания платежа.
+Этапы: 10 минут, 1 час, 3 часа, 12 часов, 24 часа и 48 часов.
+За один запуск одному платежу отправляется максимум один этап.
 """
 import asyncio
 import logging
@@ -20,7 +21,14 @@ REMINDER_DELAY_SEC = 0.05
 
 async def process_payment_reminders() -> dict:
     """Проверить все этапы и отправить напоминания."""
-    results = {'sent': 0, 'skipped': 0, 'failed': 0, 'blocked': 0}
+    results = {
+        'sent': 0,
+        'skipped': 0,
+        'skipped_catchup': 0,
+        'failed': 0,
+        'blocked': 0,
+    }
+    processed_this_run: set[str] = set()
 
     for stage in PAYMENT_REMINDER_STAGES:
         due = await get_payments_due_for_reminder(stage)
@@ -32,6 +40,10 @@ async def process_payment_reminders() -> dict:
         for payment in due:
             payment_id = payment['payment_id']
             user_id = payment['user_id']
+
+            if payment_id in processed_this_run:
+                results['skipped_catchup'] += 1
+                continue
 
             current = await get_payment_by_id(payment_id)
             if not current or current['status'] not in ('pending', 'canceled'):
@@ -47,8 +59,10 @@ async def process_payment_reminders() -> dict:
                 )
                 if outcome == 'sent':
                     results['sent'] += 1
+                    processed_this_run.add(payment_id)
                 elif outcome == 'blocked':
                     results['blocked'] += 1
+                    processed_this_run.add(payment_id)
                 else:
                     results['failed'] += 1
             except Exception as e:

@@ -1,5 +1,5 @@
 """
-Автоматические напоминания об истёкшем платном доступе: day0–day3.
+Автоматические напоминания об истёкшем платном доступе: day0–day7.
 
 Отправка в персональный слот 10:00–20:00 MSK (тик каждые 30 мин).
 Слот привязан к моменту истечения. day0 отправляется без слота (grace period).
@@ -24,6 +24,7 @@ async def process_expired_access_reminders() -> dict:
     results = {
         'sent': 0,
         'skipped_time': 0,
+        'skipped_catchup': 0,
         'failed': 0,
         'blocked': 0,
         'by_stage': {},
@@ -31,6 +32,8 @@ async def process_expired_access_reminders() -> dict:
 
     if not is_in_broadcast_window():
         return results
+
+    processed_this_run: set[int] = set()
 
     for stage in EXPIRED_ACCESS_REMINDER_STAGES:
         due = await get_users_due_for_expired_access_reminder(stage)
@@ -43,6 +46,10 @@ async def process_expired_access_reminders() -> dict:
         for target in due:
             user_id = target['user_id']
             expiry_at = target.get('expiry_at')
+
+            if user_id in processed_this_run:
+                results['skipped_catchup'] += 1
+                continue
 
             if stage != 'day0' and not is_user_due_in_tick(user_id, anchor_at=expiry_at):
                 results['skipped_time'] += 1
@@ -59,9 +66,11 @@ async def process_expired_access_reminders() -> dict:
                 if outcome == 'sent':
                     results['sent'] += 1
                     results['by_stage'][stage]['sent'] += 1
+                    processed_this_run.add(user_id)
                 elif outcome == 'blocked':
                     results['blocked'] += 1
                     results['by_stage'][stage]['blocked'] += 1
+                    processed_this_run.add(user_id)
                 else:
                     results['failed'] += 1
                     results['by_stage'][stage]['failed'] += 1
