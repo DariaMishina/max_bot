@@ -4,7 +4,7 @@
 import logging
 from typing import Optional, Dict, Any, List
 import asyncpg
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 
 from main.config_reader import config
@@ -862,6 +862,7 @@ async def get_all_users(include_blocked: bool = False, include_unsubscribed_dail
 FREE_DIVINATIONS_START = 3
 
 _users_nudge_columns_ensured = False
+_paid_inactivity_skipahead_backfill_done = False
 _user_balances_nudge_columns_ensured = False
 
 
@@ -1035,6 +1036,9 @@ async def ensure_users_nudge_columns() -> None:
             await _add_timestamp_column_if_missing(
                 users_table, column, backfill_sql
             )
+
+        await _backfill_paid_inactivity_skipahead(users_table)
+
         _users_nudge_columns_ensured = True
     except Exception as e:
         logging.error(f"Error ensuring users nudge columns: {e}", exc_info=True)
@@ -1257,14 +1261,125 @@ PAID_INACTIVITY_STAGES = {
     '10d': (240, 'paid_inactivity_10d_sent_at'),
 }
 
-PAID_INACTIVITY_PREV_SENT = {
-    '12h': None,
-    '1d': 'paid_inactivity_12h_sent_at',
-    '48h': 'paid_inactivity_1d_sent_at',
-    '3d': 'paid_inactivity_48h_sent_at',
-    '5d': 'paid_inactivity_3d_sent_at',
-    '10d': 'paid_inactivity_5d_sent_at',
+PAID_INACTIVITY_STAGE_ORDER = tuple(PAID_INACTIVITY_STAGES.keys())
+
+# Младшие этапы для skip-ahead backfill при деплое (см. _backfill_paid_inactivity_skipahead).
+PAID_INACTIVITY_SKIPAHEAD_JUNIORS = {
+    '1d': ('12h',),
+    '48h': ('12h', '1d'),
+    '3d': ('12h', '1d', '48h'),
+    '5d': ('12h', '1d', '48h', '3d'),
+    '10d': ('12h', '1d', '48h', '3d', '5d'),
 }
+
+
+def _paid_inactivity_sent_flags(row: Dict[str, Any]) -> Dict[str, Optional[datetime]]:
+    return {
+        stage: row.get(column)
+        for stage, (_, column) in PAID_INACTIVITY_STAGES.items()
+    }
+
+
+def pick_highest_due_paid_inactivity_stage(
+    last_active_at: datetime,
+    sent_at_by_stage: Dict[str, Optional[datetime]],
+    now: Optional[datetime] = None,
+) -> Optional[str]:
+    """
+    Старший просроченный этап B, который ещё не отправляли в текущем цикле молчания.
+
+    При тишине 25ч и пустых флагах вернёт 1d (не 12h), чтобы не догонять цепочку пачкой.
+    """
+    if last_active_at is None:
+        return None
+
+    now = now or datetime.now(timezone.utc)
+    if last_active_at.tzinfo is None:
+        anchor = last_active_at.replace(tzinfo=timezone.utc)
+    else:
+        anchor = last_active_at.astimezone(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    else:
+        now = now.astimezone(timezone.utc)
+
+    best_stage: Optional[str] = None
+    best_hours = -1
+    for stage in PAID_INACTIVITY_STAGE_ORDER:
+        hours, _ = PAID_INACTIVITY_STAGES[stage]
+        if sent_at_by_stage.get(stage) is not None:
+            continue
+        if anchor <= now - timedelta(hours=hours):
+            if hours > best_hours:
+                best_stage = stage
+                best_hours = hours
+    return best_stage
+
+
+def paid_inactivity_stages_up_to(stage: str) -> tuple[str, ...]:
+    """Этапы от 12h до stage включительно."""
+    if stage not in PAID_INACTIVITY_STAGES:
+        raise ValueError(f"Unknown paid inactivity stage: {stage}")
+    idx = PAID_INACTIVITY_STAGE_ORDER.index(stage)
+    return PAID_INACTIVITY_STAGE_ORDER[: idx + 1]
+
+
+async def _backfill_paid_inactivity_skipahead(users_table: str) -> None:
+    """
+    Одноразовый catch-up при деплое skip-ahead: младшие этапы помечаем sent,
+    если пользователь уже прошёл порог старшего — без реальной отправки.
+    """
+    global _paid_inactivity_skipahead_backfill_done
+    if _paid_inactivity_skipahead_backfill_done:
+        return
+
+    balances_table = get_table_name("user_balances")
+    divinations_table = get_table_name("divinations")
+    active_paid = _active_paid_access_sql()
+    paid_filters = f"""
+        {active_paid}
+        AND u.is_blocked = FALSE
+        AND u.last_active_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id)
+    """
+
+    try:
+        for stage in reversed(PAID_INACTIVITY_STAGE_ORDER[1:]):
+            hours, stage_col = PAID_INACTIVITY_STAGES[stage]
+            for junior in PAID_INACTIVITY_SKIPAHEAD_JUNIORS[stage]:
+                _, junior_col = PAID_INACTIVITY_STAGES[junior]
+                await Database.execute_query(
+                    f"""
+                    UPDATE {users_table} u
+                    SET {junior_col} = NOW()
+                    FROM {balances_table} ub
+                    WHERE ub.user_id = u.user_id
+                      AND {paid_filters}
+                      AND u.{junior_col} IS NULL
+                      AND u.{stage_col} IS NULL
+                      AND u.last_active_at <= NOW() - INTERVAL '{int(hours)} hours'
+                    """
+                )
+
+        for stage in reversed(PAID_INACTIVITY_STAGE_ORDER[1:]):
+            _, stage_col = PAID_INACTIVITY_STAGES[stage]
+            for junior in PAID_INACTIVITY_SKIPAHEAD_JUNIORS[stage]:
+                _, junior_col = PAID_INACTIVITY_STAGES[junior]
+                await Database.execute_query(
+                    f"""
+                    UPDATE {users_table} u
+                    SET {junior_col} = COALESCE(u.{junior_col}, u.{stage_col}, NOW())
+                    WHERE u.{junior_col} IS NULL
+                      AND u.{stage_col} IS NOT NULL
+                    """
+                )
+
+        _paid_inactivity_skipahead_backfill_done = True
+        logging.info("Paid inactivity skip-ahead catch-up backfill applied")
+    except Exception as e:
+        logging.error(f"Error in paid inactivity skip-ahead backfill: {e}", exc_info=True)
+        raise
+
 
 FREE_NUDGE_STAGES = {
     'c1': {
@@ -1323,56 +1438,70 @@ EXPIRED_ACCESS_PREV_SENT = {
 }
 
 
-async def get_users_due_for_paid_inactivity_nudge(stage: str) -> List[Dict[str, Any]]:
-    """Платники с активным доступом, которые давно не гадали."""
-    if stage not in PAID_INACTIVITY_STAGES:
-        raise ValueError(f"Unknown paid inactivity stage: {stage}")
-
-    hours, sent_column = PAID_INACTIVITY_STAGES[stage]
-    prev_sent = PAID_INACTIVITY_PREV_SENT[stage]
-    prev_sent_filter = f"AND u.{prev_sent} IS NOT NULL" if prev_sent else ""
+async def get_users_due_for_paid_inactivity_nudge() -> List[Dict[str, Any]]:
+    """Платники (B): не более одного этапа — старший из просроченных в цикле молчания."""
     users_table = get_table_name("users")
     balances_table = get_table_name("user_balances")
     payments_table = get_table_name("payments")
     divinations_table = get_table_name("divinations")
     active_paid = _active_paid_access_sql()
+    sent_columns = ", ".join(
+        f"u.{column}" for _, column in PAID_INACTIVITY_STAGES.values()
+    )
 
     try:
         await ensure_users_nudge_columns()
         query = f"""
-            SELECT u.user_id, u.last_active_at
+            SELECT u.user_id, u.last_active_at, {sent_columns}
             FROM {users_table} u
             JOIN {balances_table} ub ON ub.user_id = u.user_id
             WHERE u.is_blocked = FALSE
               AND u.last_active_at IS NOT NULL
-              AND u.last_active_at <= NOW() - INTERVAL '{int(hours)} hours'
+              AND u.last_active_at <= NOW() - INTERVAL '12 hours'
               AND {active_paid}
-              AND u.{sent_column} IS NULL
               AND EXISTS (
                   SELECT 1 FROM {divinations_table} d WHERE d.user_id = u.user_id
               )
               AND NOT ({_active_payment_funnel_exists_sql(
                   payments_table, include_canceled=False
               )})
-              {prev_sent_filter}
             ORDER BY u.user_id
         """
         results = await Database.fetch_all(query)
-        return [{'user_id': r['user_id'], 'last_active_at': r['last_active_at'], 'stage': stage} for r in results]
+        due: List[Dict[str, Any]] = []
+        for row in results:
+            flags = _paid_inactivity_sent_flags(row)
+            stage = pick_highest_due_paid_inactivity_stage(
+                row['last_active_at'],
+                flags,
+            )
+            if stage is None:
+                continue
+            due.append(
+                {
+                    'user_id': row['user_id'],
+                    'last_active_at': row['last_active_at'],
+                    'stage': stage,
+                }
+            )
+        return due
     except Exception as e:
-        logging.error(f"Error getting paid inactivity nudge users ({stage}): {e}", exc_info=True)
+        logging.error(f"Error getting paid inactivity nudge users: {e}", exc_info=True)
         return []
 
 
 async def mark_paid_inactivity_nudge_sent(user_id: int, stage: str) -> bool:
     if stage not in PAID_INACTIVITY_STAGES:
         raise ValueError(f"Unknown paid inactivity stage: {stage}")
-    _, sent_column = PAID_INACTIVITY_STAGES[stage]
     try:
         await ensure_users_nudge_columns()
         users_table = get_table_name("users")
+        set_parts = [
+            f"{PAID_INACTIVITY_STAGES[s][1]} = COALESCE({PAID_INACTIVITY_STAGES[s][1]}, NOW())"
+            for s in paid_inactivity_stages_up_to(stage)
+        ]
         await Database.execute_query(
-            f"UPDATE {users_table} SET {sent_column} = NOW() WHERE user_id = $1 AND {sent_column} IS NULL",
+            f"UPDATE {users_table} SET {', '.join(set_parts)} WHERE user_id = $1",
             user_id,
         )
         return True

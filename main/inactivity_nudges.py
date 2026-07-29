@@ -4,8 +4,11 @@ Event-driven nudge-рассылки: платники (B) и бесплатны�
 Платники: 12ч/1д/48ч/3д/5д/10д молчания — слот 10:00–20:00 MSK.
 Бесплатные: часы/дни от якорного события — без слота, проверка каждые 2 мин.
 
+Платники (B): за цикл молчания — один этап, старший из просроченных (skip-ahead).
+Новое гадание сбрасывает все флаги и начинает цикл заново.
+
 Защита от catch-up: за один тик каждому пользователю уходит максимум ОДИН этап
-на категорию (B / C1 / C2 / C3 / C4). Следующий этап — в следующем тике.
+на категорию (B / C1 / C2 / C3 / C4).
 """
 import asyncio
 import logging
@@ -41,18 +44,21 @@ async def process_inactivity_nudges() -> dict:
     sent_paid_this_run: set[int] = set()
 
     for stage in PAID_INACTIVITY_STAGES:
-        key = f'paid_{stage}'
-        results['by_type'][key] = {'sent': 0, 'failed': 0, 'blocked': 0, 'skipped_time': 0}
-        if not paid_due_in_window:
-            continue
+        results['by_type'][f'paid_{stage}'] = {
+            'sent': 0,
+            'failed': 0,
+            'blocked': 0,
+            'skipped_time': 0,
+        }
 
-        due = await get_users_due_for_paid_inactivity_nudge(stage)
-        if not due:
-            continue
-
-        logging.info(f"Paid inactivity nudges ({stage}): {len(due)} user(s) due")
+    if paid_due_in_window:
+        due = await get_users_due_for_paid_inactivity_nudge()
+        if due:
+            logging.info(f"Paid inactivity nudges: {len(due)} user(s) due (skip-ahead)")
         for target in due:
             user_id = target['user_id']
+            stage = target['stage']
+            key = f'paid_{stage}'
 
             if user_id in sent_paid_this_run:
                 results['skipped_catchup'] += 1

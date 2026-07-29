@@ -11,11 +11,14 @@ LLM-персонализация по последним вопросам из �
 ```bash
 psql -U max_bot_user -d max_bot_db -h HOST -f migrations/20260726_broadcast_frequency.sql
 psql -U max_bot_user -d max_bot_db -h HOST -f migrations/20260726_payment_funnel_catchup_backfill.sql
+psql -U max_bot_user -d max_bot_db -h HOST -f migrations/20260729_paid_inactivity_skipahead_backfill.sql
 ```
 
 Миграции применять **в этом порядке до рестарта бота**. Первая добавляет новые
 этапы и отмечает уже прошедшие пороги. Вторая закрывает накопленные B/C этапы,
-которые раньше блокировались stale `pending`/`canceled`.
+которые раньше блокировались stale `pending`/`canceled`. Третья — skip-ahead для B:
+младшие `paid_inactivity_*_sent_at` помечаются без отправки, если пользователь
+уже прошёл порог старшего этапа.
 
 Runtime `ensure_*_columns()` повторяет backfill новых колонок, только если
 колонка создаётся впервые. Второй catch-up защищён marker-таблицей от повторного
@@ -55,6 +58,12 @@ Runtime `ensure_*_columns()` повторяет backfill новых колоно
 | 10d | 10 дней |
 
 Отправка в персональный слот 10:00–20:00 MSK (по `last_active_at`).
+
+**Skip-ahead:** за цикл молчания — не более одного nudge; отправляется **старший**
+из просроченных этапов (при тишине 25ч сразу `1d`, без предварительного `12h`).
+Новое гадание сбрасывает все флаги и начинает цикл заново.
+
+За один тик — максимум один этап на пользователя (B).
 
 ### Триггер C — бесплатные пользователи
 
