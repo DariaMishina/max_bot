@@ -178,14 +178,16 @@ async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOut
         cta='предложи задать картам новый вопрос без упоминания оплаты',
         fallback=fallback,
     )
+    from keyboards.main_menu import make_main_menu
+
     print(f"📤 Отправляю paid inactivity nudge ({stage}) пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, format=None)
+    return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
 
 
 async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendOutcome:
     """Nudge для бесплатных пользователей (C1–C4)."""
     if category == 'c1':
-        from keyboards.main_menu import make_main_menu
+        from keyboards.main_menu import make_divination_nudge_kb
         texts = {
             '1h': (
                 "Привет 🔮\n\n"
@@ -209,7 +211,9 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
             ),
         }
         text = texts.get(stage, texts['1h'])
-        return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
+        return await send_message_to_user(
+            user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+        )
 
     if category == 'c2':
         texts = {
@@ -239,7 +243,11 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
             cta='упомяни оставшиеся бесплатные расклады и предложи новый вопрос',
             fallback=fallback,
         )
-        return await send_message_to_user(user_id, text, format=None)
+        from keyboards.main_menu import make_divination_nudge_kb
+
+        return await send_message_to_user(
+            user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+        )
 
     if category == 'c3':
         from keyboards.pay import make_payment_kb
@@ -320,7 +328,11 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
             cta='предложи использовать оставшийся бесплатный расклад',
             fallback=fallback,
         )
-        return await send_message_to_user(user_id, text, format=None)
+        from keyboards.main_menu import make_divination_nudge_kb
+
+        return await send_message_to_user(
+            user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+        )
 
     logging.warning(f"Unknown free nudge category {category} for user {user_id}")
     return False, False
