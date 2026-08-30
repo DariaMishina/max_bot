@@ -11,3 +11,4 @@ htmlcov/*
 .coverage
 .DS_Store
 .env.test
+docs/PLAN_ANDROID_APP.md

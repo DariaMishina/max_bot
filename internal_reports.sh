@@ -560,18 +560,18 @@ WHERE u.user_id NOT IN $EXCLUDE_USERS
 "
 
 execute_query "$QUERY4" "4.1. Общая статистика балансов"
-print_header "4.2. Не заблокировавшие пользователи с нулевым балансом (все, отсортировано по использованию)"
-# Выводим в одну строку без табличного формата
-PAGER=cat psql -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -U "$DB_USER" \
-    -c "$QUERY4_ZERO" \
-    --pset=tuples_only=on \
-    --pset=format=unaligned \
-    2>&1
-if [ $? -eq 0 ]; then
-    print_success "Запрос выполнен успешно"
-else
-    print_error "Ошибка при выполнении запроса"
-fi
+# print_header "4.2. Не заблокировавшие пользователи с нулевым балансом (все, отсортировано по использованию)"
+# # Выводим в одну строку без табличного формата
+# PAGER=cat psql -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -U "$DB_USER" \
+#     -c "$QUERY4_ZERO" \
+#     --pset=tuples_only=on \
+#     --pset=format=unaligned \
+#     2>&1
+# if [ $? -eq 0 ]; then
+#     print_success "Запрос выполнен успешно"
+# else
+#     print_error "Ошибка при выполнении запроса"
+# fi
 
 # 5. Анализ источников пейволла
 print_header "5. Анализ источников пейволла (кроме нас)"
@@ -619,18 +619,18 @@ WHERE u.user_id NOT IN $EXCLUDE_USERS
     AND u.is_blocked = FALSE;
 "
 
-print_header "6.1. Список пользователей, которые не заблокировали бота (все, отсортировано по дате регистрации)"
-# Выводим в одну строку без табличного формата
-PAGER=cat psql -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -U "$DB_USER" \
-    -c "$QUERY6" \
-    --pset=tuples_only=on \
-    --pset=format=unaligned \
-    2>&1
-if [ $? -eq 0 ]; then
-    print_success "Запрос выполнен успешно"
-else
-    print_error "Ошибка при выполнении запроса"
-fi
+# print_header "6.1. Список пользователей, которые не заблокировали бота (все, отсортировано по дате регистрации)"
+# # Выводим в одну строку без табличного формата
+# PAGER=cat psql -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -U "$DB_USER" \
+#     -c "$QUERY6" \
+#     --pset=tuples_only=on \
+#     --pset=format=unaligned \
+#     2>&1
+# if [ $? -eq 0 ]; then
+#     print_success "Запрос выполнен успешно"
+# else
+#     print_error "Ошибка при выполнении запроса"
+# fi
 
 # 7. Количество гаданий за последние 3 дня с разбивкой по источникам
 print_header "7. Гадания за последние 3 дня (кроме нас)"
