@@ -239,6 +239,18 @@ async def get_divination(divination_id: int, user_id: uuid.UUID) -> Optional[Dic
     return data
 
 
+async def get_user(user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
+    row = await AppDatabase.fetch_one(
+        """
+        SELECT user_id, is_guest, install_id, created_at, last_active_at
+        FROM app_users
+        WHERE user_id = $1
+        """,
+        user_id,
+    )
+    return dict(row) if row else None
+
+
 async def list_divinations(user_id: uuid.UUID, limit: int = 20) -> List[Dict[str, Any]]:
     rows = await AppDatabase.fetch_all(
         """

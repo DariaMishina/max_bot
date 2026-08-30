@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,8 @@ from app.divination_service import run_tarot  # noqa: E402
 async def main(skip_llm: bool) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    user_id = await create_guest(install_id="stage1-test")
+    install_id = f"stage1-test-{uuid.uuid4().hex[:8]}"
+    user_id = await create_guest(install_id=install_id)
     balance = await get_user_balance(user_id)
     assert balance is not None
     free_before = balance["free_divinations_remaining"]

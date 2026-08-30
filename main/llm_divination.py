@@ -148,7 +148,7 @@ async def call_deepseek(
         "max_tokens": max_tokens if max_tokens is not None else DEEPSEEK_MAX_TOKENS,
         "temperature": temperature if temperature is not None else DEEPSEEK_TEMPERATURE,
     }
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90)) as session:
         async with session.post(DEEPSEEK_URL, headers=headers, json=payload) as response:
             if response.status == 200:
                 result = await response.json()

@@ -10,6 +10,7 @@ class AppSettings(BaseSettings):
     app_db_user: SecretStr
     app_db_password: SecretStr
     app_api_port: int = 8083
+    app_jwt_secret: SecretStr
 
     model_config = SettingsConfigDict(
         env_file=".env",

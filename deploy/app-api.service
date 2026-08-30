@@ -1,0 +1,15 @@
+[Unit]
+Description=Gadanie AI App API (Android)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=dariamishina
+WorkingDirectory=/home/dariamishina/max_bot
+EnvironmentFile=/home/dariamishina/max_bot/.env
+ExecStart=/home/dariamishina/max_bot/venv/bin/python app_api_server.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
