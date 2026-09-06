@@ -12,3 +12,7 @@ htmlcov/*
 .DS_Store
 .env.test
 docs/PLAN_ANDROID_APP.md
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/

@@ -1,0 +1,2 @@
+# Скопируйте в local.properties и поправьте путь, если Android Studio не создала файл сама:
+# sdk.dir=/Users/ВАШЕ_ИМЯ/Library/Android/sdk
