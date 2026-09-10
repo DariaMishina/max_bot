@@ -36,6 +36,8 @@ async def main(skip_llm: bool) -> int:
 
     install_id = f"stage1-test-{uuid.uuid4().hex[:8]}"
     user_id = await create_guest(install_id=install_id)
+    restored_user_id = await create_guest(install_id=install_id)
+    assert restored_user_id == user_id, "Повторный запуск должен восстановить того же гостя"
     balance = await get_user_balance(user_id)
     assert balance is not None
     free_before = balance["free_divinations_remaining"]

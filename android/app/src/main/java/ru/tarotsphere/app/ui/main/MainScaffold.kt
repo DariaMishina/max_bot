@@ -47,10 +47,6 @@ private val Tabs = listOf(
 @Composable
 fun MainScaffold(container: AppContainer) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
-    val spreadVm: SpreadViewModel = viewModel(factory = SpreadViewModel.factory(container.userRepository))
-    val historyVm: HistoryViewModel = viewModel(factory = HistoryViewModel.factory(container.userRepository))
-    val shopVm: ShopViewModel = viewModel(factory = ShopViewModel.factory(container.catalogRepository))
-    val profileVm: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(container.userRepository))
 
     Scaffold(
         containerColor = Night,
@@ -76,11 +72,43 @@ fun MainScaffold(container: AppContainer) {
     ) { padding ->
         Box(Modifier.padding(padding)) {
             when (selected) {
-                0 -> SpreadScreen(spreadVm)
-                1 -> HistoryScreen(historyVm)
-                2 -> ShopScreen(shopVm)
-                else -> ProfileScreen(profileVm)
+                0 -> SpreadRoute(container)
+                1 -> HistoryRoute(container)
+                2 -> ShopRoute(container)
+                else -> ProfileRoute(container)
             }
         }
     }
+}
+
+@Composable
+private fun SpreadRoute(container: AppContainer) {
+    val viewModel: SpreadViewModel = viewModel(
+        factory = SpreadViewModel.factory(container.userRepository),
+    )
+    SpreadScreen(viewModel)
+}
+
+@Composable
+private fun HistoryRoute(container: AppContainer) {
+    val viewModel: HistoryViewModel = viewModel(
+        factory = HistoryViewModel.factory(container.userRepository),
+    )
+    HistoryScreen(viewModel)
+}
+
+@Composable
+private fun ShopRoute(container: AppContainer) {
+    val viewModel: ShopViewModel = viewModel(
+        factory = ShopViewModel.factory(container.catalogRepository),
+    )
+    ShopScreen(viewModel)
+}
+
+@Composable
+private fun ProfileRoute(container: AppContainer) {
+    val viewModel: ProfileViewModel = viewModel(
+        factory = ProfileViewModel.factory(container.userRepository),
+    )
+    ProfileScreen(viewModel)
 }

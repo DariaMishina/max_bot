@@ -14,7 +14,7 @@ android {
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"https://08788897-08cf-4dbd-8ba5-38c79e4b5d2c.tunnel4.com/\"",
+            "\"https://d7e8f3de-2cd2-4ccd-b7fa-3cb193755489.tunnel4.com/\"",
         )
     }
 

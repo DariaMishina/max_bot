@@ -34,7 +34,7 @@ fun ProfileScreen(viewModel: ProfileViewModel) {
         Text("Профиль", style = MaterialTheme.typography.headlineMedium)
         when {
             state.loading -> CircularProgressIndicator(color = Gold, modifier = Modifier.padding(24.dp))
-            state.error != null -> ScreenMessage(state.error!!)
+            state.error != null -> ScreenMessage(state.error!!, onRetry = viewModel::refresh)
             state.profile != null -> {
                 val p = state.profile!!
                 DeckCard {

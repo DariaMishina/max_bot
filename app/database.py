@@ -63,18 +63,29 @@ class AppDatabase:
 
 
 async def create_guest(install_id: Optional[str] = None) -> uuid.UUID:
-    """Новый гость + баланс с 3 бесплатными раскладами."""
+    """Create a guest or restore the guest already bound to this installation."""
     pool = await AppDatabase.get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow(
-                """
-                INSERT INTO app_users (is_guest, install_id)
-                VALUES (TRUE, $1)
-                RETURNING user_id
-                """,
-                install_id,
-            )
+            if install_id:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO app_users (is_guest, install_id)
+                    VALUES (TRUE, $1)
+                    ON CONFLICT (install_id) WHERE install_id IS NOT NULL
+                    DO UPDATE SET last_active_at = NOW()
+                    RETURNING user_id
+                    """,
+                    install_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO app_users (is_guest, install_id)
+                    VALUES (TRUE, NULL)
+                    RETURNING user_id
+                    """,
+                )
             user_id = row["user_id"]
             await conn.execute(
                 """
@@ -82,11 +93,12 @@ async def create_guest(install_id: Optional[str] = None) -> uuid.UUID:
                     user_id, free_divinations_remaining, paid_divinations_remaining
                 )
                 VALUES ($1, $2, 0)
+                ON CONFLICT (user_id) DO NOTHING
                 """,
                 user_id,
                 FREE_DIVINATIONS_START,
             )
-            logging.info("App guest created: %s", user_id)
+            logging.info("App guest created or restored: %s", user_id)
             return user_id
 
 

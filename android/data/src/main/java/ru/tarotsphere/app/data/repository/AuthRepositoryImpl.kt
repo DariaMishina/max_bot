@@ -1,5 +1,6 @@
 package ru.tarotsphere.app.data.repository
 
+import retrofit2.HttpException
 import ru.tarotsphere.app.data.api.AppApi
 import ru.tarotsphere.app.data.api.dto.GuestRequestDto
 import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
@@ -22,14 +23,20 @@ class AuthRepositoryImpl(
             return try {
                 val me = authedApi.me()
                 TokenPair(
-                    accessToken = existing,
+                    // The authenticator may have refreshed the pair while /me ran.
+                    accessToken = prefs.getAccessToken().orEmpty(),
                     refreshToken = prefs.getRefreshToken().orEmpty(),
                     userId = me.userId,
                     expiresIn = 0,
                     balance = me.balance.toDomain(),
                 )
-            } catch (_: Exception) {
-                refreshOrCreateGuest()
+            } catch (e: HttpException) {
+                if (e.code() != 401) throw e
+
+                // The authenticator clears tokens only when the refresh token is
+                // explicitly rejected. On a transient refresh failure it keeps
+                // them, so the user can retry without losing the guest session.
+                if (prefs.getRefreshToken().isNullOrBlank()) createGuest() else throw e
             }
         }
         return createGuest()
@@ -41,23 +48,8 @@ class AuthRepositoryImpl(
             val tokens = publicApi.refresh(RefreshRequestDto(refresh)).toDomain()
             prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
             tokens
-        } catch (_: Exception) {
-            prefs.clearTokens()
-            createGuest()
-        }
-    }
-
-    private suspend fun refreshOrCreateGuest(): TokenPair {
-        val refresh = prefs.getRefreshToken()
-        if (refresh.isNullOrBlank()) {
-            prefs.clearTokens()
-            return createGuest()
-        }
-        return try {
-            val tokens = publicApi.refresh(RefreshRequestDto(refresh)).toDomain()
-            prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
-            tokens
-        } catch (_: Exception) {
+        } catch (e: HttpException) {
+            if (e.code() != 401) throw e
             prefs.clearTokens()
             createGuest()
         }

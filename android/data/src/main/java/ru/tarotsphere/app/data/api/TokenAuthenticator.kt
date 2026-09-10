@@ -5,6 +5,7 @@ import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
+import retrofit2.HttpException
 import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.local.SecurePrefs
 
@@ -31,8 +32,12 @@ class TokenAuthenticator(
                 response.request.newBuilder()
                     .header("Authorization", "Bearer ${tokens.accessToken}")
                     .build()
+            } catch (e: HttpException) {
+                // Only an explicitly rejected refresh token ends the session.
+                // Network errors and server failures must not orphan a guest.
+                if (e.code() == 401) prefs.clearTokens()
+                null
             } catch (_: Exception) {
-                prefs.clearTokens()
                 null
             }
         }

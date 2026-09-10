@@ -38,7 +38,7 @@ fun ShopScreen(viewModel: ShopViewModel) {
         )
         when {
             state.loading -> CircularProgressIndicator(color = Gold, modifier = Modifier.padding(24.dp))
-            state.error != null -> ScreenMessage(state.error!!)
+            state.error != null -> ScreenMessage(state.error!!, onRetry = viewModel::refresh)
             state.catalog != null -> {
                 state.catalog!!.packages.forEach { pack ->
                     DeckCard {

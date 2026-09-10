@@ -32,7 +32,7 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
         )
         when {
             state.loading -> CircularProgressIndicator(color = Gold, modifier = Modifier.padding(24.dp))
-            state.error != null -> ScreenMessage(state.error!!)
+            state.error != null -> ScreenMessage(state.error!!, onRetry = viewModel::refresh)
             state.items.isEmpty() -> ScreenMessage("Пока нет раскладов. Они появятся здесь после гадания.")
             else -> LazyColumn(
                 contentPadding = PaddingValues(20.dp),
