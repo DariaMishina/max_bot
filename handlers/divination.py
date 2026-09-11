@@ -1090,6 +1090,8 @@ DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEEPSEEK_MAX_TOKENS = 1200
 DEEPSEEK_TEMPERATURE = 0.65
+# V4 Flash думает по умолчанию; reasoning съедает max_tokens и content приходит пустым.
+DEEPSEEK_THINKING = {"type": "disabled"}
 
 TAROT_SYSTEM_PROMPT = (
     "Ты опытный таролог. Толкование расклада из 3 карт Таро: "
@@ -1140,13 +1142,25 @@ async def _call_deepseek(
         "messages": [{"role": "system", "content": system_prompt}, *messages],
         "max_tokens": max_tokens if max_tokens is not None else DEEPSEEK_MAX_TOKENS,
         "temperature": temperature if temperature is not None else DEEPSEEK_TEMPERATURE,
+        "thinking": DEEPSEEK_THINKING,
     }
 
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=90)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(DEEPSEEK_URL, headers=headers, json=data) as response:
             if response.status == 200:
                 result = await response.json()
-                response_text = result["choices"][0]["message"]["content"]
+                choice = result["choices"][0]
+                message = choice.get("message") or {}
+                response_text = message.get("content") or ""
+                if not str(response_text).strip():
+                    logging.error(
+                        "DeepSeek empty content: finish_reason=%s usage=%s reasoning_len=%s",
+                        choice.get("finish_reason"),
+                        result.get("usage"),
+                        len(message.get("reasoning_content") or ""),
+                    )
+                    raise RuntimeError("DeepSeek returned empty content")
                 if format_output:
                     return format_interpretation_with_bold(response_text)
                 return response_text

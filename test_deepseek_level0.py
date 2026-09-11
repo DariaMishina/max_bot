@@ -230,6 +230,7 @@ async def _call_deepseek(
         "messages": [{"role": "system", "content": system_prompt}, *messages],
         "max_tokens": DEEPSEEK_MAX_TOKENS,
         "temperature": DEEPSEEK_TEMPERATURE,
+        "thinking": {"type": "disabled"},
     }
 
     started = time.perf_counter()
@@ -239,9 +240,19 @@ async def _call_deepseek(
         if response.status != 200:
             raise RuntimeError(f"HTTP {response.status}: {body}")
 
-        raw_text = body["choices"][0]["message"]["content"]
+        choice = body["choices"][0]
+        message = choice.get("message") or {}
+        raw_text = message.get("content") or ""
+        if not str(raw_text).strip():
+            raise RuntimeError(
+                "empty content: finish_reason="
+                f"{choice.get('finish_reason')} usage={body.get('usage')} "
+                f"reasoning_len={len(message.get('reasoning_content') or '')}"
+            )
         formatted = format_interpretation_with_bold(raw_text)
         usage = body.get("usage", {})
+        usage["finish_reason"] = choice.get("finish_reason")
+        usage["reasoning_len"] = len(message.get("reasoning_content") or "")
         return formatted, elapsed, usage
 
 
@@ -323,6 +334,7 @@ async def run_parse_llm(
             ],
             "max_tokens": 200,
             "temperature": 0.1,
+            "thinking": {"type": "disabled"},
         }
         async with session.post(DEEPSEEK_URL, headers=headers, json=payload) as response:
             body = await response.json(content_type=None)
@@ -440,7 +452,13 @@ async def run_tarot(
         return False
 
     bold = _check_bold_keywords(text)
-    print(f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} | {len(text)} символов")
+    finish_reason = usage.get("finish_reason")
+    print(
+        f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} "
+        f"| completion={usage.get('completion_tokens', '?')} "
+        f"| finish={finish_reason} | reasoning_len={usage.get('reasoning_len', 0)} "
+        f"| {len(text)} символов"
+    )
     print(
         "Сравнение с прошлым прогоном (tarot): "
         f"{PREVIOUS_BASELINE['tarot_chars']} → {len(text)} символов, "
@@ -448,6 +466,16 @@ async def run_tarot(
     )
     print(f"Жирные заголовки: {bold or 'не найдены'}")
     _print_response("tarot", text, preview_only=preview_only, output_dir=output_dir)
+    if finish_reason == "length":
+        print("FAIL: ответ обрезан (finish_reason=length)")
+        return False
+    missing = [name for name in ("Прошлое", "Настоящее", "Будущее", "Общее толкование") if name not in bold]
+    if missing:
+        print(f"FAIL: нет секций {missing}")
+        return False
+    if not re.search(r"[.!?…»\"]\s*$", text.strip()):
+        print("FAIL: текст оборван на полуслове")
+        return False
     return True
 
 
@@ -471,8 +499,14 @@ async def run_iching(
         print(f"FAIL: {exc}")
         return False
 
-    print(f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} | {len(text)} символов")
+    print(
+        f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} "
+        f"| finish={usage.get('finish_reason')} | {len(text)} символов"
+    )
     _print_response("iching", text, preview_only=preview_only, output_dir=output_dir)
+    if usage.get("finish_reason") == "length":
+        print("FAIL: ответ обрезан (finish_reason=length)")
+        return False
     return bool(text.strip())
 
 
@@ -495,8 +529,14 @@ async def run_followup(
         print(f"FAIL: {exc}")
         return False
 
-    print(f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} | {len(text)} символов")
+    print(
+        f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} "
+        f"| finish={usage.get('finish_reason')} | {len(text)} символов"
+    )
     _print_response("followup", text, preview_only=preview_only, output_dir=output_dir)
+    if usage.get("finish_reason") == "length":
+        print("FAIL: ответ обрезан (finish_reason=length)")
+        return False
     return bool(text.strip())
 
 

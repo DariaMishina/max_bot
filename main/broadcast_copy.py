@@ -77,6 +77,7 @@ async def _call_deepseek(messages: list[dict[str, str]], temperature: float) -> 
         "messages": messages,
         "max_tokens": MAX_TOKENS,
         "temperature": temperature,
+        "thinking": {"type": "disabled"},
     }
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session:
