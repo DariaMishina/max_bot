@@ -19,6 +19,7 @@ class SecurePrefs(context: Context) {
     fun getRefreshToken(): String? = securePrefs.getString(KEY_REFRESH, null)
     fun getUserId(): String? = securePrefs.getString(KEY_USER_ID, null)
 
+    @Synchronized
     fun saveTokens(access: String, refresh: String, userId: String) {
         securePrefs.edit()
             .putString(KEY_ACCESS, access)
@@ -27,12 +28,31 @@ class SecurePrefs(context: Context) {
             .apply()
     }
 
+    @Synchronized
     fun clearTokens() {
         securePrefs.edit()
             .remove(KEY_ACCESS)
             .remove(KEY_REFRESH)
             .remove(KEY_USER_ID)
             .apply()
+    }
+
+    @Synchronized
+    fun replaceTokens(expectedRefresh: String, access: String, refresh: String, userId: String): Boolean {
+        if (getRefreshToken() != expectedRefresh) return false
+        saveTokens(access, refresh, userId)
+        return true
+    }
+
+    @Synchronized
+    fun clearRejectedTokens(expectedRefresh: String) {
+        if (getRefreshToken() == expectedRefresh) clearTokens()
+    }
+
+    @Synchronized
+    fun resetGuest() {
+        check(securePrefs.edit().clear().commit()) { "Не удалось очистить сессию" }
+        metadataPrefs.edit().clear().commit()
     }
 
     fun installId(): String {

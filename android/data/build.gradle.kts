@@ -1,7 +1,18 @@
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.kapt)
+}
+
+val apiBaseUrl = providers.gradleProperty("APP_API_BASE_URL")
+    .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/").get().trimEnd('/') + "/"
+val apiUri = URI(apiBaseUrl)
+require(apiUri.scheme == "https" && !apiUri.host.isNullOrBlank() && apiUri.rawUserInfo == null &&
+    apiUri.rawQuery == null && apiUri.rawFragment == null && apiUri.path == "/") {
+    "APP_API_BASE_URL must be an HTTPS origin, e.g. https://example.tunnel4.com/ (without /v1)"
 }
 
 android {
@@ -10,11 +21,11 @@ android {
 
     defaultConfig {
         minSdk = 26
-        // Тестовый xTunnel; при смене URL обновить и пересобрать.
+        // Постоянный адрес xTunnel; при смене URL обновить и пересобрать.
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"https://d7e8f3de-2cd2-4ccd-b7fa-3cb193755489.tunnel4.com/\"",
+            "\"$apiBaseUrl\"",
         )
     }
 
@@ -34,6 +45,10 @@ android {
 
 dependencies {
     implementation(project(":domain"))
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    kapt(libs.androidx.room.compiler)
+    testImplementation(libs.junit)
     implementation(libs.androidx.security.crypto)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
@@ -41,4 +56,8 @@ dependencies {
     implementation(libs.retrofit.kotlinx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+}
+
+kapt {
+    arguments { arg("room.schemaLocation", "$projectDir/schemas") }
 }

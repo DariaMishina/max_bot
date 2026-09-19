@@ -30,7 +30,11 @@ class AuthRepositoryImpl(
                     expiresIn = 0,
                     balance = me.balance.toDomain(),
                 )
+            } catch (e: java.io.IOException) {
+                // A previously established guest may open cached history offline.
+                TokenPair(existing, prefs.getRefreshToken().orEmpty(), prefs.getUserId().orEmpty(), 0, null)
             } catch (e: HttpException) {
+                if (e.code() >= 500) return TokenPair(existing, prefs.getRefreshToken().orEmpty(), prefs.getUserId().orEmpty(), 0, null)
                 if (e.code() != 401) throw e
 
                 // The authenticator clears tokens only when the refresh token is

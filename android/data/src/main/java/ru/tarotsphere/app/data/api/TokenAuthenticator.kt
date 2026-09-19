@@ -28,14 +28,14 @@ class TokenAuthenticator(
                 val tokens = runBlocking {
                     refreshApi.refresh(RefreshRequestDto(refresh))
                 }
-                prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
+                if (!prefs.replaceTokens(refresh, tokens.accessToken, tokens.refreshToken, tokens.userId)) return null
                 response.request.newBuilder()
                     .header("Authorization", "Bearer ${tokens.accessToken}")
                     .build()
             } catch (e: HttpException) {
                 // Only an explicitly rejected refresh token ends the session.
                 // Network errors and server failures must not orphan a guest.
-                if (e.code() == 401) prefs.clearTokens()
+                if (e.code() == 401) prefs.clearRejectedTokens(refresh)
                 null
             } catch (_: Exception) {
                 null

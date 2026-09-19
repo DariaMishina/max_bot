@@ -33,9 +33,11 @@ from app.database import (
     get_user_balance,
     list_divinations,
     touch_user,
+    save_feedback,
+    delete_user,
 )
-from app.divination_service import DivinationError, run_tarot
-from handlers.tarot_cards import get_card_info
+from app.divination_service import DivinationError, run_tarot, run_follow_up
+from handlers.tarot_cards import get_card_info, get_random_cards
 
 ROOT = Path(__file__).resolve().parent
 STATIC_IMAGES = ROOT / "static" / "images"
@@ -61,6 +63,10 @@ OPENAPI = {
         "POST /v1/divinations/tarot",
         "GET /v1/divinations/{id}",
         "GET /v1/catalog",
+        "GET /v1/tarot/deck",
+        "POST /v1/divinations/{id}/follow-up",
+        "POST /v1/me/feedback",
+        "DELETE /v1/me",
         "GET /health",
         "GET /static/images/{card_id}.png",
     ],
@@ -101,7 +107,7 @@ def _balance_payload(balance: Optional[dict]) -> dict:
 
 def _card_payload(card_id: str, request: Request) -> dict:
     info = get_card_info(card_id)
-    base = str(request.url).split("/v1/")[0]
+    base = app_config.app_api_public_url.rstrip("/") or f"{request.scheme}://{request.host}"
     return {
         "id": card_id,
         "name": info["name"],
@@ -113,7 +119,8 @@ async def _read_json(request: Request) -> dict:
     if not request.body_exists:
         return {}
     try:
-        return await request.json()
+        body = await request.json()
+        return body if isinstance(body, dict) else {}
     except json.JSONDecodeError:
         return {}
 
@@ -184,27 +191,36 @@ async def me_balance_handler(request: Request) -> Response:
 async def me_history_handler(request: Request) -> Response:
     user_id = _user_id_from_request(request)
     assert user_id
-    limit = int(request.rel_url.query.get("limit", "20"))
-    limit = max(1, min(limit, 50))
-    items = await list_divinations(user_id, limit=limit)
-    return json_response({"items": items})
+    try:
+        limit = max(1, min(int(request.query.get("limit", "20")), 50))
+        before_id = int(request.query["before_id"]) if "before_id" in request.query else None
+    except ValueError:
+        return error_response("invalid_page", "Некорректная страница истории")
+    items = await list_divinations(user_id, limit=limit + 1, before_id=before_id)
+    return json_response({"items": items[:limit], "next_before_id": items[limit - 1]["id"] if len(items) > limit else None})
 
 
 async def tarot_handler(request: Request) -> Response:
     user_id = _user_id_from_request(request)
     assert user_id
     body = await _read_json(request)
-    question = (body.get("question") or "").strip()
-    selection = (body.get("selection") or "manual").strip().lower()
+    question = body.get("question", "")
+    selection = body.get("selection", "manual")
+    if not isinstance(question, str) or selection not in ("manual", "random"):
+        return error_response("invalid_request", "Проверьте вопрос и способ выбора карт")
+    try:
+        request_id = uuid.UUID(body["request_id"]) if body.get("request_id") else None
+    except (ValueError, TypeError, AttributeError):
+        return error_response("invalid_request", "Некорректный request_id")
     card_ids = body.get("card_ids")
 
     try:
         if selection == "random":
-            result = await run_tarot(user_id, question, random_cards=True)
+            result = await run_tarot(user_id, question, random_cards=True, request_id=request_id)
         else:
             if not isinstance(card_ids, list):
                 return error_response("invalid_cards", "card_ids должен быть массивом из 3 id")
-            result = await run_tarot(user_id, question, card_ids=[str(c) for c in card_ids])
+            result = await run_tarot(user_id, question, card_ids=[str(c) for c in card_ids], request_id=request_id)
     except DivinationError as e:
         status = 402 if e.code == "no_balance" else 400
         return error_response(e.code, str(e), status=status)
@@ -216,6 +232,8 @@ async def tarot_handler(request: Request) -> Response:
         unlimited and unlimited > datetime.now()
     )
 
+    detail = await get_divination(result.divination_id, user_id)
+    follow_ups = (detail or {}).get("follow_ups", [])
     return json_response({
         "divination_id": result.divination_id,
         "question": result.question,
@@ -224,6 +242,9 @@ async def tarot_handler(request: Request) -> Response:
         "is_free": result.is_free,
         "balance": _balance_payload(result.balance_after),
         "paywall": paywall,
+        "created_at": (detail or {}).get("created_at"),
+        "follow_ups": follow_ups,
+        "follow_ups_remaining": max(0, (2 if result.is_free else 5) - len(follow_ups)),
     })
 
 
@@ -241,6 +262,7 @@ async def divination_detail_handler(request: Request) -> Response:
     return json_response({
         **row,
         "cards": [_card_payload(cid, request) for cid in cards],
+        "follow_ups_remaining": max(0, (2 if row["is_free"] else 5) - len(row.get("follow_ups", []))),
     })
 
 
@@ -248,7 +270,48 @@ async def catalog_handler(_request: Request) -> Response:
     return json_response({
         "packages": CATALOG_PACKAGES,
         "payment_methods": ["rustore", "yookassa"],
+        "consultations": [
+            {"id": "consultation_basic", "name": "Базовая консультация", "price_rub": 500},
+            {"id": "consultation_detailed", "name": "Подробная консультация", "price_rub": 1500},
+        ],
+        "tarologist_url": app_config.app_tarologist_profile_url or None,
+        "billing_enabled": False,
     })
+
+
+async def tarot_deck_handler(request: Request) -> Response:
+    return json_response({"cards": [_card_payload(cid, request) for cid in get_random_cards(9)]})
+
+
+async def follow_up_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    try:
+        divination_id = int(request.match_info["id"])
+        request_id = uuid.UUID(body.get("request_id", ""))
+    except (ValueError, TypeError, AttributeError):
+        return error_response("invalid_request", "Некорректный id запроса")
+    question = body.get("question", "")
+    if not isinstance(question, str):
+        return error_response("invalid_request", "Вопрос должен быть текстом")
+    try:
+        result = await run_follow_up(request["app_user_id"], divination_id, question, request_id)
+    except DivinationError as e:
+        return error_response(e.code, str(e), status=404 if e.code == "not_found" else 409 if e.code == "follow_up_limit" else 400)
+    return json_response(result)
+
+
+async def feedback_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    message = body.get("message", "")
+    if not isinstance(message, str) or not 1 <= len(message.strip()) <= 2000:
+        return error_response("invalid_message", "Сообщение должно содержать от 1 до 2000 символов")
+    await save_feedback(request["app_user_id"], message.strip())
+    return json_response({"ok": True})
+
+
+async def delete_me_handler(request: Request) -> Response:
+    await delete_user(request["app_user_id"])
+    return json_response({"ok": True})
 
 
 async def static_card_image_handler(request: Request) -> Response:
@@ -276,6 +339,8 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     user_id = verify_access_token(token)
     if not user_id:
         return error_response("unauthorized", "Недействительный или просроченный токен", status=401)
+    if request.method != "DELETE" and not await get_user(user_id):
+        return error_response("unauthorized", "Данные гостя удалены", status=401)
     request["app_user_id"] = user_id
     return await handler(request)
 
@@ -287,13 +352,15 @@ async def logging_middleware(request: Request, handler: Callable) -> Response:
         response = await handler(request)
         logging.info("%s %s -> %s (%.2fs)", request.method, request.path, response.status, time.time() - start)
         return response
+    except web.HTTPException as error:
+        return error
     except Exception:
         logging.exception("%s %s failed after %.2fs", request.method, request.path, time.time() - start)
         return error_response("internal_error", "Внутренняя ошибка", status=500)
 
 
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[logging_middleware, auth_middleware])
+    app = web.Application(middlewares=[logging_middleware, auth_middleware], client_max_size=32 * 1024)
     app.router.add_get("/health", health_handler)
     app.router.add_get("/v1/docs", docs_handler)
     app.router.add_post("/v1/auth/guest", guest_auth_handler)
@@ -304,6 +371,10 @@ def create_app() -> web.Application:
     app.router.add_post("/v1/divinations/tarot", tarot_handler)
     app.router.add_get(r"/v1/divinations/{id}", divination_detail_handler)
     app.router.add_get("/v1/catalog", catalog_handler)
+    app.router.add_get("/v1/tarot/deck", tarot_deck_handler)
+    app.router.add_post("/v1/divinations/{id}/follow-up", follow_up_handler)
+    app.router.add_post("/v1/me/feedback", feedback_handler)
+    app.router.add_delete("/v1/me", delete_me_handler)
     app.router.add_get("/static/images/{card_id}.png", static_card_image_handler)
     return app
 

@@ -1,6 +1,10 @@
 package ru.tarotsphere.app.data.di
 
 import android.content.Context
+import androidx.room.Room
+import ru.tarotsphere.app.data.local.HistoryDatabase
+import ru.tarotsphere.app.data.repository.ReadingRepositoryImpl
+import ru.tarotsphere.app.domain.repository.ReadingRepository
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -32,6 +36,8 @@ class AppContainer(context: Context) {
         explicitNulls = false
     }
 
+    private val database = Room.databaseBuilder(context.applicationContext, HistoryDatabase::class.java, "tarot_history.db").build()
+
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BASIC
         redactHeader("Authorization")
@@ -57,7 +63,8 @@ class AppContainer(context: Context) {
         .addInterceptor(logging)
         .authenticator(TokenAuthenticator(prefs, refreshApi))
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 
     val api: AppApi = Retrofit.Builder()
@@ -68,7 +75,8 @@ class AppContainer(context: Context) {
         .create(AppApi::class.java)
 
     val authRepository: AuthRepository = AuthRepositoryImpl(api, refreshApi, prefs)
-    val userRepository: UserRepository = UserRepositoryImpl(api)
+    val userRepository: UserRepository = UserRepositoryImpl(api, database, prefs, json)
+    val readingRepository: ReadingRepository = ReadingRepositoryImpl(api, database, prefs, json)
     val catalogRepository: CatalogRepository = CatalogRepositoryImpl(api)
     val onboardingStore: OnboardingStore = OnboardingStoreImpl(prefs)
     val ensureGuestSession = EnsureGuestSessionUseCase(authRepository)

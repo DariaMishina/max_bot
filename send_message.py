@@ -939,6 +939,10 @@ async def main():
         help='Формат текста (по умолчанию: html)'
     )
     parser.add_argument(
+        '--back-to-menu', action='store_true',
+        help='Прикрепить кнопку «◀ В меню» к кастомному --text'
+    )
+    parser.add_argument(
         '--payment-reminder', action='store_true',
         help='Отправить напоминание об оплате с кнопкой «Оплатить»'
     )
@@ -1135,10 +1139,15 @@ async def main():
                 )
                 return
 
+            keyboard = None
+            if args.back_to_menu:
+                from keyboards.main_menu import make_back_to_menu_kb
+                keyboard = make_back_to_menu_kb()
+
             if total == 1:
-                await send_message_to_user(args.user_id[0], args.text, fmt)
+                await send_message_to_user(args.user_id[0], args.text, fmt, keyboard)
             else:
-                await send_message_to_multiple_users(args.user_id, args.text, fmt)
+                await send_message_to_multiple_users(args.user_id, args.text, fmt, keyboard)
 
         print("✅ Отправка завершена")
     finally:

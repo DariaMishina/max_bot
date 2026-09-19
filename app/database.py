@@ -236,7 +236,7 @@ async def save_divination(
 async def get_divination(divination_id: int, user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
     row = await AppDatabase.fetch_one(
         """
-        SELECT id, divination_type, question, selected_cards, interpretation, is_free, created_at
+        SELECT id, divination_type, question, selected_cards, interpretation, is_free, created_at, follow_ups
         FROM app_divinations
         WHERE id = $1 AND user_id = $2
         """,
@@ -248,6 +248,8 @@ async def get_divination(divination_id: int, user_id: uuid.UUID) -> Optional[Dic
     data = dict(row)
     if isinstance(data.get("selected_cards"), str):
         data["selected_cards"] = json.loads(data["selected_cards"])
+    if isinstance(data.get("follow_ups"), str):
+        data["follow_ups"] = json.loads(data["follow_ups"])
     return data
 
 
@@ -263,17 +265,18 @@ async def get_user(user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
-async def list_divinations(user_id: uuid.UUID, limit: int = 20) -> List[Dict[str, Any]]:
+async def list_divinations(user_id: uuid.UUID, limit: int = 20, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
     rows = await AppDatabase.fetch_all(
         """
         SELECT id, divination_type, question, selected_cards, interpretation, is_free, created_at
         FROM app_divinations
-        WHERE user_id = $1
-        ORDER BY created_at DESC
+        WHERE user_id = $1 AND ($3::integer IS NULL OR id < $3)
+        ORDER BY id DESC
         LIMIT $2
         """,
         user_id,
         limit,
+        before_id,
     )
     result = []
     for row in rows:
@@ -283,3 +286,14 @@ async def list_divinations(user_id: uuid.UUID, limit: int = 20) -> List[Dict[str
             item["selected_cards"] = json.loads(cards)
         result.append(item)
     return result
+
+
+async def save_feedback(user_id: uuid.UUID, message: str) -> None:
+    await AppDatabase.execute(
+        "INSERT INTO app_feedback (user_id, message) VALUES ($1, $2)", user_id, message,
+    )
+
+
+async def delete_user(user_id: uuid.UUID) -> None:
+    # All app-owned records reference the guest with ON DELETE CASCADE.
+    await AppDatabase.execute("DELETE FROM app_users WHERE user_id = $1", user_id)

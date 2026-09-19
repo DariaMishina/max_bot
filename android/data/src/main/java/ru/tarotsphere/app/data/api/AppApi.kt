@@ -1,5 +1,9 @@
 package ru.tarotsphere.app.data.api
 
+import retrofit2.http.DELETE
+import retrofit2.http.Path
+import retrofit2.http.Query
+import ru.tarotsphere.app.data.api.dto.*
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -25,8 +29,25 @@ interface AppApi {
     suspend fun balance(): BalanceDto
 
     @GET("v1/me/history")
-    suspend fun history(): HistoryResponseDto
+    suspend fun history(@Query("before_id") beforeId: Long? = null): HistoryResponseDto
 
     @GET("v1/catalog")
     suspend fun catalog(): CatalogDto
+    @GET("v1/tarot/deck")
+    suspend fun deck(): DeckDto
+
+    @POST("v1/divinations/tarot")
+    suspend fun tarot(@Body body: TarotRequestDto): ReadingDto
+
+    @GET("v1/divinations/{id}")
+    suspend fun detail(@Path("id") id: Long): ReadingDto
+
+    @POST("v1/divinations/{id}/follow-up")
+    suspend fun followUp(@Path("id") id: Long, @Body body: FollowUpRequestDto): FollowUpsDto
+
+    @POST("v1/me/feedback")
+    suspend fun feedback(@Body body: FeedbackRequestDto)
+
+    @DELETE("v1/me")
+    suspend fun deleteMe()
 }

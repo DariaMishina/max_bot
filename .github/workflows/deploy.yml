@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main  # Измените на вашу основную ветку, если она называется иначе
+    paths:
+      - "bot.py"
+      - "webhook_server.py"
+      - "send_message.py"
+      - "main/**"
+      - "handlers/**"
+      - "keyboards/**"
+      - "static/**"
+      - "requirements.txt"
+      - ".github/workflows/deploy.yml"
 
 jobs:
   deploy:
@@ -40,9 +50,11 @@ jobs:
             echo "📂 Рабочая директория: $(pwd)"
             
             # Активируем виртуальное окружение
+            INSTALL_DEPENDENCIES=false
             if [ ! -d "venv" ]; then
               echo "📦 Создаем виртуальное окружение..."
               python3 -m venv venv
+              INSTALL_DEPENDENCIES=true
             fi
             source venv/bin/activate
             
@@ -55,13 +67,20 @@ jobs:
             # Получаем последние изменения
             echo "🔄 Получаем последние изменения из Git..."
             # Credential helper уже настроен на сервере, токен сохранен
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
             git fetch origin
+            if ! git diff --quiet "$PREVIOUS_COMMIT" origin/main -- requirements.txt; then
+              INSTALL_DEPENDENCIES=true
+            fi
             git reset --hard origin/main
             
             # Обновляем зависимости
-            echo "📥 Обновляем зависимости..."
-            pip install --upgrade pip --quiet
-            pip install -r requirements.txt --quiet
+            if [ "$INSTALL_DEPENDENCIES" = true ]; then
+              echo "📥 Устанавливаем зависимости..."
+              python -m pip install -r requirements.txt --quiet
+            else
+              echo "📦 requirements.txt не изменился, сохраняем установленные зависимости"
+            fi
             
             # Перезапускаем сервис
             echo "🔄 Перезапускаем сервис..."
@@ -72,7 +91,12 @@ jobs:
             sleep 3
             
             echo "✅ Проверяем статус сервиса..."
-            sudo systemctl status max-bot.service --no-pager -l || true
+            if ! sudo systemctl is-active --quiet max-bot.service; then
+              sudo systemctl status max-bot.service --no-pager -l || true
+              echo "❌ Бот не запустился после деплоя"
+              exit 1
+            fi
+            sudo systemctl status max-bot.service --no-pager -l
             
             echo "📋 Последние строки лога:"
             tail -n 20 bot.log 2>/dev/null || echo "Лог файл пока пуст"

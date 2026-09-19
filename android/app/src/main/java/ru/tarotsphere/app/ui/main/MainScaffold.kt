@@ -15,6 +15,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import ru.tarotsphere.app.ui.reading.ReadingViewModel
+import ru.tarotsphere.app.ui.reading.ReadingScreen
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -45,8 +48,12 @@ private val Tabs = listOf(
 )
 
 @Composable
-fun MainScaffold(container: AppContainer) {
+fun MainScaffold(container: AppContainer, onDeleted: () -> Unit) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var readingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var exhausted by rememberSaveable { mutableStateOf(false) }
+    val onShop = { readingId = null; selected = 2 }
+    val onNew = { readingId = null; selected = 0 }
 
     Scaffold(
         containerColor = Night,
@@ -55,7 +62,7 @@ fun MainScaffold(container: AppContainer) {
                 Tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
                         selected = selected == index,
-                        onClick = { selected = index },
+                        onClick = { readingId = null; selected = index; exhausted = false },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
                         colors = NavigationBarItemDefaults.colors(
@@ -71,44 +78,28 @@ fun MainScaffold(container: AppContainer) {
         },
     ) { padding ->
         Box(Modifier.padding(padding)) {
-            when (selected) {
-                0 -> SpreadRoute(container)
-                1 -> HistoryRoute(container)
-                2 -> ShopRoute(container)
-                else -> ProfileRoute(container)
+            val detail = readingId
+            if (detail != null) {
+                val model: ReadingViewModel = viewModel(key = "reading-$detail", factory = ReadingViewModel.factory(detail, container.readingRepository))
+                ReadingScreen(model, onBack = { readingId = null }, onNew = onNew, onShop = onShop)
+            } else when (selected) {
+                0 -> {
+                    val model: SpreadViewModel = viewModel(factory = SpreadViewModel.factory(container.readingRepository))
+                    SpreadScreen(model, onResult = { readingId = it }, onShop = { exhausted = true; onShop() })
+                }
+                1 -> {
+                    val model: HistoryViewModel = viewModel(factory = HistoryViewModel.factory(container.userRepository))
+                    HistoryScreen(model, onOpen = { readingId = it }, onNew = onNew)
+                }
+                2 -> {
+                    val model: ShopViewModel = viewModel(factory = ShopViewModel.factory(container.catalogRepository))
+                    ShopScreen(model, exhausted)
+                }
+                else -> {
+                    val model: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(container.userRepository))
+                    ProfileScreen(model, onDeleted, onShop)
+                }
             }
         }
     }
-}
-
-@Composable
-private fun SpreadRoute(container: AppContainer) {
-    val viewModel: SpreadViewModel = viewModel(
-        factory = SpreadViewModel.factory(container.userRepository),
-    )
-    SpreadScreen(viewModel)
-}
-
-@Composable
-private fun HistoryRoute(container: AppContainer) {
-    val viewModel: HistoryViewModel = viewModel(
-        factory = HistoryViewModel.factory(container.userRepository),
-    )
-    HistoryScreen(viewModel)
-}
-
-@Composable
-private fun ShopRoute(container: AppContainer) {
-    val viewModel: ShopViewModel = viewModel(
-        factory = ShopViewModel.factory(container.catalogRepository),
-    )
-    ShopScreen(viewModel)
-}
-
-@Composable
-private fun ProfileRoute(container: AppContainer) {
-    val viewModel: ProfileViewModel = viewModel(
-        factory = ProfileViewModel.factory(container.userRepository),
-    )
-    ProfileScreen(viewModel)
 }

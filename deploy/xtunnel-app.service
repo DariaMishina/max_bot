@@ -1,0 +1,22 @@
+[Unit]
+Description=xTunnel for Tarot Sphere App API (port 8083)
+Wants=network-online.target
+After=network-online.target app-api.service
+StartLimitIntervalSec=0
+
+[Service]
+# license.env must contain XTUNNEL_LICENSE and have permissions 0600.
+EnvironmentFile=/home/dariamishina/.local/share/xtunnel/license.env
+Type=simple
+User=dariamishina
+WorkingDirectory=/home/dariamishina/.local/share/xtunnel
+ExecStart=/home/dariamishina/.local/share/xtunnel/xtunnel http 8083 --local 127.0.0.1:8083 --monitor false --output-mode plain --quiet --log-format json --inspect off --backend-timeout 120 --license ${XTUNNEL_LICENSE}
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

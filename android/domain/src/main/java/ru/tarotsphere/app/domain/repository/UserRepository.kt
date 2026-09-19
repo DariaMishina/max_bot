@@ -1,11 +1,13 @@
 package ru.tarotsphere.app.domain.repository
 
-import ru.tarotsphere.app.domain.model.Balance
-import ru.tarotsphere.app.domain.model.HistoryItem
-import ru.tarotsphere.app.domain.model.UserProfile
+import kotlinx.coroutines.flow.Flow
+import ru.tarotsphere.app.domain.model.*
 
 interface UserRepository {
-    suspend fun me(): UserProfile
+    suspend fun me(): Loaded<UserProfile>
     suspend fun balance(): Balance
-    suspend fun history(): List<HistoryItem>
+    fun observeHistory(): Flow<List<HistoryItem>>
+    suspend fun refreshHistory(beforeId: Long? = null): Long?
+    suspend fun feedback(message: String)
+    suspend fun deleteData()
 }

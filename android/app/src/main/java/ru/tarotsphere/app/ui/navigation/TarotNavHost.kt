@@ -32,7 +32,7 @@ fun TarotNavHost(container: AppContainer) {
         val dest = nav.currentDestination?.route
         when {
             state.needsOnboarding && dest != Dest.Onboarding -> nav.navigate(Dest.Onboarding) {
-                popUpTo(Dest.Splash) { inclusive = true }
+                popUpTo(0) { inclusive = true }
             }
             state.ready && dest != Dest.Main -> nav.navigate(Dest.Main) {
                 popUpTo(0) { inclusive = true }
@@ -51,7 +51,7 @@ fun TarotNavHost(container: AppContainer) {
             OnboardingScreen(onFinished = session::completeOnboarding)
         }
         composable(Dest.Main) {
-            MainScaffold(container)
+            MainScaffold(container, onDeleted = session::start)
         }
     }
 }

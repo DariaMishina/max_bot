@@ -11,6 +11,8 @@ class AppSettings(BaseSettings):
     app_db_password: SecretStr
     app_api_port: int = 8083
     app_jwt_secret: SecretStr
+    app_api_public_url: str = ""
+    app_tarologist_profile_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

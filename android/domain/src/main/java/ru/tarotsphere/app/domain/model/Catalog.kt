@@ -10,4 +10,6 @@ data class CatalogPackage(
 data class Catalog(
     val packages: List<CatalogPackage>,
     val paymentMethods: List<String>,
+    val consultations: List<CatalogPackage> = emptyList(),
+    val tarologistUrl: String? = null,
 )

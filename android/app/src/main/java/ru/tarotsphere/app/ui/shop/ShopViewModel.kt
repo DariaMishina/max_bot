@@ -1,5 +1,7 @@
 package ru.tarotsphere.app.ui.shop
 
+import kotlinx.coroutines.CancellationException
+import ru.tarotsphere.app.ui.components.userMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -27,12 +29,14 @@ class ShopViewModel(
     }
 
     fun refresh() {
+        if (_state.value.loading && _state.value.catalog != null) return
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
                 _state.value = ShopUiState(loading = false, catalog = catalogRepository.catalog())
+            } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                _state.value = ShopUiState(loading = false, error = e.message ?: "Ошибка загрузки")
+                _state.value = ShopUiState(loading = false, error = e.userMessage())
             }
         }
     }

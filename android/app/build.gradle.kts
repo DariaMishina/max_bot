@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.3.0"
+        versionName = "0.4.0"
     }
 
     buildTypes {
@@ -46,6 +46,9 @@ android {
 
 dependencies {
     implementation(project(":domain"))
+    implementation(libs.coil.compose)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     implementation(project(":data"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
