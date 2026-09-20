@@ -42,9 +42,21 @@ fun SpreadScreen(viewModel: SpreadViewModel, onResult: (Long) -> Unit, onShop: (
         DeckCard {
             Text("2 · Выберите способ", style = MaterialTheme.typography.titleMedium, color = Gold)
             Spacer(Modifier.height(8.dp))
-            Column {
-                FilterChip(modifier = Modifier.fillMaxWidth(), selected = !state.manual, onClick = { viewModel.mode(false) }, label = { Text("Карты сами") }, enabled = !state.submitting && !state.retryPending)
-                FilterChip(modifier = Modifier.fillMaxWidth(), selected = state.manual, onClick = { viewModel.mode(true) }, label = { Text("Выбрать самой") }, enabled = !state.submitting && !state.retryPending)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    selected = !state.manual,
+                    onClick = { viewModel.mode(false) },
+                    label = { Text("Карты сами", maxLines = 1) },
+                    enabled = !state.submitting && !state.retryPending,
+                )
+                FilterChip(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    selected = state.manual,
+                    onClick = { viewModel.mode(true) },
+                    label = { Text("Выбрать самой", maxLines = 1) },
+                    enabled = !state.submitting && !state.retryPending,
+                )
             }
             Text(if (state.manual) "Выберите 3 карты из 9. Повторное нажатие отменяет выбор." else "Для вашего вопроса случайно выпадут три карты.", color = CreamMuted, style = MaterialTheme.typography.bodyMedium)
         }

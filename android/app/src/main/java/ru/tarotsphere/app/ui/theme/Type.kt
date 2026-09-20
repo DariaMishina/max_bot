@@ -50,6 +50,6 @@ val Typography = Typography(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
-        color = Gold,
+        lineHeight = 20.sp,
     ),
 )
