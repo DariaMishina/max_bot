@@ -15,8 +15,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import ru.tarotsphere.app.R
 import ru.tarotsphere.app.ui.theme.CreamMuted
 import ru.tarotsphere.app.ui.theme.Gold
 import ru.tarotsphere.app.ui.theme.Ink
@@ -35,7 +37,7 @@ fun SplashScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("tarot sphere", style = MaterialTheme.typography.displaySmall, color = Gold)
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.displaySmall, color = Gold)
         Spacer(Modifier.height(8.dp))
         Text("Расклады без входа", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(32.dp))

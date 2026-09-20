@@ -28,9 +28,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import ru.tarotsphere.app.R
 import ru.tarotsphere.app.ui.components.DeckCard
 import ru.tarotsphere.app.ui.theme.CreamMuted
 import ru.tarotsphere.app.ui.theme.Gold
@@ -73,7 +75,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = "tarot sphere",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.labelLarge,
             color = Gold,
         )
