@@ -1,6 +1,7 @@
 package ru.tarotsphere.app.ui.main
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -63,14 +64,14 @@ fun MainScaffold(container: AppContainer, onDeleted: () -> Unit) {
                     NavigationBarItem(
                         selected = selected == index,
                         onClick = { readingId = null; selected = index; exhausted = false },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
+                        icon = { Icon(tab.icon, contentDescription = null) },
+                        label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Gold,
                             selectedTextColor = Gold,
                             unselectedIconColor = CreamMuted,
                             unselectedTextColor = CreamMuted,
-                            indicatorColor = Gold.copy(alpha = 0.15f),
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
                     )
                 }
