@@ -4,6 +4,7 @@
 Запуск из корня проекта:
     python test_deepseek_level0.py
     python test_deepseek_level0.py --case tarot
+    python test_deepseek_level0.py --case tarot --model deepseek-flash --preview
     python test_deepseek_level0.py --case iching --case followup
     python test_deepseek_level0.py --case parse_aliases          # парсинг без API
     python test_deepseek_level0.py --case parse_llm --preview    # LLM-парсинг карт
@@ -220,13 +221,14 @@ async def _call_deepseek(
     *,
     system_prompt: str,
     messages: list[dict[str, str]],
+    model: str = DEEPSEEK_MODEL,
 ) -> tuple[str, float, dict]:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": model,
         "messages": [{"role": "system", "content": system_prompt}, *messages],
         "max_tokens": DEEPSEEK_MAX_TOKENS,
         "temperature": DEEPSEEK_TEMPERATURE,
@@ -250,9 +252,11 @@ async def _call_deepseek(
                 f"reasoning_len={len(message.get('reasoning_content') or '')}"
             )
         formatted = format_interpretation_with_bold(raw_text)
-        usage = body.get("usage", {})
+        usage = dict(body.get("usage") or {})
         usage["finish_reason"] = choice.get("finish_reason")
         usage["reasoning_len"] = len(message.get("reasoning_content") or "")
+        usage["response_model"] = body.get("model", "?")
+        usage["system_fingerprint"] = body.get("system_fingerprint", "?")
         return formatted, elapsed, usage
 
 
@@ -316,10 +320,13 @@ async def run_parse_llm(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> bool:
     print("\n=== Парсинг карт (LLM fallback) ===")
     text = PARSE_LLM_CASE["input"]
     expected = PARSE_LLM_CASE["expected"]
+
+    response_metadata: dict[str, str] = {}
 
     async def call_llm(user_prompt: str, system_prompt: str) -> str:
         headers = {
@@ -327,7 +334,7 @@ async def run_parse_llm(
             "Content-Type": "application/json",
         }
         payload = {
-            "model": DEEPSEEK_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -340,6 +347,8 @@ async def run_parse_llm(
             body = await response.json(content_type=None)
             if response.status != 200:
                 raise RuntimeError(f"HTTP {response.status}: {body}")
+            response_metadata["response_model"] = body.get("model", "?")
+            response_metadata["system_fingerprint"] = body.get("system_fingerprint", "?")
             return body["choices"][0]["message"]["content"]
 
     started = time.perf_counter()
@@ -356,6 +365,10 @@ async def run_parse_llm(
     print(f"  source: {source}")
     print(f"  ожидалось: {expected}")
     print(f"  получено:  {card_ids}")
+    print(
+        f"  response_model={response_metadata.get('response_model', '?')} "
+        f"system_fingerprint={response_metadata.get('system_fingerprint', '?')}"
+    )
     if card_ids:
         print(f"  → {format_parsed_cards(card_ids)}")
     return case_ok
@@ -367,6 +380,7 @@ async def run_tarot_manual(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> bool:
     print("\n=== Таро (текстовый ввод карт) ===")
     cards_text = TAROT_MANUAL_CASE["cards_text"]
@@ -385,6 +399,7 @@ async def run_tarot_manual(
             api_key,
             system_prompt=TAROT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            model=model,
         )
     except Exception as exc:
         print(f"FAIL: {exc}")
@@ -392,6 +407,10 @@ async def run_tarot_manual(
 
     bold = _check_bold_keywords(text)
     print(f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} | {len(text)} символов")
+    print(
+        f"response_model={usage.get('response_model', '?')} "
+        f"system_fingerprint={usage.get('system_fingerprint', '?')}"
+    )
     print(f"Жирные заголовки: {bold or 'не найдены'}")
     _print_response("tarot_manual", text, preview_only=preview_only, output_dir=output_dir)
     return True
@@ -437,6 +456,7 @@ async def run_tarot(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> bool:
     print("\n=== Таро ===")
     user_prompt = _build_tarot_user_prompt(TAROT_CASE["question"], TAROT_CASE["card_ids"])
@@ -446,6 +466,7 @@ async def run_tarot(
             api_key,
             system_prompt=TAROT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            model=model,
         )
     except Exception as exc:
         print(f"FAIL: {exc}")
@@ -458,6 +479,10 @@ async def run_tarot(
         f"| completion={usage.get('completion_tokens', '?')} "
         f"| finish={finish_reason} | reasoning_len={usage.get('reasoning_len', 0)} "
         f"| {len(text)} символов"
+    )
+    print(
+        f"response_model={usage.get('response_model', '?')} "
+        f"system_fingerprint={usage.get('system_fingerprint', '?')}"
     )
     print(
         "Сравнение с прошлым прогоном (tarot): "
@@ -485,6 +510,7 @@ async def run_iching(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> bool:
     print("\n=== Ицзин ===")
     user_prompt = _build_iching_user_prompt(ICHING_CASE["question"], ICHING_CASE["hexagram_id"])
@@ -494,6 +520,7 @@ async def run_iching(
             api_key,
             system_prompt=ICHING_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            model=model,
         )
     except Exception as exc:
         print(f"FAIL: {exc}")
@@ -502,6 +529,10 @@ async def run_iching(
     print(
         f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} "
         f"| finish={usage.get('finish_reason')} | {len(text)} символов"
+    )
+    print(
+        f"response_model={usage.get('response_model', '?')} "
+        f"system_fingerprint={usage.get('system_fingerprint', '?')}"
     )
     _print_response("iching", text, preview_only=preview_only, output_dir=output_dir)
     if usage.get("finish_reason") == "length":
@@ -516,6 +547,7 @@ async def run_followup(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> bool:
     print("\n=== Уточняющий вопрос ===")
     try:
@@ -524,6 +556,7 @@ async def run_followup(
             api_key,
             system_prompt=FOLLOW_UP_SYSTEM_PROMPT,
             messages=FOLLOW_UP_CASE["history"],
+            model=model,
         )
     except Exception as exc:
         print(f"FAIL: {exc}")
@@ -532,6 +565,10 @@ async def run_followup(
     print(
         f"OK за {elapsed:.1f}s | tokens: {usage.get('total_tokens', '?')} "
         f"| finish={usage.get('finish_reason')} | {len(text)} символов"
+    )
+    print(
+        f"response_model={usage.get('response_model', '?')} "
+        f"system_fingerprint={usage.get('system_fingerprint', '?')}"
     )
     _print_response("followup", text, preview_only=preview_only, output_dir=output_dir)
     if usage.get("finish_reason") == "length":
@@ -545,6 +582,7 @@ async def main(
     *,
     preview_only: bool,
     output_dir: Path | None,
+    model: str,
 ) -> int:
     api_key = _load_api_key()
     runners = {
@@ -566,7 +604,7 @@ async def main(
 
     print("DeepSeek level-0 test")
     print(
-        f"model={DEEPSEEK_MODEL} max_tokens={DEEPSEEK_MAX_TOKENS} "
+        f"model={model} max_tokens={DEEPSEEK_MAX_TOKENS} "
         f"temperature={DEEPSEEK_TEMPERATURE} "
         f"(было: max_tokens={PREVIOUS_BASELINE['max_tokens']}, "
         f"temperature={PREVIOUS_BASELINE['temperature']})"
@@ -589,6 +627,7 @@ async def main(
                 api_key,
                 preview_only=preview_only,
                 output_dir=output_dir,
+                model=model,
             )
 
     print("\n=== Итог ===")
@@ -612,10 +651,24 @@ if __name__ == "__main__":
         help="Показать только начало ответа (~500 символов), не полный текст",
     )
     parser.add_argument(
+        "--model",
+        default=DEEPSEEK_MODEL,
+        help="Псевдоним модели для A/B-проверки (по умолчанию из handlers.divination)",
+    )
+    parser.add_argument(
         "--output",
         metavar="DIR",
         help="Дополнительно сохранить полные ответы в файлы DIR/<case>.txt",
     )
     args = parser.parse_args()
     output_dir = Path(args.output) if args.output else None
-    raise SystemExit(asyncio.run(main(args.case, preview_only=args.preview, output_dir=output_dir)))
+    raise SystemExit(
+        asyncio.run(
+            main(
+                args.case,
+                preview_only=args.preview,
+                output_dir=output_dir,
+                model=args.model,
+            )
+        )
+    )

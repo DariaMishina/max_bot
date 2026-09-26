@@ -12,7 +12,7 @@ import aiohttp
 from main.config_reader import config
 
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+DEEPSEEK_MODEL = "deepseek-flash"
 DEEPSEEK_MAX_TOKENS = 1200
 DEEPSEEK_TEMPERATURE = 0.65
 DEEPSEEK_THINKING = {"type": "disabled"}

@@ -11,7 +11,7 @@ from main.broadcast_context import has_personalization_facts, load_broadcast_con
 from main.config_reader import config
 
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
+DEEPSEEK_MODEL = "deepseek-flash"
 MAX_BROADCAST_CHARS = 700
 MAX_TOKENS = 220
 
