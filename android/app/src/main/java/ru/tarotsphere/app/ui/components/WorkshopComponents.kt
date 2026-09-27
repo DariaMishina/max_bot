@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -16,6 +17,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -89,12 +92,18 @@ fun ChoiceOption(title: String, description: String, selected: Boolean, onClick:
 }
 
 @Composable
-fun QuestionField(value: String, onValueChange: (String) -> Unit, label: String, enabled: Boolean = true, minLines: Int = 3, placeholder: String? = null) {
+fun QuestionField(
+    value: String, onValueChange: (String) -> Unit, label: String, enabled: Boolean = true,
+    minLines: Int = 3, maxLines: Int = 6, placeholder: String? = null, onImeDone: (() -> Unit)? = null,
+) {
     OutlinedTextField(
         value = value, onValueChange = onValueChange, label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
-        supportingText = { Text("${value.length}/1000", style = MaterialTheme.typography.bodySmall) },
-        modifier = Modifier.fillMaxWidth(), enabled = enabled, minLines = minLines, maxLines = 6,
+        supportingText = if (value.length >= 800) ({ Text("${value.length}/1000", style = MaterialTheme.typography.bodySmall) }) else null,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled, minLines = minLines, maxLines = maxLines,
+        keyboardOptions = KeyboardOptions(imeAction = if (onImeDone != null) ImeAction.Done else ImeAction.Default),
+        keyboardActions = KeyboardActions(onDone = { onImeDone?.invoke() }),
         shape = MaterialTheme.shapes.medium,
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surface,

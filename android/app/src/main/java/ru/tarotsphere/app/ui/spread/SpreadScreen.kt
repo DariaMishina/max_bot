@@ -1,15 +1,22 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package ru.tarotsphere.app.ui.spread
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import ru.tarotsphere.app.domain.model.CardSelectionMode
 import ru.tarotsphere.app.domain.model.TarotCard
 import ru.tarotsphere.app.ui.components.*
@@ -45,11 +52,34 @@ private fun SpreadContent(
 ) {
     val colors = MaterialTheme.colorScheme
     val editable = !state.submitting && !state.retryPending
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
+    val modeRequester = remember { BringIntoViewRequester() }
+    val actionRequester = remember { BringIntoViewRequester() }
+    val readyForAction = state.question.isNotBlank() && when (state.mode) {
+        CardSelectionMode.RANDOM -> true
+        CardSelectionMode.INTUITIVE -> state.selectedIds.size == 3
+        CardSelectionMode.NAMED -> state.namedCardIds.all { it != null } && state.namedCardIds.distinct().size == 3
+    }
+    LaunchedEffect(readyForAction, state.mode, state.submitting, state.retryPending) {
+        if (readyForAction && state.mode != CardSelectionMode.RANDOM && !state.submitting && !state.retryPending) {
+            delay(120)
+            actionRequester.bringIntoView()
+        }
+    }
     SphereScreen {
         SphereHeader("О чём спросим карты?", "Можно начать с того, что сейчас занимает ваши мысли.", "Сфера Таро")
-        QuestionField(state.question, onQuestion, label = "Ваш вопрос", enabled = editable,
-            placeholder = "На что обратить внимание в отношениях?")
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        QuestionField(
+            state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
+            placeholder = "На что обратить внимание в отношениях?",
+            onImeDone = {
+                focus.clearFocus()
+                keyboard?.hide()
+                scope.launch { delay(120); modeRequester.bringIntoView() }
+            },
+        )
+        Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Как откроем карты?", style = MaterialTheme.typography.titleLarge)
             Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ChoiceOption("🔮 Довериться колоде", "Три карты выпадут случайно", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM) }, editable)
@@ -97,15 +127,11 @@ private fun SpreadContent(
             state.submitting -> StatusPanel("Готовим толкование", "Это может занять до полутора минут. Готовый расклад сохранится в истории.", StatusTone.Progress)
             state.retryPending -> StatusPanel("Ответ ещё не получен", "Повторите этот запрос или проверьте историю. Повтор не расходует дополнительный расклад.")
         }
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.bringIntoViewRequester(actionRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PrimaryAction(
                 text = if (state.retryPending && !state.submitting) "Повторить запрос" else if (state.submitting) "Готовим толкование…" else "Получить толкование",
                 onClick = onSubmit,
-                enabled = !state.submitting && state.question.isNotBlank() && when (state.mode) {
-                    CardSelectionMode.RANDOM -> true
-                    CardSelectionMode.INTUITIVE -> state.selectedIds.size == 3
-                    CardSelectionMode.NAMED -> state.namedCardIds.all { it != null } && state.namedCardIds.distinct().size == 3
-                },
+                enabled = !state.submitting && readyForAction,
             )
             Text("Карты подскажут направление, но выбор всегда остаётся за вами.", color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }

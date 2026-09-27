@@ -1,6 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package ru.tarotsphere.app.ui.main
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -59,21 +63,23 @@ fun MainScaffold(container: AppContainer, onDeleted: () -> Unit) {
     Scaffold(
         containerColor = Night,
         bottomBar = {
-            NavigationBar(containerColor = NightElevated) {
-                Tabs.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = selected == index,
-                        onClick = { readingId = null; selected = index; exhausted = false },
-                        icon = { Icon(tab.icon, contentDescription = null) },
-                        label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Gold,
-                            selectedTextColor = Gold,
-                            unselectedIconColor = CreamMuted,
-                            unselectedTextColor = CreamMuted,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
-                    )
+            if (!WindowInsets.isImeVisible) {
+                NavigationBar(containerColor = NightElevated) {
+                    Tabs.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selected == index,
+                            onClick = { readingId = null; selected = index; exhausted = false },
+                            icon = { Icon(tab.icon, contentDescription = null) },
+                            label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Gold,
+                                selectedTextColor = Gold,
+                                unselectedIconColor = CreamMuted,
+                                unselectedTextColor = CreamMuted,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
+                        )
+                    }
                 }
             }
         },
