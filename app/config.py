@@ -1,5 +1,5 @@
 """Настройки API приложения (отдельная БД app_bot_db)."""
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,15 @@ class AppSettings(BaseSettings):
     app_api_port: int = 8083
     app_jwt_secret: SecretStr
     app_api_public_url: str = ""
-    app_tarologist_profile_url: str = ""
+    app_allow_unpaid_test_contact: bool = False
+    app_tarologist_profile_url: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "app_tarologist_profile_url",
+            "APP_TAROLOGIST_PROFILE_URL",
+            "TAROLOGIST_PROFILE_URL",
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

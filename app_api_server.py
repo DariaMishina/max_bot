@@ -266,7 +266,11 @@ async def divination_detail_handler(request: Request) -> Response:
     })
 
 
-async def catalog_handler(_request: Request) -> Response:
+async def catalog_handler(request: Request) -> Response:
+    include_test_contact = (
+        app_config.app_allow_unpaid_test_contact
+        and request.query.get("include_test_contact", "").lower() == "true"
+    )
     return json_response({
         "packages": CATALOG_PACKAGES,
         "payment_methods": ["rustore", "yookassa"],
@@ -274,7 +278,9 @@ async def catalog_handler(_request: Request) -> Response:
             {"id": "consultation_basic", "name": "Базовая консультация", "price_rub": 500},
             {"id": "consultation_detailed", "name": "Подробная консультация", "price_rub": 1500},
         ],
-        "tarologist_url": app_config.app_tarologist_profile_url or None,
+        # Temporary staging path: release clients do not request or receive the
+        # contact until paid-consultation entitlement is implemented server-side.
+        "tarologist_url": (app_config.app_tarologist_profile_url or None) if include_test_contact else None,
         "billing_enabled": False,
     })
 

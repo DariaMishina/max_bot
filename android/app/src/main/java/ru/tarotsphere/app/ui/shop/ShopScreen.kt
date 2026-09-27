@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.tarotsphere.app.BuildConfig
 import ru.tarotsphere.app.domain.model.CatalogPackage
 import ru.tarotsphere.app.ui.components.*
 import ru.tarotsphere.app.ui.theme.*
@@ -45,14 +46,27 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                 catalog.consultations.forEach { pack ->
                     ProductCard(pack) { selectedId = pack.id; consultation = true }
                 }
-                OutlinedButton(onClick = {
-                    val url = catalog.tarologistUrl
-                    notice = if (url.isNullOrBlank() || !url.startsWith("https://")) {
-                        "Контакт Дианы пока недоступен. Пожалуйста, попробуйте позже."
-                    } else {
-                        runCatching { uriHandler.openUri(url) }.exceptionOrNull()?.let { "Не удалось открыть контакт. Попробуйте позже." }
-                    }
-                }, modifier = Modifier.fillMaxWidth()) { Text("Написать Диане") }
+                if (BuildConfig.DEBUG) {
+                    Text(
+                        "Тестовая сборка: контакт можно открыть без оплаты, чтобы проверить переход. В release он будет доступен только после подтверждённой покупки консультации.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CreamMuted,
+                    )
+                    OutlinedButton(onClick = {
+                        val url = catalog.tarologistUrl
+                        notice = if (url.isNullOrBlank() || !url.startsWith("https://")) {
+                            "Контакт Дианы пока недоступен. Пожалуйста, попробуйте позже."
+                        } else {
+                            runCatching { uriHandler.openUri(url) }.exceptionOrNull()?.let { "Не удалось открыть контакт. Попробуйте позже." }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Написать Диане — тест") }
+                } else {
+                    Text(
+                        "Контакт Дианы станет доступен после подтверждённой оплаты консультации.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = CreamMuted,
+                    )
+                }
             }
         }
     }

@@ -44,6 +44,36 @@ def payload(response):
 
 
 class ApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_app_reuses_existing_bot_tarologist_contact(self):
+        environment = {
+            "APP_DB_USER": "test",
+            "APP_DB_PASSWORD": "test",
+            "APP_JWT_SECRET": "test-only",
+            "TAROLOGIST_PROFILE_URL": "https://example.test/diana",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            settings = api.app_config.__class__(_env_file=None)
+        self.assertEqual(settings.app_tarologist_profile_url, "https://example.test/diana")
+
+    async def test_catalog_returns_unpaid_contact_only_for_debug_request(self):
+        with patch.object(api.app_config, "app_tarologist_profile_url", "https://example.test/diana"), \
+                patch.object(api.app_config, "app_allow_unpaid_test_contact", True):
+            release_request = request()
+            release_request.query = {}
+            release_catalog = payload(await api.catalog_handler(release_request))
+            debug_request = request()
+            debug_request.query = {"include_test_contact": "true"}
+            debug_catalog = payload(await api.catalog_handler(debug_request))
+        self.assertIsNone(release_catalog["tarologist_url"])
+        self.assertEqual(debug_catalog["tarologist_url"], "https://example.test/diana")
+
+        disabled_request = request()
+        disabled_request.query = {"include_test_contact": "true"}
+        with patch.object(api.app_config, "app_tarologist_profile_url", "https://example.test/diana"), \
+                patch.object(api.app_config, "app_allow_unpaid_test_contact", False):
+            disabled_catalog = payload(await api.catalog_handler(disabled_request))
+        self.assertIsNone(disabled_catalog["tarologist_url"])
+
     async def test_non_object_json_and_invalid_selection(self):
         response = await api.tarot_handler(request(["invalid"]))
         self.assertEqual(response.status, 400)
