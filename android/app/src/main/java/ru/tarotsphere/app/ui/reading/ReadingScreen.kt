@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,10 +19,29 @@ import ru.tarotsphere.app.ui.components.*
 
 @Composable
 private fun ReadingText(value: String) {
-    val plain = remember(value) {
-        HtmlCompat.fromHtml(value.replace("\n", "<br>"), HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+    val formatted = remember(value) {
+        val plain = HtmlCompat.fromHtml(value.replace("\n", "<br>"), HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+        emphasizeReadingSections(plain)
     }
-    SelectionContainer { Text(plain, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface) }
+    SelectionContainer { Text(formatted, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface) }
+}
+
+private val ReadingSectionHeader = Regex(
+    """(?im)^\s*(Прошлое|Настоящее|Будущее|Общее толкование)(?:\s*([:—-])|\s*$)""",
+)
+
+internal fun emphasizeReadingSections(value: String): AnnotatedString {
+    val builder = AnnotatedString.Builder(value)
+    ReadingSectionHeader.findAll(value).forEach { match ->
+        val title = match.groups[1] ?: return@forEach
+        val separator = match.groups[2]
+        builder.addStyle(
+            SpanStyle(fontWeight = FontWeight.Bold),
+            title.range.first,
+            (separator?.range?.last ?: title.range.last) + 1,
+        )
+    }
+    return builder.toAnnotatedString()
 }
 
 @Composable
@@ -47,7 +69,12 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 reading.cards.forEachIndexed { index, card ->
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(listOf("Прошлое", "Настоящее", "Будущее").getOrElse(index) { "Карта" }, style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                        Text(
+                            listOf("Прошлое", "Настоящее", "Будущее").getOrElse(index) { "Карта" },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.secondary,
+                        )
                         var revealed by remember(card.id) { mutableStateOf(false) }
                         LaunchedEffect(card.id) { revealed = true }
                         TarotCardView(card, revealed)
