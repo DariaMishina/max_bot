@@ -37,7 +37,7 @@ from app.database import (
     delete_user,
 )
 from app.divination_service import DivinationError, run_tarot, run_follow_up
-from handlers.tarot_cards import get_card_info, get_random_cards
+from handlers.tarot_cards import TAROT_CARDS, get_card_info, get_random_cards
 
 ROOT = Path(__file__).resolve().parent
 STATIC_IMAGES = ROOT / "static" / "images"
@@ -206,7 +206,7 @@ async def tarot_handler(request: Request) -> Response:
     body = await _read_json(request)
     question = body.get("question", "")
     selection = body.get("selection", "manual")
-    if not isinstance(question, str) or selection not in ("manual", "random"):
+    if not isinstance(question, str) or selection not in ("manual", "random", "named"):
         return error_response("invalid_request", "Проверьте вопрос и способ выбора карт")
     try:
         request_id = uuid.UUID(body["request_id"]) if body.get("request_id") else None
@@ -280,7 +280,8 @@ async def catalog_handler(_request: Request) -> Response:
 
 
 async def tarot_deck_handler(request: Request) -> Response:
-    return json_response({"cards": [_card_payload(cid, request) for cid in get_random_cards(9)]})
+    card_ids = list(TAROT_CARDS) if request.query.get("scope") == "all" else get_random_cards(9)
+    return json_response({"cards": [_card_payload(cid, request) for cid in card_ids]})
 
 
 async def follow_up_handler(request: Request) -> Response:

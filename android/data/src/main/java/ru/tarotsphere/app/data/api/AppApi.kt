@@ -34,7 +34,7 @@ interface AppApi {
     @GET("v1/catalog")
     suspend fun catalog(): CatalogDto
     @GET("v1/tarot/deck")
-    suspend fun deck(): DeckDto
+    suspend fun deck(@Query("scope") scope: String? = null): DeckDto
 
     @POST("v1/divinations/tarot")
     suspend fun tarot(@Body body: TarotRequestDto): ReadingDto

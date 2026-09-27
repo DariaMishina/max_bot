@@ -29,7 +29,7 @@ class MvpViewModelTest {
     }
     @Test fun manualSelectionAllowsThreeUniqueCardsAndDeselection() = runTest(dispatcher) {
         val model = SpreadViewModel(FakeReadings(), SavedStateHandle())
-        model.mode(true); runCurrent()
+        model.mode(CardSelectionMode.INTUITIVE); runCurrent()
         listOf("0", "1", "2", "3").forEach(model::select)
         assertEquals(listOf("0", "1", "2"), model.state.value.selectedIds)
         model.select("1"); model.select("3")
@@ -49,11 +49,21 @@ class MvpViewModelTest {
     }
     @Test fun pendingManualRequestSurvivesProcessRecreation() = runTest(dispatcher) {
         val repo = FakeReadings()
-        val handle = SavedStateHandle(mapOf("question" to "Q", "manual" to true, "selected" to arrayListOf("a", "b", "c"), "request" to "stable-key", "pending" to true))
+        val handle = SavedStateHandle(mapOf("question" to "Q", "mode" to CardSelectionMode.INTUITIVE.name, "selected" to arrayListOf("a", "b", "c"), "request" to "stable-key", "pending" to true))
         val model = SpreadViewModel(repo, handle)
         runCurrent(); model.submit(); runCurrent()
         assertEquals(listOf("a", "b", "c"), repo.lastCardIds)
+        assertEquals(CardSelectionMode.INTUITIVE, repo.lastMode)
         assertEquals("stable-key", repo.requests.single())
+    }
+    @Test fun namedCardsRequireThreeDistinctSuggestionsAndKeepOrder() = runTest(dispatcher) {
+        val repo = FakeReadings()
+        val model = SpreadViewModel(repo, SavedStateHandle())
+        model.question("Что означают карты?"); model.mode(CardSelectionMode.NAMED); runCurrent()
+        model.namedQuery(0, "Четвёрка Кубков"); model.namedQuery(1, "Card 1"); model.namedQuery(2, "Card 2")
+        model.submit(); runCurrent()
+        assertEquals(CardSelectionMode.NAMED, repo.lastMode)
+        assertEquals(listOf("0", "1", "2"), repo.lastCardIds)
     }
     @Test fun noBalanceOpensShopButLastSuccessfulResultRemainsReadable() = runTest(dispatcher) {
         val repo = FakeReadings().apply { createError = AppFailure("no_balance", "empty") }
@@ -93,12 +103,15 @@ private class FakeReadings : ReadingRepository {
     val requests = mutableListOf<String>()
     val followRequests = mutableListOf<String>()
     var lastCardIds: List<String>? = null
+    var lastMode: CardSelectionMode? = null
     var createError: Exception? = null
     var followError: Exception? = null
     val reading = Reading(42, "Q", emptyList(), "Text", true, "2026-09-13T12:00:00", emptyList(), 2)
-    override suspend fun deck() = (0..8).map { TarotCard("$it", "Card $it", "") }
-    override suspend fun create(question: String, cardIds: List<String>?, requestId: String): Reading {
-        requests += requestId; lastCardIds = cardIds
+    override suspend fun deck(all: Boolean) = (0..if (all) 77 else 8).map {
+        TarotCard("$it", if (it == 0) "Четверка Кубков" else "Card $it", "")
+    }
+    override suspend fun create(question: String, mode: CardSelectionMode, cardIds: List<String>?, requestId: String): Reading {
+        requests += requestId; lastMode = mode; lastCardIds = cardIds
         createError?.let { throw it }
         return reading
     }

@@ -1,6 +1,11 @@
 package ru.tarotsphere.app.domain.model
 
 data class TarotCard(val id: String, val name: String, val imageUrl: String)
+enum class CardSelectionMode(val wireValue: String) {
+    RANDOM("random"),
+    INTUITIVE("manual"),
+    NAMED("named"),
+}
 data class FollowUp(val question: String, val answer: String)
 data class Reading(
     val id: Long,

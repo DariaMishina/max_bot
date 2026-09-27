@@ -14,10 +14,10 @@ class ReadingRepositoryImpl(
     private val prefs: SecurePrefs, private val json: Json,
 ) : ReadingRepository {
     private val dao = database.historyDao()
-    override suspend fun deck() = apiCall { api.deck().cards.map { it.toDomain() } }
-    override suspend fun create(question: String, cardIds: List<String>?, requestId: String): Reading = apiCall {
+    override suspend fun deck(all: Boolean) = apiCall { api.deck("all".takeIf { all }).cards.map { it.toDomain() } }
+    override suspend fun create(question: String, mode: CardSelectionMode, cardIds: List<String>?, requestId: String): Reading = apiCall {
         val owner = prefs.getUserId().orEmpty()
-        val dto = api.tarot(TarotRequestDto(question, if (cardIds == null) "random" else "manual", cardIds, requestId))
+        val dto = api.tarot(TarotRequestDto(question, mode.wireValue, cardIds, requestId))
         cache(owner, dto)
         dto.toDomain()
     }

@@ -79,6 +79,20 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({card["id"] for card in cards}), 9)
         self.assertTrue(all(card["name"] for card in cards))
 
+    async def test_full_deck_is_available_for_named_card_search(self):
+        req = request()
+        req.query = {"scope": "all"}
+        cards = payload(await api.tarot_deck_handler(req))["cards"]
+        self.assertEqual(len(cards), len(api.TAROT_CARDS))
+        self.assertEqual({card["id"] for card in cards}, set(api.TAROT_CARDS))
+
+    async def test_named_selection_passes_ordered_card_ids_to_service(self):
+        result = service.TarotResult(12, "Q", CARDS, "Текст", True, {"free_divinations_remaining": 2, "paid_divinations_remaining": 0})
+        with patch.object(api, "run_tarot", AsyncMock(return_value=result)) as run, patch.object(api, "get_divination", AsyncMock(return_value={"follow_ups": [], "created_at": datetime.now()})):
+            response = await api.tarot_handler(request({"question": "Q", "selection": "named", "card_ids": CARDS}))
+        self.assertEqual(response.status, 200)
+        run.assert_awaited_once_with(USER, "Q", card_ids=CARDS, request_id=None)
+
     async def test_history_pagination_and_bad_cursor(self):
         req = request()
         req.query = {"limit": "2", "before_id": "100"}
