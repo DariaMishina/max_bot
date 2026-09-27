@@ -69,7 +69,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onDeleted: () -> Unit, onShop: ()
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Удалить все данные?") },
-        text = { Text("История, уточнения, сообщения обратной связи и оставшиеся расклады будут удалены с сервера и этого телефона. Это действие нельзя отменить.") },
+        text = { Text("История, уточняющие вопросы, сообщения обратной связи и оставшиеся расклады будут удалены с сервера и этого телефона. Это действие нельзя отменить.") },
         confirmButton = { TextButton(onClick = { confirmDelete = false; viewModel.deleteData() }) { Text("Удалить навсегда", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена") } },
     )

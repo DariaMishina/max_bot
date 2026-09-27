@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -29,9 +28,18 @@ import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 
 private data class OnboardingPage(val title: String, val body: String)
 private val Pages = listOf(
-    OnboardingPage("Место для вашего вопроса", "Выберите три карты и посмотрите на ситуацию с другой стороны. Начать можно без регистрации."),
-    OnboardingPage("Три расклада в подарок", "Задайте первый вопрос бесплатно. Готовые расклады сохранятся в истории. Доступ к ним привязан к этому телефону."),
-    OnboardingPage("Доверьтесь своему выбору", "Откройте три карты из девяти или позвольте колоде выбрать за вас. После толкования можно задать уточнения."),
+    OnboardingPage(
+        "Когда трудно найти ответ",
+        "Тревожно и непонятно, как поступить? Задайте вопрос, который вас волнует. Карты помогут взглянуть на ситуацию с другой стороны, а ИИ создаст толкование именно для вас.",
+    ),
+    OnboardingPage(
+        "Прислушайтесь к картам",
+        "1. Задайте свой вопрос\n2. Выберите три карты сами — или доверьтесь колоде\n3. Получите толкование и задайте уточняющие вопросы",
+    ),
+    OnboardingPage(
+        "Три расклада в подарок",
+        "Сделайте первый шаг навстречу ответу. У вас есть три бесплатных расклада — позвольте картам показать то, что пока ускользает от взгляда.",
+    ),
 )
 
 @Composable
@@ -77,8 +85,6 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                     if (last) onFinished() else scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                 })
                 if (!last) TextButton(onClick = onFinished, modifier = Modifier.heightIn(min = 48.dp)) { Text("Пропустить") }
-                else Text("Регистрация не нужна", Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

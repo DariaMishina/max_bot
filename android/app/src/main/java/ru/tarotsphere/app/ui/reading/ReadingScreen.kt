@@ -38,7 +38,7 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
         SphereHeader("Ваше толкование", eyebrow = "Время прислушаться к себе")
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
         state.error?.let { StatusPanel("Не удалось обновить расклад", it, StatusTone.Error, viewModel::refresh) }
-        if (state.offline) StatusPanel("Сохранённый расклад", "Для новых уточнений понадобится интернет.", onRetry = viewModel::refresh)
+        if (state.offline) StatusPanel("Сохранённый расклад", "Для новых уточняющих вопросов понадобится интернет.", onRetry = viewModel::refresh)
         state.reading?.let { reading ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Ваш вопрос", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
@@ -58,11 +58,11 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
             HorizontalDivider(color = colors.outlineVariant)
             ReadingText(reading.interpretation)
             HorizontalDivider(color = colors.outlineVariant)
-            SphereHeader("Продолжим размышлять?", "Осталось уточнений: ${reading.followUpsRemaining}")
+            SphereHeader("О чём ещё хотите спросить?", "Можно задать ещё: ${reading.followUpsRemaining}")
             reading.followUps.forEachIndexed { index, followUp ->
                 Surface(color = colors.surface, shape = MaterialTheme.shapes.large) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Уточнение ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                        Text("Уточняющий вопрос ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                         Text(followUp.question, style = MaterialTheme.typography.titleMedium, color = colors.primary)
                         ReadingText(followUp.answer)
                     }
@@ -70,17 +70,17 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
             }
             if (reading.followUpsRemaining > 0 || state.retryPending) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuestionField(state.question, viewModel::question, label = "Уточнить этот расклад", minLines = 2,
+                    QuestionField(state.question, viewModel::question, label = "Ваш уточняющий вопрос", minLines = 2,
                         enabled = !state.sending && !state.retryPending)
                     if (state.sending) StatusPanel("Готовим ответ…", tone = StatusTone.Progress)
-                    state.followUpError?.let { StatusPanel("Не удалось получить уточнение", it, StatusTone.Error) }
-                    if (state.retryPending && !state.sending) StatusPanel("Можно повторить уточнение", "Повтор отправит тот же вопрос и не расходует дополнительное уточнение.")
+                    state.followUpError?.let { StatusPanel("Не удалось получить ответ", it, StatusTone.Error) }
+                    if (state.retryPending && !state.sending) StatusPanel("Можно повторить вопрос", "Повтор отправит тот же вопрос и не уменьшит доступное количество вопросов.")
                     PrimaryAction(
-                        if (state.sending) "Готовим ответ…" else if (state.retryPending) "Повторить уточнение" else "Задать уточнение",
+                        if (state.sending) "Готовим ответ…" else if (state.retryPending) "Повторить вопрос" else "Задать вопрос",
                         onClick = { focus.clearFocus(); viewModel.send() }, enabled = !state.sending && state.question.isNotBlank(),
                     )
                 }
-            } else StatusPanel("Все уточнения использованы", "Вы можете задать другой вопрос в новом раскладе.")
+            } else StatusPanel("Все уточняющие вопросы заданы", "Вы можете задать другой вопрос в новом раскладе.")
             SecondaryAction("Новый расклад", onNew)
             TextButton(onClick = onShop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Купить расклады") }
         }
