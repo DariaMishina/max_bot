@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,11 +46,39 @@ fun SphereScreen(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
+fun SphereLazyScreen(
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(WorkshopSpacing.item),
+    content: LazyListScope.() -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        LazyColumn(
+            modifier = Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize(),
+            contentPadding = PaddingValues(WorkshopSpacing.screen),
+            verticalArrangement = verticalArrangement,
+            content = content,
+        )
+    }
+}
+
+@Composable
 fun SphereHeader(title: String, subtitle: String? = null, eyebrow: String? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         eyebrow?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary) }
         Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
         subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+@Composable
+fun SectionHeading(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+        subtitle?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -125,6 +155,89 @@ fun StatusPanel(title: String, body: String? = null, tone: StatusTone = StatusTo
             Text(title, style = MaterialTheme.typography.titleMedium, color = foreground)
             body?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = foreground) }
             if (onRetry != null) TextButton(onClick = onRetry) { Text("Повторить") }
+        }
+    }
+}
+
+@Composable
+fun BalanceSummary(
+    freeRemaining: Int,
+    paidRemaining: Int,
+    totalUsed: Int,
+    unlimitedText: String? = null,
+    offline: Boolean = false,
+    onShop: () -> Unit,
+    onRefresh: () -> Unit,
+    actionsEnabled: Boolean = true,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(color = colors.secondaryContainer, shape = MaterialTheme.shapes.large) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Ваш запас", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                Text(
+                    if (unlimitedText != null) "Безлимит активен" else "Расклады на новые вопросы",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onSecondaryContainer,
+                )
+                unlimitedText?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSecondaryContainer) }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BalanceMetric("В подарок", freeRemaining.toString(), Modifier.weight(1f))
+                BalanceMetric("Куплено", paidRemaining.toString(), Modifier.weight(1f))
+            }
+            Text("Всего сделано раскладов: $totalUsed", style = MaterialTheme.typography.bodySmall, color = colors.onSecondaryContainer)
+            if (offline) Text(
+                "Показан сохранённый баланс. Он обновится после подключения к интернету.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSecondaryContainer,
+            )
+            PrimaryAction("Выбрать расклады", onShop, enabled = actionsEnabled)
+            TextButton(onClick = onRefresh, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Обновить баланс")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BalanceMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier, color = colors.surface.copy(alpha = 0.72f), shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(value, style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
+            Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun PackageCard(
+    title: String,
+    price: String,
+    description: String? = null,
+    action: String = "Выбрать",
+    emphasized: Boolean = false,
+    onChoose: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val container = if (emphasized) colors.primaryContainer else colors.surface
+    val foreground = if (emphasized) colors.onPrimaryContainer else colors.onSurface
+    Surface(
+        color = container,
+        contentColor = foreground,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, if (emphasized) colors.primary.copy(alpha = 0.35f) else colors.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = foreground.copy(alpha = 0.76f)) }
+                }
+                Text(price, style = MaterialTheme.typography.titleLarge)
+            }
+            SecondaryAction(action, onChoose)
         }
     }
 }
