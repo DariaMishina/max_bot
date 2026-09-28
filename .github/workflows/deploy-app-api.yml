@@ -1,0 +1,150 @@
+name: Deploy App API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "app_api_server.py"
+      - "handlers/tarot_cards.py"
+      - "main/config_reader.py"
+      - "main/llm_divination.py"
+      - "static/images/**"
+      - "init_app_db.sql"
+      - "requirements.txt"
+      - ".github/workflows/deploy-app-api.yml"
+  workflow_dispatch:
+    inputs:
+      confirm_migrations_applied:
+        description: "Новые миграции app/migrations уже применены вручную на VM"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Both deploy workflows update the same checkout on the VM. Queue them instead
+# of letting git and service restarts race with each other.
+concurrency:
+  group: production-vm-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile App API
+        run: python -m compileall -q app app_api_server.py main/llm_divination.py handlers/tarot_cards.py
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -v
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Deploy App API to VM
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          MIGRATIONS_CONFIRMED: ${{ inputs.confirm_migrations_applied || 'false' }}
+          DEPLOY_EVENT: ${{ github.event_name }}
+          DEPLOY_BEFORE: ${{ github.event.before }}
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          envs: MIGRATIONS_CONFIRMED,DEPLOY_EVENT,DEPLOY_BEFORE,DEPLOY_SHA
+          script: |
+            set -euo pipefail
+
+            PROJECT_DIR="$HOME/max_bot"
+            if [ ! -d "$PROJECT_DIR" ]; then
+              PROJECT_DIR="/home/${{ secrets.SSH_USER }}/max_bot"
+            fi
+            if [ ! -d "$PROJECT_DIR" ]; then
+              echo "App API deploy failed: project directory was not found"
+              exit 1
+            fi
+
+            cd "$PROJECT_DIR"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "App API deploy failed: tracked files on the VM contain local changes"
+              exit 1
+            fi
+
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
+            git fetch origin main
+            TARGET_COMMIT=$(git rev-parse origin/main)
+
+            if ! git merge-base --is-ancestor "$PREVIOUS_COMMIT" "$TARGET_COMMIT"; then
+              echo "App API deploy failed: VM cannot be fast-forwarded to origin/main"
+              exit 1
+            fi
+
+            INSTALL_DEPENDENCIES=false
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+              INSTALL_DEPENDENCIES=true
+            fi
+            if ! git diff --quiet "$PREVIOUS_COMMIT" "$TARGET_COMMIT" -- requirements.txt; then
+              INSTALL_DEPENDENCIES=true
+            fi
+
+            MIGRATION_BASE="$PREVIOUS_COMMIT"
+            MIGRATION_TARGET="$TARGET_COMMIT"
+            if [ "${DEPLOY_EVENT:-}" = "push" ] && \
+               [ -n "${DEPLOY_BEFORE:-}" ] && \
+               [ "${DEPLOY_BEFORE}" != "0000000000000000000000000000000000000000" ]; then
+              MIGRATION_BASE="$DEPLOY_BEFORE"
+              MIGRATION_TARGET="${DEPLOY_SHA:-$TARGET_COMMIT}"
+            fi
+            if ! git diff --quiet "$MIGRATION_BASE" "$MIGRATION_TARGET" -- app/migrations init_app_db.sql; then
+              if [ "${MIGRATIONS_CONFIRMED:-false}" != "true" ]; then
+                echo "App API deploy stopped: apply the new database migration manually, then run this workflow with confirm_migrations_applied=true"
+                exit 1
+              fi
+            fi
+
+            git merge --ff-only origin/main
+            source venv/bin/activate
+
+            if [ "$INSTALL_DEPENDENCIES" = true ]; then
+              python -m pip install -r requirements.txt --quiet
+            fi
+
+            python -m compileall -q app app_api_server.py main/llm_divination.py handlers/tarot_cards.py
+            python -c "import app_api_server"
+
+            sudo systemctl restart app-api
+
+            HEALTHY=false
+            for attempt in $(seq 1 10); do
+              if sudo systemctl is-active --quiet app-api && \
+                 curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8083/health | grep -qx "OK"; then
+                HEALTHY=true
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              sudo systemctl status app-api --no-pager -l || true
+              sudo journalctl -u app-api -n 50 --no-pager || true
+              echo "App API deploy failed: service or health check is not ready"
+              exit 1
+            fi
+
+            echo "App API deploy completed: $TARGET_COMMIT"

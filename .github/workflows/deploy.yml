@@ -15,6 +15,11 @@ on:
       - "requirements.txt"
       - ".github/workflows/deploy.yml"
 
+# The bot and App API workflows update the same checkout on the VM.
+concurrency:
+  group: production-vm-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
