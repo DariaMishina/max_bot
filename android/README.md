@@ -1,6 +1,6 @@
 # tarot sphere — Android (этап 4)
 
-Приложение для RuStore. Пакет `ru.tarotsphere.app`, версия `0.4.0-debug`.
+Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая локальная версия `0.6.0-debug`.
 
 Клиент — Kotlin + Jetpack Compose, модули `app` / `data` / `domain`. API — `app_api_server.py` в корне `max_bot`, порт 8083, отдельная PostgreSQL приложения.
 

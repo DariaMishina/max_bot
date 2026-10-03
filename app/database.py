@@ -11,6 +11,9 @@ import asyncpg
 
 from app.config import app_config
 
+# Backward-compatible staging guests keep the old allowance only while the
+# explicit migration flag is enabled. Production disables guest auth and issues
+# the trial to a confirmed identity in account_auth.py.
 FREE_DIVINATIONS_START = 3
 
 
@@ -96,7 +99,7 @@ async def create_guest(install_id: Optional[str] = None) -> uuid.UUID:
                 ON CONFLICT (user_id) DO NOTHING
                 """,
                 user_id,
-                FREE_DIVINATIONS_START,
+                FREE_DIVINATIONS_START if app_config.app_allow_guest_auth else 0,
             )
             logging.info("App guest created or restored: %s", user_id)
             return user_id

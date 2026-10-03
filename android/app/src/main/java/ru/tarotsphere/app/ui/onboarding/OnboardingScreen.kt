@@ -81,7 +81,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                PrimaryAction(if (last) "Сделать первый расклад" else "Дальше", onClick = {
+                PrimaryAction(if (last) "Продолжить" else "Дальше", onClick = {
                     if (last) onFinished() else scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                 })
                 if (!last) TextButton(onClick = onFinished, modifier = Modifier.heightIn(min = 48.dp)) { Text("Пропустить") }

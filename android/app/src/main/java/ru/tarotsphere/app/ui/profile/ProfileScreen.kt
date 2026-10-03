@@ -11,11 +11,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.ui.components.*
 
 @Composable
-fun ProfileScreen(viewModel: ProfileViewModel, onDeleted: () -> Unit, onShop: () -> Unit) {
+fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onShop: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel) { viewModel.refresh() }
-    LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
+    LaunchedEffect(state.deleted, state.loggedOut) { if (state.deleted || state.loggedOut) onSessionEnded() }
     SphereScreen {
         SphereHeader(
             title = "Ваше пространство",
@@ -36,10 +36,20 @@ fun ProfileScreen(viewModel: ProfileViewModel, onDeleted: () -> Unit, onShop: ()
                 actionsEnabled = !state.loading && !state.deleting,
             )
         }
-        StatusPanel(
-            "Тестовый гостевой профиль",
-            "Пока вход ещё не подключён, история и баланс доступны в этой установке приложения. Восстановление через VK ID и email появится перед выпуском.",
-        )
+        state.profile?.let { profile ->
+            val methods = profile.identities.joinToString { identity ->
+                when (identity.provider) {
+                    "email" -> identity.displayValue
+                    "vk" -> "VK ID"
+                    else -> identity.provider
+                }
+            }
+            StatusPanel(
+                "Аккаунт подтверждён",
+                if (methods.isBlank()) "Баланс и история привязаны к аккаунту."
+                else "Способ входа: $methods. Баланс и история восстановятся после повторного входа.",
+            )
+        }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionHeading("Помогите сделать Сферу лучше", "Расскажите, что оказалось полезным, непонятным или лишним.")
             OutlinedTextField(
@@ -61,8 +71,14 @@ fun ProfileScreen(viewModel: ProfileViewModel, onDeleted: () -> Unit, onShop: ()
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionHeading("Управление данными", "Удаление затронет гостевой профиль, историю, сообщения и оставшиеся расклады.")
+            SectionHeading("Управление данными", "Удаление затронет аккаунт, историю, сообщения и оставшиеся расклады.")
             state.deleteError?.let { StatusPanel("Не удалось удалить данные", it, StatusTone.Error) }
+            OutlinedButton(
+                onClick = viewModel::logout,
+                enabled = !state.loggingOut && !state.deleting && !state.sending,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.medium,
+            ) { Text(if (state.loggingOut) "Выходим…" else "Выйти из аккаунта") }
             OutlinedButton(
                 onClick = { confirmDelete = true },
                 enabled = !state.deleting && !state.sending && !state.loading,

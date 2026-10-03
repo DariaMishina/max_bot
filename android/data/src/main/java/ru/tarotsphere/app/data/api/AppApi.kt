@@ -22,6 +22,15 @@ interface AppApi {
     @POST("v1/auth/refresh")
     suspend fun refresh(@Body body: RefreshRequestDto): TokenPairDto
 
+    @POST("v1/auth/email/start")
+    suspend fun emailStart(@Body body: EmailStartRequestDto): EmailStartResponseDto
+
+    @POST("v1/auth/email/confirm")
+    suspend fun emailConfirm(@Body body: EmailConfirmRequestDto): TokenPairDto
+
+    @POST("v1/auth/logout")
+    suspend fun logout(@Body body: RefreshRequestDto)
+
     @GET("v1/me")
     suspend fun me(): MeDto
 

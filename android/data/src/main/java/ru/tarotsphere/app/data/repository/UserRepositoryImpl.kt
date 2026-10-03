@@ -42,6 +42,11 @@ class UserRepositoryImpl(
         page.nextBeforeId
     }
     override suspend fun feedback(message: String) = apiCall { api.feedback(FeedbackRequestDto(message.trim())) }
+    override suspend fun logout() {
+        val refresh = prefs.getRefreshToken()
+        if (!refresh.isNullOrBlank()) apiCall { api.logout(RefreshRequestDto(refresh)) }
+        prefs.clearTokens()
+    }
     override suspend fun deleteData() = apiCall {
         api.deleteMe()
         // Keep local data if the server rejected deletion. DELETE is safe to retry.

@@ -20,6 +20,27 @@ data class RefreshRequestDto(
 )
 
 @Serializable
+data class EmailStartRequestDto(
+    val email: String,
+    @SerialName("device_signal") val deviceSignal: String,
+)
+
+@Serializable
+data class EmailConfirmRequestDto(
+    val email: String,
+    val code: String,
+    @SerialName("device_signal") val deviceSignal: String,
+    @SerialName("migration_refresh_token") val migrationRefreshToken: String? = null,
+)
+
+@Serializable
+data class EmailStartResponseDto(
+    val ok: Boolean,
+    @SerialName("expires_in") val expiresIn: Int = 600,
+    @SerialName("resend_after") val resendAfter: Int = 60,
+)
+
+@Serializable
 data class BalanceDto(
     @SerialName("free_divinations_remaining") val freeRemaining: Int = 0,
     @SerialName("paid_divinations_remaining") val paidRemaining: Int = 0,
@@ -57,12 +78,22 @@ data class MeDto(
     @SerialName("user_id") val userId: String,
     @SerialName("is_guest") val isGuest: Boolean = true,
     val balance: BalanceDto,
+    val identities: List<AccountIdentityDto> = emptyList(),
 ) {
     fun toDomain() = UserProfile(
         userId = userId,
         isGuest = isGuest,
         balance = balance.toDomain(),
+        identities = identities.map { it.toDomain() },
     )
+}
+
+@Serializable
+data class AccountIdentityDto(
+    val provider: String,
+    @SerialName("display_value") val displayValue: String = "",
+) {
+    fun toDomain() = ru.tarotsphere.app.domain.model.AccountIdentity(provider, displayValue)
 }
 
 @Serializable

@@ -15,6 +15,7 @@ data class ProfileUiState(
     val error: String? = null, val feedback: String = "", val sending: Boolean = false,
     val feedbackMessage: String? = null, val deleting: Boolean = false, val deleted: Boolean = false,
     val deleteError: String? = null,
+    val loggingOut: Boolean = false, val loggedOut: Boolean = false,
 )
 class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
     private val _state = MutableStateFlow(ProfileUiState())
@@ -56,6 +57,19 @@ class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
                 _state.value = ProfileUiState(deleted = true)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { _state.value = _state.value.copy(deleting = false, deleteError = e.userMessage()) }
+        }
+    }
+    fun logout() {
+        if (_state.value.loggingOut || _state.value.deleting) return
+        _state.value = _state.value.copy(loggingOut = true, deleteError = null)
+        viewModelScope.launch {
+            try {
+                repository.logout()
+                _state.value = ProfileUiState(loggedOut = true)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loggingOut = false, deleteError = e.userMessage())
+            }
         }
     }
     companion object { fun factory(repository: UserRepository) = simpleFactory { ProfileViewModel(repository) } }

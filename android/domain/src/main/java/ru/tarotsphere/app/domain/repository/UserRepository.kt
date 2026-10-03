@@ -9,5 +9,6 @@ interface UserRepository {
     fun observeHistory(): Flow<List<HistoryItem>>
     suspend fun refreshHistory(beforeId: Long? = null): Long?
     suspend fun feedback(message: String)
+    suspend fun logout()
     suspend fun deleteData()
 }

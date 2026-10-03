@@ -3,6 +3,7 @@ package ru.tarotsphere.app.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import android.provider.Settings
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.util.UUID
@@ -18,6 +19,7 @@ class SecurePrefs(context: Context) {
     fun getAccessToken(): String? = securePrefs.getString(KEY_ACCESS, null)
     fun getRefreshToken(): String? = securePrefs.getString(KEY_REFRESH, null)
     fun getUserId(): String? = securePrefs.getString(KEY_USER_ID, null)
+    fun isConfirmedAccount(): Boolean = securePrefs.getBoolean(KEY_CONFIRMED, false)
 
     @Synchronized
     fun saveTokens(access: String, refresh: String, userId: String) {
@@ -29,11 +31,17 @@ class SecurePrefs(context: Context) {
     }
 
     @Synchronized
+    fun markConfirmed() {
+        securePrefs.edit().putBoolean(KEY_CONFIRMED, true).apply()
+    }
+
+    @Synchronized
     fun clearTokens() {
         securePrefs.edit()
             .remove(KEY_ACCESS)
             .remove(KEY_REFRESH)
             .remove(KEY_USER_ID)
+            .remove(KEY_CONFIRMED)
             .apply()
     }
 
@@ -62,6 +70,11 @@ class SecurePrefs(context: Context) {
         securePrefs.edit().putString(KEY_INSTALL, created).apply()
         return created
     }
+
+    fun deviceSignal(): String = Settings.Secure.getString(
+        appContext.contentResolver,
+        Settings.Secure.ANDROID_ID,
+    ).orEmpty()
 
     fun isOnboardingCompleted(): Boolean = metadataPrefs.getBoolean(KEY_ONBOARDING, false)
 
@@ -94,6 +107,7 @@ class SecurePrefs(context: Context) {
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
         const val KEY_USER_ID = "user_id"
+        const val KEY_CONFIRMED = "confirmed_account"
         const val KEY_INSTALL = "install_id"
         const val KEY_ONBOARDING = "onboarding_done"
     }

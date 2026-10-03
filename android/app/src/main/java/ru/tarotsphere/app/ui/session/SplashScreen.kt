@@ -39,7 +39,7 @@ fun SplashScreen(
     ) {
         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.displaySmall, color = Gold)
         Spacer(Modifier.height(8.dp))
-        Text("Расклады без входа", style = MaterialTheme.typography.bodyMedium)
+        Text("Персональные расклады и история", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(32.dp))
         when {
             state.loading -> CircularProgressIndicator(color = Gold)

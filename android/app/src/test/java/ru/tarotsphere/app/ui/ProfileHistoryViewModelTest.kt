@@ -79,5 +79,6 @@ private class FakeUser : UserRepository {
         return if (beforeId == null) 100L else null
     }
     override suspend fun feedback(message: String) { feedbackCalls++; feedbackError?.let { throw it } }
+    override suspend fun logout() = Unit
     override suspend fun deleteData() { deletes++; deleteError?.let { throw it } }
 }

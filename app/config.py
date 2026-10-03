@@ -1,4 +1,6 @@
 """Настройки API приложения (отдельная БД app_bot_db)."""
+from typing import Optional
+
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,6 +15,13 @@ class AppSettings(BaseSettings):
     app_jwt_secret: SecretStr
     app_api_public_url: str = ""
     app_allow_unpaid_test_contact: bool = False
+    app_allow_guest_auth: bool = False
+    app_email_smtp_host: str = ""
+    app_email_smtp_port: int = 465
+    app_email_smtp_user: str = ""
+    app_email_smtp_password: Optional[SecretStr] = None
+    app_email_from: str = ""
+    app_email_smtp_ssl: bool = True
     app_tarologist_profile_url: str = Field(
         default="",
         validation_alias=AliasChoices(

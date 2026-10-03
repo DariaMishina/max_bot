@@ -53,7 +53,7 @@ private val Tabs = listOf(
 )
 
 @Composable
-fun MainScaffold(container: AppContainer, onDeleted: () -> Unit) {
+fun MainScaffold(container: AppContainer, onSessionEnded: () -> Unit) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var readingId by rememberSaveable { mutableStateOf<Long?>(null) }
     var exhausted by rememberSaveable { mutableStateOf(false) }
@@ -104,7 +104,7 @@ fun MainScaffold(container: AppContainer, onDeleted: () -> Unit) {
                 }
                 else -> {
                     val model: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(container.userRepository))
-                    ProfileScreen(model, onDeleted, onShop)
+                    ProfileScreen(model, onSessionEnded, onShop)
                 }
             }
         }

@@ -10,7 +10,8 @@ class AuthInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val path = original.url.encodedPath
-        if (path.endsWith("/v1/auth/guest") || path.endsWith("/v1/auth/refresh")) {
+        if (path.endsWith("/v1/auth/guest") || path.endsWith("/v1/auth/refresh") ||
+            path.endsWith("/v1/auth/email/start")) {
             return chain.proceed(original)
         }
         val token = prefs.getAccessToken() ?: return chain.proceed(original)

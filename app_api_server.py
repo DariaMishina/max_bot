@@ -23,6 +23,15 @@ from aiohttp import web
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response
 
+from app.account_auth import (
+    AccountAuthError,
+    confirm_email_challenge,
+    create_email_challenge,
+    invalidate_email_challenge,
+    list_identities,
+    normalize_email,
+    send_login_email,
+)
 from app.auth_tokens import issue_token_pair, verify_access_token, verify_refresh_token, revoke_refresh_token
 from app.config import app_config
 from app.database import (
@@ -56,6 +65,9 @@ OPENAPI = {
     "basePath": "/v1",
     "endpoints": [
         "POST /v1/auth/guest",
+        "POST /v1/auth/email/start",
+        "POST /v1/auth/email/confirm",
+        "POST /v1/auth/logout",
         "POST /v1/auth/refresh",
         "GET /v1/me",
         "GET /v1/me/balance",
@@ -138,6 +150,8 @@ async def docs_handler(_request: Request) -> Response:
 
 
 async def guest_auth_handler(request: Request) -> Response:
+    if not app_config.app_allow_guest_auth:
+        return error_response("account_required", "Войдите через VK ID или email", status=403)
     body = await _read_json(request)
     install_id = body.get("install_id")
     if install_id is not None:
@@ -148,6 +162,58 @@ async def guest_auth_handler(request: Request) -> Response:
     return json_response({
         **tokens,
         "balance": _balance_payload(balance),
+    })
+
+
+def _optional_user_id(request: Request) -> Optional[uuid.UUID]:
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    return verify_access_token(auth[7:].strip())
+
+
+async def email_start_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    try:
+        email = normalize_email(body.get("email"))
+        challenge_id, code = await create_email_challenge(
+            email,
+            ip=request.remote,
+            device_signal=body.get("device_signal"),
+        )
+        try:
+            await send_login_email(email, code)
+        except Exception as delivery_error:
+            await invalidate_email_challenge(challenge_id)
+            logging.warning("Login email delivery failed (%s)", type(delivery_error).__name__)
+            raise AccountAuthError("email_unavailable", "Не удалось отправить письмо. Попробуйте позже.", 503)
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
+    # The response is deliberately identical for new and existing accounts.
+    return json_response({"ok": True, "expires_in": 600, "resend_after": 60})
+
+
+async def email_confirm_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    current_user_id = _optional_user_id(request)
+    if not current_user_id:
+        migration_refresh = str(body.get("migration_refresh_token") or "").strip()
+        current_user_id = await verify_refresh_token(migration_refresh) if migration_refresh else None
+    try:
+        result = await confirm_email_challenge(
+            body.get("email"),
+            body.get("code"),
+            current_user_id=current_user_id,
+            device_signal=body.get("device_signal"),
+        )
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
+    tokens = await issue_token_pair(result["user_id"])
+    balance = await get_user_balance(result["user_id"])
+    return json_response({
+        **tokens,
+        "balance": _balance_payload(balance),
+        "trial_granted": result["trial_granted"],
     })
 
 
@@ -164,6 +230,15 @@ async def refresh_auth_handler(request: Request) -> Response:
     return json_response(tokens)
 
 
+async def logout_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    raw = str(body.get("refresh_token") or "").strip()
+    owner = await verify_refresh_token(raw) if raw else None
+    if owner and owner == request["app_user_id"]:
+        await revoke_refresh_token(raw)
+    return json_response({"ok": True})
+
+
 async def me_handler(request: Request) -> Response:
     user_id = _user_id_from_request(request)
     assert user_id
@@ -171,11 +246,13 @@ async def me_handler(request: Request) -> Response:
     if not user:
         return error_response("not_found", "Пользователь не найден", status=404)
     balance = await get_user_balance(user_id)
+    identities = await list_identities(user_id) if not user["is_guest"] else []
     await touch_user(user_id)
     return json_response({
         "user_id": str(user_id),
         "is_guest": user["is_guest"],
         "balance": _balance_payload(balance),
+        "identities": identities,
     })
 
 
@@ -336,7 +413,11 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     path = request.path
     if path in ("/health", "/v1/docs") or path.startswith("/static/"):
         return await handler(request)
-    if path in ("/v1/auth/guest", "/v1/auth/refresh") and request.method == "POST":
+    public_auth_paths = {
+        "/v1/auth/guest", "/v1/auth/refresh",
+        "/v1/auth/email/start", "/v1/auth/email/confirm",
+    }
+    if path in public_auth_paths and request.method == "POST":
         return await handler(request)
 
     auth = request.headers.get("Authorization", "")
@@ -346,8 +427,11 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     user_id = verify_access_token(token)
     if not user_id:
         return error_response("unauthorized", "Недействительный или просроченный токен", status=401)
-    if request.method != "DELETE" and not await get_user(user_id):
+    user = await get_user(user_id)
+    if request.method != "DELETE" and not user:
         return error_response("unauthorized", "Данные гостя удалены", status=401)
+    if user and user["is_guest"] and not app_config.app_allow_guest_auth:
+        return error_response("account_required", "Войдите через VK ID или email", status=403)
     request["app_user_id"] = user_id
     return await handler(request)
 
@@ -371,7 +455,10 @@ def create_app() -> web.Application:
     app.router.add_get("/health", health_handler)
     app.router.add_get("/v1/docs", docs_handler)
     app.router.add_post("/v1/auth/guest", guest_auth_handler)
+    app.router.add_post("/v1/auth/email/start", email_start_handler)
+    app.router.add_post("/v1/auth/email/confirm", email_confirm_handler)
     app.router.add_post("/v1/auth/refresh", refresh_auth_handler)
+    app.router.add_post("/v1/auth/logout", logout_handler)
     app.router.add_get("/v1/me", me_handler)
     app.router.add_get("/v1/me/balance", me_balance_handler)
     app.router.add_get("/v1/me/history", me_history_handler)
