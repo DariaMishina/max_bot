@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.domain.model.*
 import ru.tarotsphere.app.domain.repository.*
+import ru.tarotsphere.app.domain.validation.INVALID_QUESTION_MESSAGE
+import ru.tarotsphere.app.domain.validation.isMeaningfulQuestion
+import ru.tarotsphere.app.domain.validation.normalizeQuestion
 import ru.tarotsphere.app.ui.components.userMessage
 import java.util.UUID
 
@@ -132,9 +135,9 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
             CardSelectionMode.INTUITIVE -> current.selectedIds.takeIf { it.size == 3 }
             CardSelectionMode.NAMED -> current.namedCardIds.takeIf { ids -> ids.all { it != null } && ids.distinct().size == 3 }?.filterNotNull()
         }
-        if (current.question.isBlank() || (current.mode != CardSelectionMode.RANDOM && cardIds == null)) {
+        if (!isMeaningfulQuestion(current.question) || (current.mode != CardSelectionMode.RANDOM && cardIds == null)) {
             val error = when {
-                current.question.isBlank() -> "Напишите свой вопрос."
+                !isMeaningfulQuestion(current.question) -> INVALID_QUESTION_MESSAGE
                 current.mode == CardSelectionMode.NAMED -> "Укажите три разные карты из подсказок."
                 else -> "Выберите 3 карты."
             }
@@ -146,7 +149,7 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
         _state.value = current.copy(submitting = true, retryPending = true, error = null)
         viewModelScope.launch {
             try {
-                val reading = repository.create(current.question.trim(), current.mode, cardIds, requestId)
+                val reading = repository.create(normalizeQuestion(current.question), current.mode, cardIds, requestId)
                 saved["result"] = reading.id
                 saved["pending"] = false
                 _state.value = _state.value.copy(resultId = reading.id, retryPending = false)
@@ -154,7 +157,7 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
             } catch (e: Exception) {
                 val noBalance = (e as? AppFailure)?.code == "no_balance"
                 _state.value = _state.value.copy(error = e.userMessage(), needsShop = noBalance)
-                if (noBalance || (e is AppFailure && e.code in listOf("empty_question", "invalid_cards", "long_question"))) {
+                if (noBalance || (e is AppFailure && e.code in listOf("empty_question", "invalid_question", "invalid_cards", "long_question"))) {
                     saved["pending"] = false
                     saved.remove<String>("request")
                     _state.value = _state.value.copy(retryPending = false)

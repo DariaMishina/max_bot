@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.domain.model.*
 import ru.tarotsphere.app.domain.repository.ReadingRepository
+import ru.tarotsphere.app.domain.validation.INVALID_QUESTION_MESSAGE
+import ru.tarotsphere.app.domain.validation.isMeaningfulQuestion
+import ru.tarotsphere.app.domain.validation.normalizeQuestion
 import ru.tarotsphere.app.ui.components.userMessage
 import java.util.UUID
 
@@ -41,8 +44,8 @@ class ReadingViewModel(private val id: Long, private val repository: ReadingRepo
         val current = _state.value
         val reading = current.reading ?: return
         if (current.sending || (reading.followUpsRemaining <= 0 && !current.retryPending)) return
-        if (current.question.isBlank()) {
-            _state.value = current.copy(followUpError = "Напишите уточняющий вопрос.")
+        if (!isMeaningfulQuestion(current.question)) {
+            _state.value = current.copy(followUpError = INVALID_QUESTION_MESSAGE)
             return
         }
         val request = saved.get<String>("request") ?: UUID.randomUUID().toString().also { saved["request"] = it }
@@ -50,15 +53,18 @@ class ReadingViewModel(private val id: Long, private val repository: ReadingRepo
         _state.value = current.copy(sending = true, retryPending = true, followUpError = null)
         viewModelScope.launch {
             try {
-                val result = repository.followUp(reading, current.question.trim(), request)
+                val result = repository.followUp(reading, normalizeQuestion(current.question), request)
                 saved.remove<String>("request"); saved["question"] = ""; saved["pending"] = false
                 _state.value = _state.value.copy(reading = result, question = "", offline = false, retryPending = false)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                if (e is AppFailure && e.code == "follow_up_limit") {
+                if (e is AppFailure && e.code in listOf("follow_up_limit", "invalid_question", "empty_question", "long_question")) {
                     saved["pending"] = false
                     saved.remove<String>("request")
-                    _state.value = _state.value.copy(reading = reading.copy(followUpsRemaining = 0), retryPending = false)
+                    _state.value = _state.value.copy(
+                        reading = if (e.code == "follow_up_limit") reading.copy(followUpsRemaining = 0) else reading,
+                        retryPending = false,
+                    )
                 }
                 _state.value = _state.value.copy(followUpError = e.userMessage())
             } finally { _state.value = _state.value.copy(sending = false) }

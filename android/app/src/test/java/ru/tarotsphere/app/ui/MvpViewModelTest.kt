@@ -27,6 +27,18 @@ class MvpViewModelTest {
         assertTrue(repo.requests.isEmpty())
         assertNotNull(model.state.value.error)
     }
+    @Test fun symbolOnlyQuestionsDoNotSendRequests() = runTest(dispatcher) {
+        val repo = FakeReadings()
+        val spread = SpreadViewModel(repo, SavedStateHandle())
+        spread.question("! 🔮 123"); spread.submit(); runCurrent()
+        assertTrue(repo.requests.isEmpty())
+        assertNotNull(spread.state.value.error)
+
+        val reading = ReadingViewModel(42, repo, SavedStateHandle())
+        reading.refresh(); runCurrent(); reading.question("..."); reading.send(); runCurrent()
+        assertTrue(repo.followRequests.isEmpty())
+        assertNotNull(reading.state.value.followUpError)
+    }
     @Test fun manualSelectionAllowsThreeUniqueCardsAndDeselection() = runTest(dispatcher) {
         val model = SpreadViewModel(FakeReadings(), SavedStateHandle())
         model.mode(CardSelectionMode.INTUITIVE); runCurrent()
@@ -49,7 +61,7 @@ class MvpViewModelTest {
     }
     @Test fun pendingManualRequestSurvivesProcessRecreation() = runTest(dispatcher) {
         val repo = FakeReadings()
-        val handle = SavedStateHandle(mapOf("question" to "Q", "mode" to CardSelectionMode.INTUITIVE.name, "selected" to arrayListOf("a", "b", "c"), "request" to "stable-key", "pending" to true))
+        val handle = SavedStateHandle(mapOf("question" to "Вопрос", "mode" to CardSelectionMode.INTUITIVE.name, "selected" to arrayListOf("a", "b", "c"), "request" to "stable-key", "pending" to true))
         val model = SpreadViewModel(repo, handle)
         runCurrent(); model.submit(); runCurrent()
         assertEquals(listOf("a", "b", "c"), repo.lastCardIds)
@@ -68,7 +80,7 @@ class MvpViewModelTest {
     @Test fun noBalanceOpensShopButLastSuccessfulResultRemainsReadable() = runTest(dispatcher) {
         val repo = FakeReadings().apply { createError = AppFailure("no_balance", "empty") }
         val model = SpreadViewModel(repo, SavedStateHandle())
-        model.question("Q"); model.submit(); runCurrent()
+        model.question("Вопрос"); model.submit(); runCurrent()
         assertTrue(model.state.value.needsShop)
         assertFalse(model.state.value.retryPending)
         model.consumeShop(); repo.createError = null
@@ -91,7 +103,7 @@ class MvpViewModelTest {
     @Test fun exhaustedFollowUpDisablesFurtherRequests() = runTest(dispatcher) {
         val repo = FakeReadings().apply { followError = AppFailure("follow_up_limit", "limit") }
         val model = ReadingViewModel(42, repo, SavedStateHandle())
-        model.refresh(); runCurrent(); model.question("Q"); model.send(); runCurrent()
+        model.refresh(); runCurrent(); model.question("Уточнение"); model.send(); runCurrent()
         model.send(); runCurrent()
         assertEquals(1, repo.followRequests.size)
         assertEquals(0, model.state.value.reading!!.followUpsRemaining)

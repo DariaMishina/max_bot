@@ -7,6 +7,7 @@
     python test_deepseek_level0.py --case tarot --model deepseek-flash --preview
     python test_deepseek_level0.py --case iching --case followup
     python test_deepseek_level0.py --case parse_aliases          # парсинг без API
+    python test_deepseek_level0.py --case question_validation    # вопросы без API
     python test_deepseek_level0.py --case parse_llm --preview    # LLM-парсинг карт
     python test_deepseek_level0.py --case tarot_manual --preview # толкование по введённым картам
     python test_deepseek_level0.py --case tarot --preview   # только начало ответа
@@ -45,6 +46,7 @@ from handlers.tarot_card_parser import (
     parse_cards_from_text,
     should_use_llm_fallback,
 )
+from main.question_validation import InvalidQuestionError, validate_question_text
 
 # Базовая линия до укорочения (прогон tarot 2026-06-13)
 PREVIOUS_BASELINE = {"tarot_chars": 1599, "tarot_tokens": 724, "max_tokens": 650, "temperature": 0.65}
@@ -151,6 +153,17 @@ PARSE_FILTER_CASES = [
     {"name": "normal", "input": "Башня, Туз Кубков, Десятка Мечей", "llm": True},
 ]
 
+QUESTION_VALIDATION_CASES = [
+    {"name": "punctuation", "input": "!", "expected": None},
+    {"name": "emoji", "input": "🔮", "expected": None},
+    {"name": "numbers", "input": "123", "expected": None},
+    {"name": "single_letter", "input": "а", "expected": None},
+    {"name": "repeated_noise", "input": "аааа", "expected": None},
+    {"name": "short_topic", "input": "Работа", "expected": "Работа"},
+    {"name": "question", "input": "Что дальше?", "expected": "Что дальше?"},
+    {"name": "normalization", "input": "  Что\n\u200b дальше?  ", "expected": "Что дальше?"},
+]
+
 FORMAT_CASES = [
     {
         "name": "v4_title_and_sections",
@@ -193,6 +206,7 @@ def _load_api_key() -> str:
 
 
 def _build_tarot_user_prompt(question: str, card_ids: list[str]) -> str:
+    question = validate_question_text(question)
     cards_info = []
     positions = ["Прошлое", "Настоящее", "Будущее"]
     for i, card_id in enumerate(card_ids):
@@ -206,6 +220,7 @@ def _build_tarot_user_prompt(question: str, card_ids: list[str]) -> str:
 
 
 def _build_iching_user_prompt(question: str, hexagram_id: str) -> str:
+    question = validate_question_text(question)
     hexagram = get_hexagram_info(hexagram_id)
     return (
         f"Вопрос пользователя: {question}\n\n"
@@ -428,6 +443,23 @@ async def run_parse_filter(*, preview_only: bool, output_dir: Path | None) -> bo
     return ok
 
 
+async def run_question_validation(*, preview_only: bool, output_dir: Path | None) -> bool:
+    print("\n=== Валидация вопросов (без API) ===")
+    ok = True
+    for case in QUESTION_VALIDATION_CASES:
+        try:
+            result = validate_question_text(case["input"])
+        except InvalidQuestionError:
+            result = None
+        case_ok = result == case["expected"]
+        ok = ok and case_ok
+        print(
+            f"{'PASS' if case_ok else 'FAIL'}: {case['name']} → "
+            f"{result!r} (ожидалось {case['expected']!r})"
+        )
+    return ok
+
+
 async def run_format(*, preview_only: bool, output_dir: Path | None) -> bool:
     print("\n=== Форматирование ===")
     ok = True
@@ -551,6 +583,11 @@ async def run_followup(
 ) -> bool:
     print("\n=== Уточняющий вопрос ===")
     try:
+        validate_question_text(FOLLOW_UP_CASE["history"][-1]["content"])
+    except InvalidQuestionError as exc:
+        print(f"FAIL: невалидный уточняющий вопрос: {exc}")
+        return False
+    try:
         text, elapsed, usage = await _call_deepseek(
             session,
             api_key,
@@ -589,6 +626,7 @@ async def main(
         "format": lambda session, api_key, **kwargs: run_format(**kwargs),
         "parse_aliases": lambda session, api_key, **kwargs: run_parse_aliases(**kwargs),
         "parse_filter": lambda session, api_key, **kwargs: run_parse_filter(**kwargs),
+        "question_validation": lambda session, api_key, **kwargs: run_question_validation(**kwargs),
         "parse_llm": run_parse_llm,
         "tarot_manual": run_tarot_manual,
         "tarot": run_tarot,
@@ -614,7 +652,7 @@ async def main(
     timeout = aiohttp.ClientTimeout(total=120)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         for case in cases:
-            if case in ("format", "parse_aliases", "parse_filter"):
+            if case in ("format", "parse_aliases", "parse_filter", "question_validation"):
                 results[case] = await runners[case](
                     session,
                     api_key,
@@ -642,7 +680,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--case",
         action="append",
-        choices=["format", "parse_aliases", "parse_filter", "parse_llm", "tarot_manual", "tarot", "iching", "followup"],
+        choices=["format", "parse_aliases", "parse_filter", "question_validation", "parse_llm", "tarot_manual", "tarot", "iching", "followup"],
         help="Запустить только выбранный сценарий (можно указать несколько раз)",
     )
     parser.add_argument(

@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from handlers.tarot_cards import TAROT_CARDS, get_random_cards
 from main.llm_divination import interpret_tarot_with_llm, call_deepseek
+from main.question_validation import InvalidQuestionError, validate_question_text
 from app.database import AppDatabase
 
 
@@ -29,12 +30,10 @@ class TarotResult:
 
 
 def validate_question(question: str) -> str:
-    question = question.strip()
-    if not question:
-        raise DivinationError("empty_question", "Вопрос не может быть пустым")
-    if len(question) > 1000:
-        raise DivinationError("long_question", "Вопрос должен быть не длиннее 1000 символов")
-    return question
+    try:
+        return validate_question_text(question)
+    except InvalidQuestionError as error:
+        raise DivinationError(error.code, str(error)) from error
 
 
 def _validate_card_ids(card_ids: List[str]) -> None:

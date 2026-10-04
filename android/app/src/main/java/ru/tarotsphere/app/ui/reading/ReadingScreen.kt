@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.ui.components.*
+import ru.tarotsphere.app.domain.validation.isMeaningfulQuestion
 
 @Composable
 private fun ReadingText(value: String) {
@@ -99,12 +100,19 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     QuestionField(state.question, viewModel::question, label = "Ваш уточняющий вопрос", minLines = 2,
                         enabled = !state.sending && !state.retryPending)
+                    if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
+                        Text(
+                            "Напишите уточнение словами.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.error,
+                        )
+                    }
                     if (state.sending) StatusPanel("Готовим ответ…", tone = StatusTone.Progress)
                     state.followUpError?.let { StatusPanel("Не удалось получить ответ", it, StatusTone.Error) }
                     if (state.retryPending && !state.sending) StatusPanel("Можно повторить вопрос", "Повтор отправит тот же вопрос и не уменьшит доступное количество вопросов.")
                     PrimaryAction(
                         if (state.sending) "Готовим ответ…" else if (state.retryPending) "Повторить вопрос" else "Задать вопрос",
-                        onClick = { focus.clearFocus(); viewModel.send() }, enabled = !state.sending && state.question.isNotBlank(),
+                        onClick = { focus.clearFocus(); viewModel.send() }, enabled = !state.sending && isMeaningfulQuestion(state.question),
                     )
                 }
             } else StatusPanel("Все уточняющие вопросы заданы", "Вы можете задать другой вопрос в новом раскладе.")

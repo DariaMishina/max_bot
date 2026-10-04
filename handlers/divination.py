@@ -11,6 +11,7 @@ import logging
 import random
 import re
 import time
+from html import escape
 import aiohttp
 
 import aiomax
@@ -42,6 +43,11 @@ from main.database import (
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
+from main.question_validation import (
+    INVALID_QUESTION_MESSAGE,
+    InvalidQuestionError,
+    validate_question_text,
+)
 
 # Лимиты уточняющих вопросов после расклада
 FOLLOW_UP_LIMIT_FREE = 2
@@ -184,11 +190,23 @@ async def process_divination_question(message: aiomax.Message, cursor: fsm.FSMCu
         )
         return
     
+    try:
+        text = validate_question_text(text)
+    except InvalidQuestionError as error:
+        await message.reply(str(error))
+        return
+
     await process_divination_internal(message, cursor, text)
 
 
 async def process_divination_internal(message: aiomax.Message, cursor: fsm.FSMCursor, question: str):
     """Основная логика гадания"""
+    try:
+        question = validate_question_text(question)
+    except InvalidQuestionError as error:
+        await message.reply(str(error))
+        return
+
     user_id = message.sender.user_id
     logging.info(f"process_divination_internal: user_id={user_id}")
     
@@ -340,7 +358,7 @@ async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, 
         
         await message.reply(
             f"☯️ <b>Результат гадания по Ицзин</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
+            f"<b>Ваш вопрос:</b> <i>«{escape(question)}»</i>\n\n"
             f"<b>Выпавшая гексаграмма:</b> {hexagram_name}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
             "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
@@ -387,7 +405,7 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
 
     await message.reply(
         f"🃏 <b>Гадание на Таро</b>\n\n"
-        f"Ваш вопрос: <i>«{question}»</i>\n\n"
+        f"Ваш вопрос: <i>«{escape(question)}»</i>\n\n"
         "Выберите способ гадания:\n"
         "• <b>🔮 Карты покажут сами</b> — случайный расклад\n"
         "• <b>✍️ Написать свои карты</b> — напишите названия трёх карт\n"
@@ -495,7 +513,7 @@ async def _finish_tarot_reading(
         cards_names = [get_card_info(cid)['name'] for cid in card_ids]
         await bot.send_message(
             f"🃏 <b>Результат гадания на Таро</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{question}»</i>\n\n"
+            f"<b>Ваш вопрос:</b> <i>«{escape(question)}»</i>\n\n"
             f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
             f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
             "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
@@ -595,7 +613,7 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     await _safe_callback_answer(cb, "✍️ Жду ваши карты")
     await bot.send_message(
         f"✍️ <b>Напишите свои карты</b>\n\n"
-        f"Ваш вопрос: <i>«{question}»</i>\n\n"
+        f"Ваш вопрос: <i>«{escape(question)}»</i>\n\n"
         "Напишите названия трёх карт через запятую — "
         "например: <i>Башня, Туз Кубков, Десятка Мечей</i>\n\n"
         "Порядок: Прошлое → Настоящее → Будущее",
@@ -838,6 +856,12 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
             cursor.clear()
             await message.reply("Вы вернулись в главное меню.", keyboard=make_back_to_menu_kb())
         return
+
+    try:
+        text = validate_question_text(text)
+    except InvalidQuestionError as error:
+        await message.reply(str(error), keyboard=make_back_to_menu_kb())
+        return
     
     data = cursor.get_data() or {}
     follow_up_count = data.get('follow_up_count', 0)
@@ -929,6 +953,12 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
     
     if cursor.get_state() is not None:
         return
+
+    try:
+        text = validate_question_text(text)
+    except InvalidQuestionError:
+        await message.reply(INVALID_QUESTION_MESSAGE)
+        return
     
     user_id = message.sender.user_id
     
@@ -953,7 +983,7 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
     cursor.change_state(STATE_CHOOSING_DIVINATION)
     
     await message.reply(
-        f"🔮 Ваш вопрос: <i>«{text}»</i>\n\n"
+        f"🔮 Ваш вопрос: <i>«{escape(text)}»</i>\n\n"
         "Выберите тип гадания:",
         keyboard=make_divination_kb(),
         format='html'

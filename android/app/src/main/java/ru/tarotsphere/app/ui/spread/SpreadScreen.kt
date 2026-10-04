@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.domain.model.CardSelectionMode
 import ru.tarotsphere.app.domain.model.TarotCard
+import ru.tarotsphere.app.domain.validation.isMeaningfulQuestion
 import ru.tarotsphere.app.ui.components.*
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 
@@ -57,7 +58,7 @@ private fun SpreadContent(
     val scope = rememberCoroutineScope()
     val modeRequester = remember { BringIntoViewRequester() }
     val actionRequester = remember { BringIntoViewRequester() }
-    val readyForAction = state.question.isNotBlank() && when (state.mode) {
+    val readyForAction = isMeaningfulQuestion(state.question) && when (state.mode) {
         CardSelectionMode.RANDOM -> true
         CardSelectionMode.INTUITIVE -> state.selectedIds.size == 3
         CardSelectionMode.NAMED -> state.namedCardIds.all { it != null } && state.namedCardIds.distinct().size == 3
@@ -79,6 +80,13 @@ private fun SpreadContent(
                 scope.launch { delay(120); modeRequester.bringIntoView() }
             },
         )
+        if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
+            Text(
+                "Напишите вопрос или тему словами.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.error,
+            )
+        }
         Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Как откроем карты?", style = MaterialTheme.typography.titleLarge)
             Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {

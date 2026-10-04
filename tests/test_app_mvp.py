@@ -182,10 +182,17 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_cards_and_empty_question_are_rejected_before_llm(self):
         with patch.object(service, "interpret_tarot_with_llm", AsyncMock()) as llm:
-            for question, cards in [(" ", CARDS), ("Q", [CARDS[0]] * 3), ("Q" * 1001, CARDS)]:
+            for question, cards in [(" ", CARDS), ("Вопрос", [CARDS[0]] * 3), ("Q" * 1001, CARDS)]:
                 with self.assertRaises(service.DivinationError):
                     await service.run_tarot(USER, question, card_ids=cards)
             llm.assert_not_awaited()
+
+    async def test_symbol_only_question_has_machine_readable_error_before_llm(self):
+        with patch.object(service, "interpret_tarot_with_llm", AsyncMock()) as llm:
+            with self.assertRaises(service.DivinationError) as raised:
+                await service.run_tarot(USER, "! 🔮 123", card_ids=CARDS)
+        self.assertEqual(raised.exception.code, "invalid_question")
+        llm.assert_not_awaited()
 
     async def test_retry_returns_existing_reading_without_llm_or_deduction(self):
         conn, pool = self.connection()
@@ -193,7 +200,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         previous = {"id": 12, "question": "Q", "selected_cards": json.dumps(CARDS), "interpretation": "Text", "is_free": True}
         conn.fetchrow.side_effect = [balance, previous]
         with pool, patch.object(service, "interpret_tarot_with_llm", AsyncMock()) as llm:
-            result = await service.run_tarot(USER, "Q", random_cards=True, request_id=uuid.uuid4())
+            result = await service.run_tarot(USER, "Вопрос", random_cards=True, request_id=uuid.uuid4())
         self.assertEqual(result.divination_id, 12)
         conn.execute.assert_not_awaited()
         llm.assert_not_awaited()
@@ -203,7 +210,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         conn.fetchrow.return_value = {"unlimited_until": None, "free_divinations_remaining": 3, "paid_divinations_remaining": 0}
         with pool, patch.object(service, "interpret_tarot_with_llm", AsyncMock(side_effect=RuntimeError("LLM down"))):
             with self.assertRaises(RuntimeError):
-                await service.run_tarot(USER, "Q", card_ids=CARDS)
+                await service.run_tarot(USER, "Вопрос", card_ids=CARDS)
         conn.execute.assert_not_awaited()
         self.assertEqual(conn.fetchval.await_count, 1)  # guest lock only; no INSERT
         self.assertEqual(conn.fetchrow.await_count, 1)  # balance read only; no UPDATE
@@ -216,7 +223,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         conn.fetchrow.side_effect = [before, after]
         conn.fetchval.side_effect = [USER, 12]
         with pool, patch.object(service, "interpret_tarot_with_llm", AsyncMock(return_value="Text")):
-            result = await service.run_tarot(USER, "Q", card_ids=CARDS)
+            result = await service.run_tarot(USER, "Вопрос", card_ids=CARDS)
         self.assertTrue(result.is_free)
         self.assertEqual(result.balance_after["free_divinations_remaining"], 2)
         self.assertEqual(conn.fetchrow.call_args.args[1:], (USER, 1, 0))
@@ -228,7 +235,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         conn.fetchval.side_effect = [USER, RuntimeError("write failed")]
         with pool, patch.object(service, "interpret_tarot_with_llm", AsyncMock(return_value="Text")):
             with self.assertRaises(RuntimeError):
-                await service.run_tarot(USER, "Q", card_ids=CARDS)
+                await service.run_tarot(USER, "Вопрос", card_ids=CARDS)
         self.assertEqual(conn.fetchrow.await_count, 1)
         conn.execute.assert_not_awaited()
         self.assertIs(conn.transaction.return_value.__aexit__.call_args.args[0], RuntimeError)
@@ -238,7 +245,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         conn.fetchrow.return_value = {"is_free": True, "follow_ups": "[]", "question": "Q", "selected_cards": CARDS, "interpretation": "Text"}
         with pool, patch.object(service, "call_deepseek", AsyncMock(side_effect=RuntimeError("LLM down"))):
             with self.assertRaises(RuntimeError):
-                await service.run_follow_up(USER, 12, "Q2", uuid.uuid4())
+                await service.run_follow_up(USER, 12, "Уточнение", uuid.uuid4())
         conn.execute.assert_not_awaited()
 
     async def test_follow_up_limit_and_idempotent_last_retry(self):
@@ -248,10 +255,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                    {"question": "Q2", "answer": "A2", "request_id": str(request_id)}]
         conn.fetchrow.return_value = {"is_free": True, "follow_ups": json.dumps(history)}
         with pool, patch.object(service, "call_deepseek", AsyncMock()) as llm:
-            result = await service.run_follow_up(USER, 12, "Q2", request_id)
+            result = await service.run_follow_up(USER, 12, "Уточнение", request_id)
             self.assertEqual(result["follow_ups_remaining"], 0)
             with self.assertRaises(service.DivinationError) as error:
-                await service.run_follow_up(USER, 12, "Q3", uuid.uuid4())
+                await service.run_follow_up(USER, 12, "Другой вопрос", uuid.uuid4())
             self.assertEqual(error.exception.code, "follow_up_limit")
         conn.execute.assert_not_awaited()
         llm.assert_not_awaited()
@@ -261,7 +268,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         conn.fetchrow.return_value = None
         with pool, patch.object(service, "call_deepseek", AsyncMock()) as llm:
             with self.assertRaises(service.DivinationError) as error:
-                await service.run_follow_up(USER, 12, "Q", uuid.uuid4())
+                await service.run_follow_up(USER, 12, "Уточнение", uuid.uuid4())
             self.assertEqual(error.exception.code, "not_found")
         self.assertEqual(conn.fetchrow.call_args.args[1:], (12, USER))
         llm.assert_not_awaited()
