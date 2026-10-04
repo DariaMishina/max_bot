@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from typing import Any, Dict, Optional
 
+import aiohttp
+
 from app.config import app_config
 from app.database import AppDatabase
 
@@ -20,6 +22,7 @@ EMAIL_CODE_TTL_MINUTES = 10
 EMAIL_CODE_RESEND_SECONDS = 60
 EMAIL_CODE_MAX_ATTEMPTS = 5
 TRIAL_DIVINATIONS = 3
+VK_USER_INFO_URL = "https://id.vk.ru/oauth2/user_info"
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -152,6 +155,171 @@ async def send_login_email(email: str, code: str) -> None:
     await asyncio.to_thread(_send_email_sync, email, code)
 
 
+async def _fetch_vk_user_id(access_token: str) -> str:
+    client_id = app_config.app_vk_client_id.strip()
+    token = str(access_token or "").strip()
+    if not client_id:
+        raise AccountAuthError("vk_unavailable", "Вход через VK ID ещё не настроен", 503)
+    if not token or len(token) > 4096:
+        raise AccountAuthError("invalid_vk_token", "Не удалось подтвердить вход через VK ID", 401)
+
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                VK_USER_INFO_URL,
+                params={"client_id": client_id},
+                data={"access_token": token},
+            ) as response:
+                payload = await response.json(content_type=None)
+                if response.status != 200 or not isinstance(payload, dict) or payload.get("error"):
+                    raise AccountAuthError("invalid_vk_token", "Не удалось подтвердить вход через VK ID", 401)
+    except AccountAuthError:
+        raise
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
+        raise AccountAuthError("vk_unavailable", "VK ID временно недоступен. Попробуйте позже.", 503)
+
+    user = payload.get("user")
+    provider_user_id = user.get("user_id") if isinstance(user, dict) else payload.get("user_id")
+    provider_user_id = str(provider_user_id or "").strip()
+    if not provider_user_id or len(provider_user_id) > 320:
+        raise AccountAuthError("invalid_vk_token", "Не удалось подтвердить вход через VK ID", 401)
+    return provider_user_id
+
+
+async def _confirm_identity_with_conn(
+    conn: Any,
+    provider: str,
+    provider_user_id: str,
+    display_value: str,
+    *,
+    current_user_id: Optional[uuid.UUID],
+    device_signal: Optional[str],
+) -> Dict[str, Any]:
+    device_hash = signal_hash("device", device_signal)
+    identity_key = f"{provider}:{provider_user_id}"
+    # Serialize first claims for the same provider identity so parallel
+    # confirmations cannot create two accounts or issue two trials.
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", identity_key)
+    identity = await conn.fetchrow(
+        "SELECT user_id FROM app_user_identities WHERE provider = $1 AND provider_user_id = $2",
+        provider,
+        provider_user_id,
+    )
+    converted_guest = False
+    linked_existing_account = False
+    current_user = None
+    if current_user_id:
+        current_user = await conn.fetchrow(
+            "SELECT user_id, is_guest FROM app_users WHERE user_id = $1 FOR UPDATE",
+            current_user_id,
+        )
+    if identity:
+        user_id = identity["user_id"]
+        if current_user and not current_user["is_guest"] and current_user["user_id"] != user_id:
+            raise AccountAuthError(
+                "identity_conflict",
+                "Этот VK ID уже привязан к другому аккаунту",
+                409,
+            )
+    else:
+        if current_user:
+            user_id = current_user["user_id"]
+            converted_guest = bool(current_user["is_guest"])
+            linked_existing_account = not converted_guest
+            if converted_guest:
+                await conn.execute(
+                    "UPDATE app_users SET is_guest = FALSE, last_active_at = NOW() WHERE user_id = $1",
+                    user_id,
+                )
+        else:
+            user_id = await conn.fetchval(
+                "INSERT INTO app_users (is_guest, install_id) VALUES (FALSE, NULL) RETURNING user_id"
+            )
+            await conn.execute(
+                "INSERT INTO app_user_balances (user_id, free_divinations_remaining) VALUES ($1, 0)",
+                user_id,
+            )
+        await conn.execute(
+            """
+            INSERT INTO app_user_identities (user_id, provider, provider_user_id, display_value)
+            VALUES ($1, $2, $3, $4)
+            """,
+            user_id,
+            provider,
+            provider_user_id,
+            display_value,
+        )
+
+    granted = 0
+    claim = await conn.fetchval(
+        """
+        INSERT INTO app_trial_claims (identity_key, device_hash, claimed_user_id, granted_amount)
+        VALUES ($1, $2, $3, 0)
+        ON CONFLICT DO NOTHING
+        RETURNING id
+        """,
+        identity_key,
+        device_hash,
+        user_id,
+    )
+    if claim and not converted_guest and not linked_existing_account:
+        granted = TRIAL_DIVINATIONS
+        await conn.execute(
+            """
+            UPDATE app_user_balances
+            SET free_divinations_remaining = free_divinations_remaining + $2, updated_at = NOW()
+            WHERE user_id = $1
+            """,
+            user_id,
+            granted,
+        )
+        await conn.execute(
+            "UPDATE app_trial_claims SET granted_amount = $2 WHERE id = $1",
+            claim,
+            granted,
+        )
+    await conn.execute("UPDATE app_users SET last_active_at = NOW() WHERE user_id = $1", user_id)
+    return {"user_id": user_id, "trial_granted": granted}
+
+
+async def _confirm_identity(
+    provider: str,
+    provider_user_id: str,
+    display_value: str,
+    *,
+    current_user_id: Optional[uuid.UUID],
+    device_signal: Optional[str],
+) -> Dict[str, Any]:
+    pool = await AppDatabase.get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await _confirm_identity_with_conn(
+                conn,
+                provider,
+                provider_user_id,
+                display_value,
+                current_user_id=current_user_id,
+                device_signal=device_signal,
+            )
+
+
+async def confirm_vk_access_token(
+    access_token: str,
+    *,
+    current_user_id: Optional[uuid.UUID],
+    device_signal: Optional[str],
+) -> Dict[str, Any]:
+    provider_user_id = await _fetch_vk_user_id(access_token)
+    return await _confirm_identity(
+        "vk",
+        provider_user_id,
+        "VK ID",
+        current_user_id=current_user_id,
+        device_signal=device_signal,
+    )
+
+
 async def confirm_email_challenge(
     email: str,
     code: str,
@@ -164,8 +332,6 @@ async def confirm_email_challenge(
     if not re.fullmatch(r"\d{6}", code):
         raise AccountAuthError("invalid_code", "Введите шестизначный код")
 
-    device_hash = signal_hash("device", device_signal)
-    identity_key = f"email:{email}"
     pool = await AppDatabase.get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -187,73 +353,14 @@ async def confirm_email_challenge(
                 await conn.execute("UPDATE app_email_codes SET attempts = attempts + 1 WHERE id = $1", challenge["id"])
                 raise AccountAuthError("invalid_code", "Неверный код")
             await conn.execute("UPDATE app_email_codes SET consumed_at = NOW() WHERE id = $1", challenge["id"])
-
-            identity = await conn.fetchrow(
-                "SELECT user_id FROM app_user_identities WHERE provider = 'email' AND provider_user_id = $1",
+            return await _confirm_identity_with_conn(
+                conn,
+                "email",
                 email,
+                mask_email(email),
+                current_user_id=current_user_id,
+                device_signal=device_signal,
             )
-            converted_guest = False
-            if identity:
-                user_id = identity["user_id"]
-            else:
-                guest = None
-                if current_user_id:
-                    guest = await conn.fetchrow(
-                        "SELECT user_id FROM app_users WHERE user_id = $1 AND is_guest = TRUE FOR UPDATE",
-                        current_user_id,
-                    )
-                if guest:
-                    user_id = guest["user_id"]
-                    converted_guest = True
-                    await conn.execute("UPDATE app_users SET is_guest = FALSE, last_active_at = NOW() WHERE user_id = $1", user_id)
-                else:
-                    user_id = await conn.fetchval(
-                        "INSERT INTO app_users (is_guest, install_id) VALUES (FALSE, NULL) RETURNING user_id"
-                    )
-                    await conn.execute(
-                        "INSERT INTO app_user_balances (user_id, free_divinations_remaining) VALUES ($1, 0)",
-                        user_id,
-                    )
-                await conn.execute(
-                    """
-                    INSERT INTO app_user_identities (user_id, provider, provider_user_id, display_value)
-                    VALUES ($1, 'email', $2, $3)
-                    """,
-                    user_id,
-                    email,
-                    mask_email(email),
-                )
-
-            granted = 0
-            claim = await conn.fetchval(
-                """
-                INSERT INTO app_trial_claims (identity_key, device_hash, claimed_user_id, granted_amount)
-                VALUES ($1, $2, $3, 0)
-                ON CONFLICT DO NOTHING
-                RETURNING id
-                """,
-                identity_key,
-                device_hash,
-                user_id,
-            )
-            if claim and not converted_guest:
-                granted = TRIAL_DIVINATIONS
-                await conn.execute(
-                    """
-                    UPDATE app_user_balances
-                    SET free_divinations_remaining = free_divinations_remaining + $2, updated_at = NOW()
-                    WHERE user_id = $1
-                    """,
-                    user_id,
-                    granted,
-                )
-                await conn.execute(
-                    "UPDATE app_trial_claims SET granted_amount = $2 WHERE id = $1",
-                    claim,
-                    granted,
-                )
-            await conn.execute("UPDATE app_users SET last_active_at = NOW() WHERE user_id = $1", user_id)
-    return {"user_id": user_id, "trial_granted": granted}
 
 
 async def list_identities(user_id: uuid.UUID) -> list[Dict[str, Any]]:

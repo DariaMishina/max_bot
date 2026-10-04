@@ -5,6 +5,7 @@ import ru.tarotsphere.app.data.api.AppApi
 import ru.tarotsphere.app.data.api.dto.EmailConfirmRequestDto
 import ru.tarotsphere.app.data.api.dto.EmailStartRequestDto
 import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
+import ru.tarotsphere.app.data.api.dto.VkAuthRequestDto
 import ru.tarotsphere.app.data.local.SecurePrefs
 import ru.tarotsphere.app.domain.model.TokenPair
 import ru.tarotsphere.app.domain.repository.AuthRepository
@@ -49,6 +50,15 @@ class AuthRepositoryImpl(
             EmailConfirmRequestDto(
                 email.trim(), code.trim(), prefs.deviceSignal(), prefs.getRefreshToken(),
             ),
+        ).toDomain()
+        prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
+        prefs.markConfirmed()
+        tokens
+    }
+
+    override suspend fun confirmVk(accessToken: String): TokenPair = apiCall {
+        val tokens = authedApi.vkAuth(
+            VkAuthRequestDto(accessToken, prefs.deviceSignal(), prefs.getRefreshToken()),
         ).toDomain()
         prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
         prefs.markConfirmed()

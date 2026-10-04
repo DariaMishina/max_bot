@@ -11,11 +11,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.vk.id.AccessToken
+import com.vk.id.VKID
+import com.vk.id.VKIDAuthFail
+import com.vk.id.auth.VKIDAuthCallback
 import ru.tarotsphere.app.ui.components.PrimaryAction
 import ru.tarotsphere.app.ui.components.SecondaryAction
 import ru.tarotsphere.app.ui.components.SphereHeader
@@ -33,7 +39,25 @@ fun AuthScreen(
     onRequestCode: () -> Unit,
     onConfirm: () -> Unit,
     onChangeEmail: () -> Unit,
+    onVkStart: () -> Unit,
+    onVkToken: (String) -> Unit,
+    onVkFailure: (String?) -> Unit,
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val vkCallback = remember(onVkToken, onVkFailure) {
+        object : VKIDAuthCallback {
+            override fun onAuth(accessToken: AccessToken) {
+                onVkToken(accessToken.token)
+            }
+
+            override fun onFail(fail: VKIDAuthFail) {
+                onVkFailure(
+                    if (fail is VKIDAuthFail.Canceled) null
+                    else "Не удалось войти через VK ID. Попробуйте ещё раз.",
+                )
+            }
+        }
+    }
     SphereScreen {
         Spacer(Modifier.height(16.dp))
         SphereHeader(
@@ -48,13 +72,11 @@ fun AuthScreen(
         if (!state.codeSent) {
             SecondaryAction(
                 text = "Продолжить через VK ID",
-                onClick = {},
-                enabled = false,
-            )
-            Text(
-                "VK ID станет доступен после регистрации приложения в кабинете VK ID.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = {
+                    onVkStart()
+                    VKID.instance.authorize(lifecycleOwner, vkCallback)
+                },
+                enabled = !state.submitting,
             )
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Или продолжите по email", style = MaterialTheme.typography.titleMedium)
@@ -103,6 +125,6 @@ fun AuthScreen(
 @Composable
 private fun AuthPreview() {
     TarotSphereTheme {
-        AuthScreen(SessionUiState(needsAuth = true), {}, {}, {}, {}, {})
+        AuthScreen(SessionUiState(needsAuth = true), {}, {}, {}, {}, {}, {}, {}, {})
     }
 }

@@ -47,6 +47,17 @@ class SessionViewModelTest {
         assertTrue(model.state.value.ready)
         assertFalse(model.state.value.needsAuth)
     }
+
+    @Test fun vkConfirmationOpensMainApp() = runTest(dispatcher) {
+        val auth = FakeAuth(confirmed = false)
+        val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
+        runCurrent()
+        model.beginVkAuth()
+        model.confirmVk("vk-access-token")
+        runCurrent()
+        assertTrue(model.state.value.ready)
+        assertFalse(model.state.value.submitting)
+    }
 }
 
 private class FakeOnboarding(private var done: Boolean) : OnboardingStore {
@@ -60,6 +71,8 @@ private class FakeAuth(private val confirmed: Boolean) : AuthRepository {
     override suspend fun restoreConfirmedSession() = confirmed
     override suspend fun requestEmailCode(email: String) = Unit
     override suspend fun confirmEmail(email: String, code: String) =
+        TokenPair("access", "refresh", "user", 3600, null)
+    override suspend fun confirmVk(accessToken: String) =
         TokenPair("access", "refresh", "user", 3600, null)
     override suspend fun refreshSession() = TokenPair("access", "refresh", "user", 3600, null)
 }

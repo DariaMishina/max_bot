@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("vkid.manifest.placeholders")
 }
 
 android {
@@ -12,8 +13,8 @@ android {
         applicationId = "ru.tarotsphere.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.6.0"
+        versionCode = 5
+        versionName = "0.7.0"
     }
 
     buildTypes {
@@ -62,5 +63,6 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.vkid)
     debugImplementation(libs.androidx.ui.tooling)
 }

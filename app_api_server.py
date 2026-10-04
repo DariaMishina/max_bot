@@ -26,6 +26,7 @@ from aiohttp.web_response import Response
 from app.account_auth import (
     AccountAuthError,
     confirm_email_challenge,
+    confirm_vk_access_token,
     create_email_challenge,
     invalidate_email_challenge,
     list_identities,
@@ -67,6 +68,7 @@ OPENAPI = {
         "POST /v1/auth/guest",
         "POST /v1/auth/email/start",
         "POST /v1/auth/email/confirm",
+        "POST /v1/auth/vk",
         "POST /v1/auth/logout",
         "POST /v1/auth/refresh",
         "GET /v1/me",
@@ -203,6 +205,29 @@ async def email_confirm_handler(request: Request) -> Response:
         result = await confirm_email_challenge(
             body.get("email"),
             body.get("code"),
+            current_user_id=current_user_id,
+            device_signal=body.get("device_signal"),
+        )
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
+    tokens = await issue_token_pair(result["user_id"])
+    balance = await get_user_balance(result["user_id"])
+    return json_response({
+        **tokens,
+        "balance": _balance_payload(balance),
+        "trial_granted": result["trial_granted"],
+    })
+
+
+async def vk_auth_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    current_user_id = _optional_user_id(request)
+    if not current_user_id:
+        migration_refresh = str(body.get("migration_refresh_token") or "").strip()
+        current_user_id = await verify_refresh_token(migration_refresh) if migration_refresh else None
+    try:
+        result = await confirm_vk_access_token(
+            body.get("access_token"),
             current_user_id=current_user_id,
             device_signal=body.get("device_signal"),
         )
@@ -415,7 +440,7 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
         return await handler(request)
     public_auth_paths = {
         "/v1/auth/guest", "/v1/auth/refresh",
-        "/v1/auth/email/start", "/v1/auth/email/confirm",
+        "/v1/auth/email/start", "/v1/auth/email/confirm", "/v1/auth/vk",
     }
     if path in public_auth_paths and request.method == "POST":
         return await handler(request)
@@ -457,6 +482,7 @@ def create_app() -> web.Application:
     app.router.add_post("/v1/auth/guest", guest_auth_handler)
     app.router.add_post("/v1/auth/email/start", email_start_handler)
     app.router.add_post("/v1/auth/email/confirm", email_confirm_handler)
+    app.router.add_post("/v1/auth/vk", vk_auth_handler)
     app.router.add_post("/v1/auth/refresh", refresh_auth_handler)
     app.router.add_post("/v1/auth/logout", logout_handler)
     app.router.add_get("/v1/me", me_handler)

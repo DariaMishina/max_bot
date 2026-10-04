@@ -34,6 +34,13 @@ data class EmailConfirmRequestDto(
 )
 
 @Serializable
+data class VkAuthRequestDto(
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("device_signal") val deviceSignal: String,
+    @SerialName("migration_refresh_token") val migrationRefreshToken: String? = null,
+)
+
+@Serializable
 data class EmailStartResponseDto(
     val ok: Boolean,
     @SerialName("expires_in") val expiresIn: Int = 600,

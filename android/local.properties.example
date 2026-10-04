@@ -1,2 +1,8 @@
 # Скопируйте в local.properties и поправьте путь, если Android Studio не создала файл сама:
 # sdk.dir=/Users/ВАШЕ_ИМЯ/Library/Android/sdk
+
+# VK ID Android SDK. Защищённый ключ хранить только в local.properties/GitHub Secrets.
+VKIDClientID=54803401
+VKIDClientSecret=
+VKIDRedirectHost=vk.ru
+VKIDRedirectScheme=vk54803401

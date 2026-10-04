@@ -9,6 +9,7 @@ for key, value in {
     "APP_DB_USER": "test",
     "APP_DB_PASSWORD": "test",
     "APP_JWT_SECRET": "test-only",
+    "APP_VK_CLIENT_ID": "54803401",
     "API_KEY": "test",
     "BOT_TOKEN": "test",
     "DB_HOST": "localhost",
@@ -124,7 +125,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
                 "expires_at": datetime.now() + timedelta(minutes=5),
             },
             None,
-            {"user_id": USER},
+            {"user_id": USER, "is_guest": True},
         ])
         conn.fetchval = AsyncMock(return_value=101)
         conn.execute = AsyncMock()
@@ -144,6 +145,77 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(api.json.loads(response.text), {"ok": True, "expires_in": 600, "resend_after": 60})
         send.assert_awaited_once_with(EMAIL, CODE)
+
+    async def test_new_vk_identity_gets_one_trial_after_provider_verification(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        conn.fetchval = AsyncMock(side_effect=[USER, 102])
+        conn.execute = AsyncMock()
+        with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-42")), \
+                patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
+            result = await auth.confirm_vk_access_token(
+                "provider-token", current_user_id=None, device_signal="device",
+            )
+        self.assertEqual(result, {"user_id": USER, "trial_granted": 3})
+        statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
+        self.assertIn("INSERT INTO app_user_identities", statements)
+        self.assertNotIn("provider-token", statements)
+
+    async def test_vk_handler_never_trusts_user_id_from_phone(self):
+        result = {"user_id": USER, "trial_granted": 0}
+        with patch.object(api, "confirm_vk_access_token", AsyncMock(return_value=result)) as confirm, \
+                patch.object(api, "issue_token_pair", AsyncMock(return_value={
+                    "access_token": "app-access", "refresh_token": "app-refresh",
+                    "token_type": "bearer", "expires_in": 3600, "user_id": str(USER),
+                })), \
+                patch.object(api, "get_user_balance", AsyncMock(return_value={
+                    "free_divinations_remaining": 2,
+                    "paid_divinations_remaining": 0,
+                    "unlimited_until": None,
+                    "total_divinations_used": 1,
+                })):
+            response = await api.vk_auth_handler(request({
+                "access_token": "verified-by-provider",
+                "provider_user_id": "attacker-controlled",
+                "device_signal": "device",
+            }))
+        self.assertEqual(response.status, 200)
+        confirm.assert_awaited_once_with(
+            "verified-by-provider", current_user_id=None, device_signal="device",
+        )
+
+    async def test_linking_vk_to_confirmed_account_never_grants_second_trial(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(side_effect=[
+            None,
+            {"user_id": USER, "is_guest": False},
+        ])
+        conn.fetchval = AsyncMock(return_value=103)
+        conn.execute = AsyncMock()
+        with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-43")), \
+                patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
+            result = await auth.confirm_vk_access_token(
+                "provider-token", current_user_id=USER, device_signal="device",
+            )
+        self.assertEqual(result, {"user_id": USER, "trial_granted": 0})
+        statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
+        self.assertNotIn("free_divinations_remaining = free_divinations_remaining + $2", statements)
+
+    async def test_linking_vk_owned_by_another_account_is_rejected(self):
+        other_user = uuid.uuid4()
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(side_effect=[
+            {"user_id": other_user},
+            {"user_id": USER, "is_guest": False},
+        ])
+        conn.execute = AsyncMock()
+        with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-44")), \
+                patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
+            with self.assertRaises(auth.AccountAuthError) as error:
+                await auth.confirm_vk_access_token(
+                    "provider-token", current_user_id=USER, device_signal="device",
+                )
+        self.assertEqual(error.exception.code, "identity_conflict")
 
 
 if __name__ == "__main__":

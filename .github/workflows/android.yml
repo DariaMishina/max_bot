@@ -24,8 +24,20 @@ jobs:
           java-version: "17"
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+      - name: Configure VK ID
+        env:
+          VKID_CLIENT_SECRET: ${{ secrets.VKID_CLIENT_SECRET }}
+        run: |
+          test -n "$VKID_CLIENT_SECRET"
+          printf '%s\n' \
+            "sdk.dir=$ANDROID_HOME" \
+            "VKIDClientID=54803401" \
+            "VKIDClientSecret=$VKID_CLIENT_SECRET" \
+            "VKIDRedirectHost=vk.ru" \
+            "VKIDRedirectScheme=vk54803401" \
+            > local.properties
       - name: Assemble debug
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :data:testDebugUnitTest :domain:testDebugUnitTest :app:lintDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug

@@ -28,6 +28,9 @@ interface AppApi {
     @POST("v1/auth/email/confirm")
     suspend fun emailConfirm(@Body body: EmailConfirmRequestDto): TokenPairDto
 
+    @POST("v1/auth/vk")
+    suspend fun vkAuth(@Body body: VkAuthRequestDto): TokenPairDto
+
     @POST("v1/auth/logout")
     suspend fun logout(@Body body: RefreshRequestDto)
 

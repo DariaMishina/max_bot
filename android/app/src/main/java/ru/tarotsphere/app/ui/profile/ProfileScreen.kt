@@ -7,13 +7,30 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vk.id.AccessToken
+import com.vk.id.VKID
+import com.vk.id.VKIDAuthFail
+import com.vk.id.auth.VKIDAuthCallback
 import ru.tarotsphere.app.ui.components.*
 
 @Composable
 fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onShop: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val vkCallback = remember(viewModel) {
+        object : VKIDAuthCallback {
+            override fun onAuth(accessToken: AccessToken) = viewModel.linkVk(accessToken.token)
+            override fun onFail(fail: VKIDAuthFail) {
+                viewModel.failVkLink(
+                    if (fail is VKIDAuthFail.Canceled) null
+                    else "Не удалось привязать VK ID. Попробуйте ещё раз.",
+                )
+            }
+        }
+    }
     LaunchedEffect(viewModel) { viewModel.refresh() }
     LaunchedEffect(state.deleted, state.loggedOut) { if (state.deleted || state.loggedOut) onSessionEnded() }
     SphereScreen {
@@ -49,6 +66,18 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 if (methods.isBlank()) "Баланс и история привязаны к аккаунту."
                 else "Способ входа: $methods. Баланс и история восстановятся после повторного входа.",
             )
+            if (profile.identities.none { it.provider == "vk" }) {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.beginVkLink()
+                        VKID.instance.authorize(lifecycleOwner, vkCallback)
+                    },
+                    enabled = !state.linkingVk && !state.loading && !state.deleting,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) { Text(if (state.linkingVk) "Подключаем VK ID…" else "Привязать VK ID") }
+            }
+            state.linkMessage?.let { StatusPanel("VK ID", it) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionHeading("Помогите сделать Сферу лучше", "Расскажите, что оказалось полезным, непонятным или лишним.")

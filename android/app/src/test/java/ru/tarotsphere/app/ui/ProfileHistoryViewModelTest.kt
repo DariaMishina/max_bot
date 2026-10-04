@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.*
 import org.junit.*
 import org.junit.Assert.*
 import ru.tarotsphere.app.domain.model.*
+import ru.tarotsphere.app.domain.repository.AuthRepository
 import ru.tarotsphere.app.domain.repository.UserRepository
 import ru.tarotsphere.app.ui.history.HistoryViewModel
 import ru.tarotsphere.app.ui.profile.ProfileViewModel
@@ -36,7 +37,7 @@ class ProfileHistoryViewModelTest {
     }
     @Test fun deleteFailureKeepsProfileAndDoesNotSignalLogout() = runTest(dispatcher) {
         val repo = FakeUser().apply { deleteError = AppFailure("network", "offline") }
-        val model = ProfileViewModel(repo)
+        val model = ProfileViewModel(repo, FakeProfileAuth())
         model.refresh(); runCurrent(); model.deleteData(); model.deleteData(); runCurrent()
         assertEquals(1, repo.deletes)
         assertFalse(model.state.value.deleted)
@@ -44,7 +45,7 @@ class ProfileHistoryViewModelTest {
         assertNotNull(model.state.value.deleteError)
     }
     @Test fun successfulDeletionClearsProfileAndSignalsNewOnboarding() = runTest(dispatcher) {
-        val model = ProfileViewModel(FakeUser())
+        val model = ProfileViewModel(FakeUser(), FakeProfileAuth())
         model.refresh(); runCurrent(); model.deleteData(); runCurrent()
         assertTrue(model.state.value.deleted)
         assertNull(model.state.value.profile)
@@ -52,7 +53,7 @@ class ProfileHistoryViewModelTest {
     }
     @Test fun feedbackFailureKeepsDraftAndSuccessClearsIt() = runTest(dispatcher) {
         val repo = FakeUser().apply { feedbackError = AppFailure("network", "offline") }
-        val model = ProfileViewModel(repo)
+        val model = ProfileViewModel(repo, FakeProfileAuth())
         model.feedback("Сообщение"); model.sendFeedback(); model.sendFeedback(); runCurrent()
         assertEquals(1, repo.feedbackCalls)
         assertEquals("Сообщение", model.state.value.feedback)
@@ -61,6 +62,17 @@ class ProfileHistoryViewModelTest {
         assertEquals("", model.state.value.feedback)
         assertTrue(model.state.value.feedbackMessage!!.contains("Спасибо"))
     }
+}
+private class FakeProfileAuth : AuthRepository {
+    override fun hasAccessToken() = true
+    override fun currentUserId(): String? = "user"
+    override suspend fun restoreConfirmedSession() = true
+    override suspend fun requestEmailCode(email: String) = Unit
+    override suspend fun confirmEmail(email: String, code: String) =
+        TokenPair("access", "refresh", "user", 3600, null)
+    override suspend fun confirmVk(accessToken: String) =
+        TokenPair("access", "refresh", "user", 3600, null)
+    override suspend fun refreshSession() = TokenPair("access", "refresh", "user", 3600, null)
 }
 private class FakeUser : UserRepository {
     val history = MutableStateFlow(listOf(HistoryItem(1, "Таро", "Q", "", true)))

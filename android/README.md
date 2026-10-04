@@ -1,12 +1,12 @@
 # tarot sphere — Android (этап 4)
 
-Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая локальная версия `0.6.0-debug`.
+Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая локальная версия `0.7.0-debug`.
 
 Клиент — Kotlin + Jetpack Compose, модули `app` / `data` / `domain`. API — `app_api_server.py` в корне `max_bot`, порт 8083, отдельная PostgreSQL приложения.
 
 ## Возможности
 
-- Гостевая сессия без регистрации, зашифрованное хранение токенов.
+- Обязательный вход через VK ID или одноразовый email-код, зашифрованное хранение токенов.
 - Вопрос → случайные карты, интуитивный выбор 3 из 9 или ввод трёх карт из своего расклада → толкование.
 - Уточнения с серверным лимитом 2/5 и защитой от повторной отправки.
 - История с подгрузкой страниц, полный результат, кэш Room для чтения без сети.
@@ -17,7 +17,9 @@
 
 Открыть **папку `android/`** в Android Studio. Нужны Android SDK 35 и совместимая с Gradle 8.11.1 Java (17–23). Java 25 из текущей Studio не подходит; на этом Mac проверена Temurin 22.
 
-Сначала обновить сервер и применить миграцию `app/migrations/004_mvp.sql` к `app_bot_db`.
+Для VK ID добавьте `VKIDClientID`, `VKIDClientSecret`, `VKIDRedirectHost` и `VKIDRedirectScheme` в игнорируемый `local.properties` по образцу `local.properties.example`. Защищённый ключ не коммитить.
+
+На тестовой VM должны быть применены миграции `app/migrations/004_mvp.sql` и `005_account_auth.sql`.
 
 Из корня `max_bot`:
 

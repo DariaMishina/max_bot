@@ -3,6 +3,7 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven(url = "https://nexus-external.vkteam.ru/repository/maven/")
     }
 }
 
@@ -15,6 +16,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://nexus-external.vkteam.ru/repository/maven/")
     }
 }
 

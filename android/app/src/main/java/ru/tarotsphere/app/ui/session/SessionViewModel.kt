@@ -106,6 +106,29 @@ class SessionViewModel(
         }
     }
 
+    fun beginVkAuth() {
+        if (!_state.value.submitting) {
+            _state.value = _state.value.copy(submitting = true, error = null)
+        }
+    }
+
+    fun confirmVk(accessToken: String) {
+        viewModelScope.launch {
+            try {
+                authRepository.confirmVk(accessToken)
+                _state.value = SessionUiState(loading = false, ready = true)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { _state.value = _state.value.copy(error = e.userMessage())
+            } finally {
+                if (!_state.value.ready) _state.value = _state.value.copy(submitting = false)
+            }
+        }
+    }
+
+    fun failVk(message: String?) {
+        _state.value = _state.value.copy(submitting = false, error = message)
+    }
+
     fun changeEmail() {
         if (!_state.value.submitting) _state.value = _state.value.copy(code = "", codeSent = false, error = null)
     }

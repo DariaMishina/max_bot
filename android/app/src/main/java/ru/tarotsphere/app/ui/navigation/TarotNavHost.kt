@@ -63,6 +63,9 @@ fun TarotNavHost(container: AppContainer) {
                 onRequestCode = session::requestEmailCode,
                 onConfirm = session::confirmEmail,
                 onChangeEmail = session::changeEmail,
+                onVkStart = session::beginVkAuth,
+                onVkToken = session::confirmVk,
+                onVkFailure = session::failVk,
             )
         }
         composable(Dest.Main) {

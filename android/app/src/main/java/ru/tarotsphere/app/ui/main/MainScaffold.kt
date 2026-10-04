@@ -103,7 +103,9 @@ fun MainScaffold(container: AppContainer, onSessionEnded: () -> Unit) {
                     ShopScreen(model, exhausted)
                 }
                 else -> {
-                    val model: ProfileViewModel = viewModel(factory = ProfileViewModel.factory(container.userRepository))
+                    val model: ProfileViewModel = viewModel(
+                        factory = ProfileViewModel.factory(container.userRepository, container.authRepository),
+                    )
                     ProfileScreen(model, onSessionEnded, onShop)
                 }
             }

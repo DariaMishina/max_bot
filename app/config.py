@@ -22,6 +22,7 @@ class AppSettings(BaseSettings):
     app_email_smtp_password: Optional[SecretStr] = None
     app_email_from: str = ""
     app_email_smtp_ssl: bool = True
+    app_vk_client_id: str = "54803401"
     app_tarologist_profile_url: str = Field(
         default="",
         validation_alias=AliasChoices(

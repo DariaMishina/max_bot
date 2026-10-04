@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.domain.model.UserProfile
+import ru.tarotsphere.app.domain.repository.AuthRepository
 import ru.tarotsphere.app.domain.repository.UserRepository
 import ru.tarotsphere.app.ui.components.*
 
@@ -16,8 +17,12 @@ data class ProfileUiState(
     val feedbackMessage: String? = null, val deleting: Boolean = false, val deleted: Boolean = false,
     val deleteError: String? = null,
     val loggingOut: Boolean = false, val loggedOut: Boolean = false,
+    val linkingVk: Boolean = false, val linkMessage: String? = null,
 )
-class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
+class ProfileViewModel(
+    private val repository: UserRepository,
+    private val authRepository: AuthRepository,
+) : ViewModel() {
     private val _state = MutableStateFlow(ProfileUiState())
     val state = _state.asStateFlow()
     fun refresh() {
@@ -72,5 +77,27 @@ class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
             }
         }
     }
-    companion object { fun factory(repository: UserRepository) = simpleFactory { ProfileViewModel(repository) } }
+    fun beginVkLink() {
+        if (!_state.value.linkingVk && !_state.value.loading) {
+            _state.value = _state.value.copy(linkingVk = true, linkMessage = null)
+        }
+    }
+    fun linkVk(accessToken: String) {
+        viewModelScope.launch {
+            try {
+                authRepository.confirmVk(accessToken)
+                _state.value = _state.value.copy(linkMessage = "VK ID привязан к аккаунту.")
+                refresh()
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { _state.value = _state.value.copy(linkMessage = e.userMessage())
+            } finally { _state.value = _state.value.copy(linkingVk = false) }
+        }
+    }
+    fun failVkLink(message: String?) {
+        _state.value = _state.value.copy(linkingVk = false, linkMessage = message)
+    }
+    companion object {
+        fun factory(repository: UserRepository, authRepository: AuthRepository) =
+            simpleFactory { ProfileViewModel(repository, authRepository) }
+    }
 }
