@@ -5,7 +5,7 @@
         var m = window.location.search.match(/[?&]api=([^&]+)/);
         if (m) u = decodeURIComponent(m[1].replace(/\+/g, ' '));
     }
-    window.__WEBAPP_API_URL__ = u || 'https://aus-gasoline-drinking-understood.trycloudflare.com';
+    window.__WEBAPP_API_URL__ = u || 'https://max-bot-awtw.onrender.com';
 })();
 const API_URL = window.__WEBAPP_API_URL__;
 const IMG_BASE = '/static/images';
