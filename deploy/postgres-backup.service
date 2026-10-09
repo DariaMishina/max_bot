@@ -1,0 +1,27 @@
+[Unit]
+Description=Encrypted PostgreSQL backups to external S3 storage
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/home/dariamishina/max_bot
+EnvironmentFile=/etc/max-bot-backup/backup.env
+ExecStart=/usr/local/sbin/max-bot-db-backup
+UMask=0077
+StateDirectory=max-bot-backup
+StateDirectoryMode=0700
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/max-bot-backup
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
