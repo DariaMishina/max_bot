@@ -1,7 +1,7 @@
 [Unit]
-Description=xTunnel for Tarot Sphere App API (port 8083)
-Wants=network-online.target
-After=network-online.target app-api.service
+Description=xTunnel for Tarot Sphere API gateway (port 8084)
+Wants=network-online.target nginx.service
+After=network-online.target nginx.service app-api.service max-bot.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -10,7 +10,7 @@ EnvironmentFile=/home/dariamishina/.local/share/xtunnel/license.env
 Type=simple
 User=dariamishina
 WorkingDirectory=/home/dariamishina/.local/share/xtunnel
-ExecStart=/home/dariamishina/.local/share/xtunnel/xtunnel http 8083 --local 127.0.0.1:8083 --monitor false --output-mode plain --quiet --log-format json --inspect off --backend-timeout 120 --license ${XTUNNEL_LICENSE}
+ExecStart=/home/dariamishina/.local/share/xtunnel/xtunnel http 8084 --local 127.0.0.1:8084 --monitor false --output-mode plain --quiet --log-format json --inspect off --backend-timeout 120 --license ${XTUNNEL_LICENSE}
 Restart=always
 RestartSec=10
 UMask=0077
