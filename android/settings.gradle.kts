@@ -4,6 +4,7 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
         maven(url = "https://nexus-external.vkteam.ru/repository/maven/")
+        maven(url = "https://nexus-external.rustore.ru/repository/maven-rustore-exposed")
     }
 }
 
@@ -17,6 +18,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven(url = "https://nexus-external.vkteam.ru/repository/maven/")
+        maven(url = "https://nexus-external.rustore.ru/repository/maven-rustore-exposed")
     }
 }
 

@@ -77,7 +77,7 @@ class AppContainer(context: Context) {
     val authRepository: AuthRepository = AuthRepositoryImpl(api, refreshApi, prefs)
     val userRepository: UserRepository = UserRepositoryImpl(api, database, prefs, json)
     val readingRepository: ReadingRepository = ReadingRepositoryImpl(api, database, prefs, json)
-    val catalogRepository: CatalogRepository = CatalogRepositoryImpl(api)
+    val catalogRepository: CatalogRepository = CatalogRepositoryImpl(api, prefs)
     val onboardingStore: OnboardingStore = OnboardingStoreImpl(prefs)
     val ensureGuestSession = EnsureGuestSessionUseCase(authRepository)
 }

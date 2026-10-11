@@ -66,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_app_user_balances_unlimited_until
 CREATE TABLE IF NOT EXISTS app_payments (
     id                SERIAL PRIMARY KEY,
     payment_id        VARCHAR(255) NOT NULL,
+    invoice_id        VARCHAR(255) NULL,
     user_id           UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,
     package_id        VARCHAR(50) NOT NULL,
     amount            INTEGER NOT NULL,
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS app_payments (
     created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
     completed_at      TIMESTAMP NULL,
+    revoked_amount    INTEGER NOT NULL DEFAULT 0,
     UNIQUE (provider, payment_id)
 );
 
@@ -88,6 +90,10 @@ CREATE INDEX IF NOT EXISTS idx_app_payments_status
 
 CREATE INDEX IF NOT EXISTS idx_app_payments_created_at
     ON app_payments(created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_payments_rustore_invoice
+    ON app_payments(provider, invoice_id)
+    WHERE invoice_id IS NOT NULL;
 
 
 -- 4. app_subscriptions — безлимит на период
@@ -110,6 +116,16 @@ CREATE INDEX IF NOT EXISTS idx_app_subscriptions_expires_at
 
 CREATE INDEX IF NOT EXISTS idx_app_subscriptions_user_active
     ON app_subscriptions(user_id, is_active);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_subscriptions_provider_payment
+    ON app_subscriptions(provider, payment_id);
+
+CREATE TABLE IF NOT EXISTS app_payment_notifications (
+    provider        VARCHAR(32) NOT NULL,
+    notification_id VARCHAR(255) NOT NULL,
+    received_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (provider, notification_id)
+);
 
 
 -- 5. app_divinations — история гаданий

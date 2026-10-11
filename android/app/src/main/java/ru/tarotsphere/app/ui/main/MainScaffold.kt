@@ -36,6 +36,7 @@ import ru.tarotsphere.app.ui.profile.ProfileScreen
 import ru.tarotsphere.app.ui.profile.ProfileViewModel
 import ru.tarotsphere.app.ui.shop.ShopScreen
 import ru.tarotsphere.app.ui.shop.ShopViewModel
+import ru.tarotsphere.app.ui.shop.RuStorePurchaseLauncher
 import ru.tarotsphere.app.ui.spread.SpreadScreen
 import ru.tarotsphere.app.ui.spread.SpreadViewModel
 import ru.tarotsphere.app.ui.theme.CreamMuted
@@ -99,7 +100,7 @@ fun MainScaffold(container: AppContainer, onSessionEnded: () -> Unit) {
                     HistoryScreen(model, onOpen = { readingId = it }, onNew = onNew)
                 }
                 2 -> {
-                    val model: ShopViewModel = viewModel(factory = ShopViewModel.factory(container.catalogRepository))
+                    val model: ShopViewModel = viewModel(factory = ShopViewModel.factory(container.catalogRepository, RuStorePurchaseLauncher()))
                     ShopScreen(model, exhausted)
                 }
                 else -> {

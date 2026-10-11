@@ -34,6 +34,13 @@ from app.account_auth import (
     send_login_email,
 )
 from app.auth_tokens import issue_token_pair, verify_access_token, verify_refresh_token, revoke_refresh_token
+from app.billing import (
+    BillingError,
+    billing_enabled,
+    catalog_packages,
+    process_rustore_callback,
+    verify_rustore_purchase,
+)
 from app.config import app_config
 from app.database import (
     AppDatabase,
@@ -52,14 +59,6 @@ from handlers.tarot_cards import TAROT_CARDS, get_card_info, get_random_cards
 ROOT = Path(__file__).resolve().parent
 STATIC_IMAGES = ROOT / "static" / "images"
 
-CATALOG_PACKAGES = [
-    {"id": "3_spreads", "name": "3 расклада", "price_rub": 99},
-    {"id": "10_spreads", "name": "10 раскладов", "price_rub": 179},
-    {"id": "20_spreads", "name": "20 раскладов", "price_rub": 289},
-    {"id": "30_spreads", "name": "30 раскладов", "price_rub": 399},
-    {"id": "unlimited", "name": "Безлимит на месяц", "price_rub": 599, "subscription": True},
-]
-
 OPENAPI = {
     "title": "Gadanie AI App API",
     "version": "1.0.0",
@@ -77,6 +76,8 @@ OPENAPI = {
         "POST /v1/divinations/tarot",
         "GET /v1/divinations/{id}",
         "GET /v1/catalog",
+        "POST /v1/billing/rustore/verify",
+        "POST /v1/webhook/rustore",
         "GET /v1/tarot/deck",
         "POST /v1/divinations/{id}/follow-up",
         "POST /v1/me/feedback",
@@ -374,8 +375,8 @@ async def catalog_handler(request: Request) -> Response:
         and request.query.get("include_test_contact", "").lower() == "true"
     )
     return json_response({
-        "packages": CATALOG_PACKAGES,
-        "payment_methods": ["rustore", "yookassa"],
+        "packages": catalog_packages(),
+        "payment_methods": ["rustore"] if billing_enabled() else [],
         "consultations": [
             {"id": "consultation_basic", "name": "Базовая консультация", "price_rub": 500},
             {"id": "consultation_detailed", "name": "Подробная консультация", "price_rub": 1500},
@@ -383,8 +384,37 @@ async def catalog_handler(request: Request) -> Response:
         # Temporary staging path: release clients do not request or receive the
         # contact until paid-consultation entitlement is implemented server-side.
         "tarologist_url": (app_config.app_tarologist_profile_url or None) if include_test_contact else None,
-        "billing_enabled": False,
+        "billing_enabled": billing_enabled(),
+        "rustore_sandbox": app_config.app_rustore_sandbox,
     })
+
+
+async def rustore_verify_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    try:
+        result = await verify_rustore_purchase(
+            request["app_user_id"],
+            product_id=str(body.get("product_id") or ""),
+            invoice_id=str(body["invoice_id"]) if body.get("invoice_id") is not None else None,
+            purchase_id=str(body.get("purchase_id") or ""),
+            sandbox=body.get("sandbox") is True,
+        )
+    except BillingError as error:
+        return error_response(error.code, str(error), status=error.status)
+    return json_response(result)
+
+
+async def rustore_webhook_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    notification_id = str(body.get("id") or "").strip()
+    encrypted_payload = str(body.get("payload") or "").strip()
+    if not notification_id or not encrypted_payload:
+        return error_response("invalid_callback", "Некорректное уведомление RuStore")
+    try:
+        await process_rustore_callback(notification_id, encrypted_payload)
+    except BillingError as error:
+        return error_response(error.code, str(error), status=error.status)
+    return json_response({"ok": True})
 
 
 async def tarot_deck_handler(request: Request) -> Response:
@@ -436,7 +466,7 @@ async def static_card_image_handler(request: Request) -> Response:
 @web.middleware
 async def auth_middleware(request: Request, handler: Callable) -> Response:
     path = request.path
-    if path in ("/health", "/v1/docs") or path.startswith("/static/"):
+    if path in ("/health", "/v1/docs", "/v1/webhook/rustore") or path.startswith("/static/"):
         return await handler(request)
     public_auth_paths = {
         "/v1/auth/guest", "/v1/auth/refresh",
@@ -491,6 +521,8 @@ def create_app() -> web.Application:
     app.router.add_post("/v1/divinations/tarot", tarot_handler)
     app.router.add_get(r"/v1/divinations/{id}", divination_detail_handler)
     app.router.add_get("/v1/catalog", catalog_handler)
+    app.router.add_post("/v1/billing/rustore/verify", rustore_verify_handler)
+    app.router.add_post("/v1/webhook/rustore", rustore_webhook_handler)
     app.router.add_get("/v1/tarot/deck", tarot_deck_handler)
     app.router.add_post("/v1/divinations/{id}/follow-up", follow_up_handler)
     app.router.add_post("/v1/me/feedback", feedback_handler)

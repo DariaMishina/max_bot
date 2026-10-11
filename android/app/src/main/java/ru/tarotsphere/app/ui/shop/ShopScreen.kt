@@ -29,9 +29,9 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
             "Подарочные расклады закончились",
             "Все готовые толкования сохранены в истории. Здесь можно выбрать продолжение.",
         )
-        StatusPanel(
-            "Оплата ещё подключается",
-            "Сейчас можно спокойно посмотреть варианты. Нажатие на способ оплаты не спишет деньги.",
+        if (state.catalog?.billingEnabled == false) StatusPanel(
+            "Оплата готовится к запуску",
+            "Покупки включатся после настройки товаров и ключей в RuStore Консоли.",
         )
         when {
             state.loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary)
@@ -89,13 +89,17 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${selected.priceRub} ₽", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                Text("Выберите удобный способ. Покупки станут доступны позже.")
+                Text("Оплата проходит в защищённой форме RuStore. Баланс пополнится только после проверки покупки сервером.")
                 if (!consultation && "rustore" in state.catalog!!.paymentMethods) Button(onClick = {
-                    selectedId = null; notice = "Оплата в RuStore пока недоступна. Деньги не списаны."
-                }, modifier = Modifier.fillMaxWidth()) { Text("Оплатить в RuStore") }
-                if ("yookassa" in state.catalog!!.paymentMethods) OutlinedButton(onClick = {
-                    selectedId = null; notice = "Оплата картой через ЮKassa пока недоступна. Деньги не списаны."
-                }, modifier = Modifier.fillMaxWidth()) { Text("Оплатить картой (ЮKassa)") }
+                    selectedId = null
+                    viewModel.buy(selected.id)
+                }, enabled = state.purchasingId == null, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (state.purchasingId == selected.id) "Проверяем…" else "Оплатить в RuStore")
+                }
+                if (consultation) Text(
+                    "Оплата консультаций появится позже через ЮKassa.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         },
         confirmButton = { TextButton(onClick = { selectedId = null }) { Text("Закрыть") } },
@@ -103,5 +107,17 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
     notice?.let { message -> AlertDialog(
         onDismissRequest = { notice = null }, title = { Text("Пока недоступно") }, text = { Text(message) },
         confirmButton = { TextButton(onClick = { notice = null }) { Text("Понятно") } },
+    ) }
+    state.paymentMessage?.let { message -> AlertDialog(
+        onDismissRequest = viewModel::consumePaymentMessage,
+        title = { Text("Оплата RuStore") },
+        text = { Text(message) },
+        confirmButton = {
+            if (state.canRetryVerification) TextButton(onClick = viewModel::retryVerification) { Text("Проверить ещё раз") }
+            else TextButton(onClick = viewModel::consumePaymentMessage) { Text("Понятно") }
+        },
+        dismissButton = if (state.canRetryVerification) {
+            { TextButton(onClick = viewModel::consumePaymentMessage) { Text("Позже") } }
+        } else null,
     ) }
 }

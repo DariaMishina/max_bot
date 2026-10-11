@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.util.UUID
+import ru.tarotsphere.app.domain.model.PendingRustorePurchase
 
 class SecurePrefs(context: Context) {
     private val appContext = context.applicationContext
@@ -20,6 +21,40 @@ class SecurePrefs(context: Context) {
     fun getRefreshToken(): String? = securePrefs.getString(KEY_REFRESH, null)
     fun getUserId(): String? = securePrefs.getString(KEY_USER_ID, null)
     fun isConfirmedAccount(): Boolean = securePrefs.getBoolean(KEY_CONFIRMED, false)
+    fun pendingRustore(): PendingRustorePurchase? {
+        val userId = securePrefs.getString(KEY_PENDING_USER, null) ?: return null
+        if (userId != getUserId()) return null
+        val productId = securePrefs.getString(KEY_PENDING_PRODUCT, null) ?: return null
+        val purchaseId = securePrefs.getString(KEY_PENDING_PURCHASE, null) ?: return null
+        return PendingRustorePurchase(
+            userId = userId,
+            productId = productId,
+            purchaseId = purchaseId,
+            invoiceId = securePrefs.getString(KEY_PENDING_INVOICE, null),
+            sandbox = securePrefs.getBoolean(KEY_PENDING_SANDBOX, true),
+        )
+    }
+
+    fun savePendingRustore(purchase: PendingRustorePurchase) {
+        securePrefs.edit()
+            .putString(KEY_PENDING_USER, purchase.userId)
+            .putString(KEY_PENDING_PRODUCT, purchase.productId)
+            .putString(KEY_PENDING_PURCHASE, purchase.purchaseId)
+            .putString(KEY_PENDING_INVOICE, purchase.invoiceId)
+            .putBoolean(KEY_PENDING_SANDBOX, purchase.sandbox)
+            .apply()
+    }
+
+    fun clearPendingRustore(purchaseId: String) {
+        if (securePrefs.getString(KEY_PENDING_PURCHASE, null) != purchaseId) return
+        securePrefs.edit()
+            .remove(KEY_PENDING_PRODUCT)
+            .remove(KEY_PENDING_USER)
+            .remove(KEY_PENDING_PURCHASE)
+            .remove(KEY_PENDING_INVOICE)
+            .remove(KEY_PENDING_SANDBOX)
+            .apply()
+    }
 
     @Synchronized
     fun saveTokens(access: String, refresh: String, userId: String) {
@@ -110,5 +145,10 @@ class SecurePrefs(context: Context) {
         const val KEY_CONFIRMED = "confirmed_account"
         const val KEY_INSTALL = "install_id"
         const val KEY_ONBOARDING = "onboarding_done"
+        const val KEY_PENDING_PRODUCT = "pending_rustore_product"
+        const val KEY_PENDING_USER = "pending_rustore_user"
+        const val KEY_PENDING_PURCHASE = "pending_rustore_purchase"
+        const val KEY_PENDING_INVOICE = "pending_rustore_invoice"
+        const val KEY_PENDING_SANDBOX = "pending_rustore_sandbox"
     }
 }

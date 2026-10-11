@@ -73,6 +73,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(api.app_config, "app_allow_unpaid_test_contact", False):
             disabled_catalog = payload(await api.catalog_handler(disabled_request))
         self.assertIsNone(disabled_catalog["tarologist_url"])
+        self.assertNotIn("yookassa", disabled_catalog["payment_methods"])
 
     async def test_non_object_json_and_invalid_selection(self):
         response = await api.tarot_handler(request(["invalid"]))

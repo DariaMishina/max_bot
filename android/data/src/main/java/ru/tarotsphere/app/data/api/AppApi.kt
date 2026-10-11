@@ -45,6 +45,9 @@ interface AppApi {
 
     @GET("v1/catalog")
     suspend fun catalog(@Query("include_test_contact") includeTestContact: Boolean = false): CatalogDto
+
+    @POST("v1/billing/rustore/verify")
+    suspend fun verifyRustore(@Body body: RustoreVerifyRequestDto): PaymentResultDto
     @GET("v1/tarot/deck")
     suspend fun deck(@Query("scope") scope: String? = null): DeckDto
 

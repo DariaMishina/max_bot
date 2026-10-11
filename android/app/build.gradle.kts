@@ -5,6 +5,8 @@ plugins {
     id("vkid.manifest.placeholders")
 }
 
+val rustoreConsoleAppId = providers.gradleProperty("RUSTORE_CONSOLE_APP_ID").orElse("2063751721").get()
+
 android {
     namespace = "ru.tarotsphere.app"
     compileSdk = 35
@@ -13,8 +15,10 @@ android {
         applicationId = "ru.tarotsphere.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.7.0"
+        versionCode = 6
+        versionName = "0.8.0"
+        manifestPlaceholders["rustoreConsoleAppId"] = rustoreConsoleAppId
+        buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", (rustoreConsoleAppId != "0").toString())
     }
 
     buildTypes {
@@ -64,5 +68,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.vkid)
+    implementation(platform(libs.rustore.bom))
+    implementation(libs.rustore.pay)
     debugImplementation(libs.androidx.ui.tooling)
 }

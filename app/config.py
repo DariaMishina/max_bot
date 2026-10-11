@@ -23,6 +23,12 @@ class AppSettings(BaseSettings):
     app_email_from: str = ""
     app_email_smtp_ssl: bool = True
     app_vk_client_id: str = "54803401"
+    app_rustore_console_app_id: int = 0
+    app_rustore_key_id: str = ""
+    app_rustore_private_key: Optional[SecretStr] = None
+    app_rustore_callback_key: Optional[SecretStr] = None
+    app_rustore_api_base_url: str = "https://public-api-m.rustore.ru"
+    app_rustore_sandbox: bool = True
     app_tarologist_profile_url: str = Field(
         default="",
         validation_alias=AliasChoices(

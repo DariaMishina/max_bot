@@ -129,12 +129,14 @@ data class HistoryResponseDto(
 @Serializable
 data class CatalogPackageDto(
     val id: String,
+    @SerialName("rustore_product_id") val rustoreProductId: String = id,
     val name: String,
     @SerialName("price_rub") val priceRub: Int,
     val subscription: Boolean = false,
 ) {
     fun toDomain() = CatalogPackage(
         id = id,
+        rustoreProductId = rustoreProductId,
         name = name,
         priceRub = priceRub,
         isSubscription = subscription,
@@ -147,13 +149,33 @@ data class CatalogDto(
     @SerialName("payment_methods") val paymentMethods: List<String> = emptyList(),
     val consultations: List<CatalogPackageDto> = emptyList(),
     @SerialName("tarologist_url") val tarologistUrl: String? = null,
+    @SerialName("billing_enabled") val billingEnabled: Boolean = false,
+    @SerialName("rustore_sandbox") val rustoreSandbox: Boolean = true,
 ) {
     fun toDomain() = Catalog(
         packages = packages.map { it.toDomain() },
         paymentMethods = paymentMethods,
         consultations = consultations.map { it.toDomain() },
         tarologistUrl = tarologistUrl,
+        billingEnabled = billingEnabled,
+        rustoreSandbox = rustoreSandbox,
     )
+}
+
+@Serializable
+data class RustoreVerifyRequestDto(
+    @SerialName("product_id") val productId: String,
+    @SerialName("purchase_id") val purchaseId: String,
+    @SerialName("invoice_id") val invoiceId: String? = null,
+    val sandbox: Boolean,
+)
+
+@Serializable
+data class PaymentResultDto(
+    val granted: Boolean = false,
+    val balance: BalanceDto,
+) {
+    fun toDomain() = ru.tarotsphere.app.domain.model.PaymentResult(granted, balance.toDomain())
 }
 
 @Serializable
