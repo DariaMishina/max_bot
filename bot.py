@@ -19,6 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from handlers import common, feedback, divination, pay, daily_card
 from main.botdef import bot
+from main.config_reader import config
 from main.database import Database
 
 
@@ -61,17 +62,18 @@ async def main():
         except Exception as e:
             logging.error(f"Error in daily card job: {e}", exc_info=True)
 
-    scheduler.add_job(
-        send_daily_card_job,
-        trigger=CronTrigger(
-            hour=DAILY_CARD_HOUR,
-            minute=DAILY_CARD_MINUTE,
-            timezone='Europe/Moscow'
-        ),
-        id='daily_card_morning',
-        name='Отправка карты дня утром',
-        replace_existing=True
-    )
+    if config.enable_daily_tip:
+        scheduler.add_job(
+            send_daily_card_job,
+            trigger=CronTrigger(
+                hour=DAILY_CARD_HOUR,
+                minute=DAILY_CARD_MINUTE,
+                timezone='Europe/Moscow'
+            ),
+            id='daily_card_morning',
+            name='Отправка карты дня утром',
+            replace_existing=True
+        )
 
     async def reconcile_pending_payments_job():
         """Сверка pending-платежей с ЮKassa: если оплачен — зачисляем баланс."""
@@ -204,7 +206,13 @@ async def main():
     )
 
     scheduler.start()
-    logging.info(f"APScheduler started - daily card will be sent at {DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)")
+    if config.enable_daily_tip:
+        logging.info(
+            f"APScheduler started - daily card will be sent at "
+            f"{DAILY_CARD_HOUR:02d}:{DAILY_CARD_MINUTE:02d} (Moscow time)"
+        )
+    else:
+        logging.warning("Daily card disabled by ENABLE_DAILY_TIP=false")
     logging.info("APScheduler: inactivity nudges every 2 minutes (paid + free segments)")
     logging.info(
         f"APScheduler: expired access reminders daily {BROADCAST_CRON_HOURS} MSK "
@@ -223,7 +231,6 @@ async def main():
     # Запускаем webhook сервер для ЮKassa (если настроены ключи)
     webhook_runner = None
     try:
-        from main.config_reader import config
         from webhook_server import start_webhook_server
         if config.yookassa_shop_id and config.yookassa_secret_key:
             port = int(os.environ.get('PORT', 8081))

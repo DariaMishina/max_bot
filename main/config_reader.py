@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     db_table_suffix: str = ""
     # LLM-персонализация автоматических nudge (fallback всегда статичный)
     personalized_broadcasts: bool = False
+    # Ежедневная массовая рассылка карты дня в 09:25 MSK
+    enable_daily_tip: bool = True
     
     # Токен бота Max (получить у @MasterBot)
     bot_token: Optional[SecretStr] = None

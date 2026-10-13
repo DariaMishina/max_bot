@@ -117,6 +117,7 @@ python bot.py
 | `METRIKA_MP_TOKEN` | Нет | Токен для Measurement Protocol |
 | `TEST_MODE` | Нет | `true` — тестовый режим (суффикс `_test` для таблиц) |
 | `BOT_TOKEN_TEST` | Нет | Токен тестового бота (используется при `TEST_MODE=true`) |
+| `ENABLE_DAILY_TIP` | Нет | `false` отключает массовую рассылку карты дня в 09:25; по умолчанию `true` |
 
 \* Без ЮKassa бот работает, но оплата недоступна.
 
