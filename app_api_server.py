@@ -400,7 +400,9 @@ async def rustore_verify_handler(request: Request) -> Response:
             sandbox=body.get("sandbox") is True,
         )
     except BillingError as error:
+        logging.warning("RuStore verify rejected: code=%s status=%s", error.code, error.status)
         return error_response(error.code, str(error), status=error.status)
+    logging.info("RuStore verify completed: granted=%s", result.get("granted"))
     return json_response(result)
 
 
@@ -413,7 +415,9 @@ async def rustore_webhook_handler(request: Request) -> Response:
     try:
         await process_rustore_callback(notification_id, encrypted_payload)
     except BillingError as error:
+        logging.warning("RuStore callback rejected: code=%s status=%s", error.code, error.status)
         return error_response(error.code, str(error), status=error.status)
+    logging.info("RuStore callback accepted")
     return json_response({"ok": True})
 
 
@@ -533,6 +537,12 @@ def create_app() -> web.Application:
 
 async def start_server() -> None:
     port = app_config.app_api_port
+    logging.info(
+        "App API configuration: environment=%s database=%s sandbox=%s",
+        app_config.app_environment,
+        app_config.app_db_name,
+        app_config.app_rustore_sandbox,
+    )
     await AppDatabase.get_pool()
     app = create_app()
     runner = web.AppRunner(app)

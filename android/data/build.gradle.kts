@@ -7,8 +7,10 @@ plugins {
     alias(libs.plugins.kotlin.kapt)
 }
 
+val stagingApiBaseUrl = providers.gradleProperty("APP_STAGING_API_BASE_URL")
+    .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/")
 val apiBaseUrl = providers.gradleProperty("APP_API_BASE_URL")
-    .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/").get().trimEnd('/') + "/"
+    .orElse(stagingApiBaseUrl).get().trimEnd('/') + "/"
 val apiUri = URI(apiBaseUrl)
 require(apiUri.scheme == "https" && !apiUri.host.isNullOrBlank() && apiUri.rawUserInfo == null &&
     apiUri.rawQuery == null && apiUri.rawFragment == null && apiUri.path == "/") {

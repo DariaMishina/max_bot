@@ -27,7 +27,17 @@
 bash scripts/check_android.sh
 ```
 
-По умолчанию используется постоянный адрес xTunnel `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/`, подключённый 19 сентября 2026 года. Другой адрес можно передать через `-PAPP_API_BASE_URL=https://ваш-адрес/`; он должен использовать HTTPS и не содержать `/v1`.
+Debug использует staging-адрес xTunnel `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/` и тот же package `ru.tarotsphere.app`. Другой staging-адрес задаётся через `-PAPP_STAGING_API_BASE_URL=https://staging.example/`. Настройки приложения VK ID менять не нужно. Покупки проверяются в сборке, установленной через тестовый канал RuStore, а не в локальном debug APK.
+
+Release нельзя собрать без явного канала и адреса. Для alpha используется staging:
+
+```bash
+./gradlew :app:bundleRelease \
+  -PAPP_RELEASE_CHANNEL=alpha \
+  -PAPP_API_BASE_URL=https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/
+```
+
+Для production задаются `-PAPP_RELEASE_CHANNEL=production` и отдельный HTTPS URL, отличный от staging. URL не должен содержать `/v1`. Схема контуров описана в [руководстве staging/production](../docs/ANDROID_ENVIRONMENTS.md).
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. Установить через Run в Android Studio на подключённый телефон.
 

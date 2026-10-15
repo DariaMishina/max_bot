@@ -1,0 +1,21 @@
+[Unit]
+Description=Tarot Sphere App API (%i)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=dariamishina
+WorkingDirectory=/home/dariamishina/max_bot
+Environment=APP_CONFIG_FILE=/etc/tarot-sphere/app-api-%i.env
+EnvironmentFile=/etc/tarot-sphere/app-api-%i.env
+ExecStartPre=/home/dariamishina/max_bot/venv/bin/python scripts/check_app_environment.py --env-file /etc/tarot-sphere/app-api-%i.env --expected %i
+ExecStart=/home/dariamishina/max_bot/venv/bin/python app_api_server.py
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

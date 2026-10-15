@@ -144,7 +144,8 @@ upload_and_verify() {
 }
 
 main() {
-  local project_root max_env psy_env girl_env work_root timestamp date_path
+  local project_root max_env psy_env girl_env app_production_env
+  local work_root timestamp date_path
   local manifest dump_file encrypted_file database_name object_key
 
   require_command pg_dump pg_restore age aws sha256sum stat awk curl
@@ -158,6 +159,7 @@ main() {
   max_env="${BACKUP_MAX_ENV_FILE:-$project_root/.env}"
   psy_env="${BACKUP_PSY_ENV_FILE:-$DEFAULT_PSY_ENV}"
   girl_env="${BACKUP_GIRL_ENV_FILE:-$DEFAULT_GIRL_ENV}"
+  app_production_env="${BACKUP_APP_PRODUCTION_ENV_FILE:-}"
   work_root="${BACKUP_WORK_DIR:-/var/lib/max-bot-backup}"
 
   mkdir -p "$work_root"
@@ -170,6 +172,9 @@ main() {
 
   dump_database "$max_env" DB max_bot_db
   dump_database "$max_env" APP_DB app_bot_db
+  if [[ -n "$app_production_env" ]]; then
+    dump_database "$app_production_env" APP_DB app_bot_prod_db
+  fi
   dump_database "$psy_env" DB psy_bot_db
   dump_database "$girl_env" DB girl_bot_db
 

@@ -91,6 +91,72 @@ class RuStoreBillingTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(billing.BillingError):
                 billing.decrypt_callback("not-base64")
 
+    async def test_refund_callback_revokes_available_spreads_once(self):
+        payment = {
+            "id": 17,
+            "user_id": USER,
+            "package_id": "3_spreads",
+            "amount": 3,
+            "status": "completed",
+        }
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(side_effect=[{"notification_id": "notice-1"}, payment])
+        conn.fetchval = AsyncMock(return_value=2)
+        conn.execute = AsyncMock()
+        conn.transaction.return_value.__aenter__ = AsyncMock()
+        conn.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+        event = {
+            "app_id": 123,
+            "notification_type": "PAYMENT_STATUS_CHANGED_SANDBOX",
+            "data": json.dumps({"purchase_id": "purchase-1", "status_new": "REFUNDED"}),
+        }
+
+        with patch.object(billing.app_config, "app_rustore_console_app_id", 123), \
+                patch.object(billing, "decrypt_callback", return_value=event), \
+                patch.object(billing.AppDatabase, "fetch_one", AsyncMock(return_value=payment)), \
+                patch.object(billing.AppDatabase, "get_pool", AsyncMock(return_value=pool)):
+            await billing.process_rustore_callback("notice-1", "encrypted")
+
+        statements = [call.args[0] for call in conn.execute.await_args_list]
+        self.assertTrue(any("paid_divinations_remaining - $2" in sql for sql in statements))
+        self.assertTrue(any("revoked_amount = $2" in sql for sql in statements))
+        self.assertTrue(any("status = 'revoked'" in sql for sql in statements))
+        debit_call = next(call for call in conn.execute.await_args_list if "paid_divinations_remaining - $2" in call.args[0])
+        self.assertEqual(debit_call.args[2], 2)
+
+    async def test_duplicate_callback_is_acknowledged_without_second_change(self):
+        payment = {
+            "id": 17,
+            "user_id": USER,
+            "package_id": "3_spreads",
+            "amount": 3,
+            "status": "revoked",
+        }
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        conn.execute = AsyncMock()
+        conn.transaction.return_value.__aenter__ = AsyncMock()
+        conn.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+        event = {
+            "app_id": 123,
+            "notification_type": "PAYMENT_STATUS_CHANGED_SANDBOX",
+            "data": json.dumps({"purchase_id": "purchase-1", "status_new": "REFUNDED"}),
+        }
+
+        with patch.object(billing.app_config, "app_rustore_console_app_id", 123), \
+                patch.object(billing, "decrypt_callback", return_value=event), \
+                patch.object(billing.AppDatabase, "fetch_one", AsyncMock(return_value=payment)), \
+                patch.object(billing.AppDatabase, "get_pool", AsyncMock(return_value=pool)):
+            await billing.process_rustore_callback("notice-1", "encrypted")
+
+        conn.execute.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

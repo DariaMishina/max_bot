@@ -7,12 +7,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKUP_SCRIPT = REPO_ROOT / "scripts" / "backup_databases.sh"
 RESTORE_SCRIPT = REPO_ROOT / "scripts" / "restore_database_backup.sh"
+BILLING_HEALTH_SCRIPT = REPO_ROOT / "scripts" / "billing_health_report.sh"
+ANDROID_RELEASE_SCRIPT = REPO_ROOT / "scripts" / "check_android_release.sh"
 
 
 class DatabaseBackupScriptsTest(unittest.TestCase):
     def test_shell_scripts_have_valid_bash_syntax(self) -> None:
         subprocess.run(
-            ["bash", "-n", str(BACKUP_SCRIPT), str(RESTORE_SCRIPT)],
+            [
+                "bash", "-n",
+                str(BACKUP_SCRIPT),
+                str(RESTORE_SCRIPT),
+                str(BILLING_HEALTH_SCRIPT),
+                str(ANDROID_RELEASE_SCRIPT),
+            ],
             check=True,
             cwd=REPO_ROOT,
         )
@@ -37,6 +45,24 @@ class DatabaseBackupScriptsTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Refusing production target max_bot_db", result.stderr)
+
+    def test_restore_refuses_new_app_environment_databases_by_default(self) -> None:
+        for database in ("app_bot_prod_db",):
+            with self.subTest(database=database), tempfile.NamedTemporaryFile() as archive:
+                result = subprocess.run(
+                    [
+                        str(RESTORE_SCRIPT),
+                        "--archive", archive.name,
+                        "--target-db", database,
+                        "--confirm", database,
+                    ],
+                    check=False,
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"Refusing production target {database}", result.stderr)
 
     def test_timer_is_persistent_and_uses_moscow_time(self) -> None:
         timer = (REPO_ROOT / "deploy" / "postgres-backup.timer").read_text()

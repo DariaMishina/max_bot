@@ -60,7 +60,7 @@ done
 [[ -n "$db_user" ]] || fail "--user is required when USER is empty"
 
 case "$target_db" in
-  max_bot_db|app_bot_db|psy_bot_db|girl_bot_db)
+  max_bot_db|app_bot_db|app_bot_prod_db|psy_bot_db|girl_bot_db)
     [[ "${BACKUP_ALLOW_PRODUCTION_RESTORE:-false}" == "true" ]] \
       || fail "Refusing production target $target_db"
     ;;
