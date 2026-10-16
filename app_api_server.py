@@ -37,6 +37,7 @@ from app.account_auth import (
     send_login_email,
 )
 from app.auth_tokens import issue_token_pair, verify_access_token, verify_refresh_token, revoke_refresh_token
+from app.password_auth import authenticate_password
 from app.billing import (
     BillingError,
     billing_enabled,
@@ -68,6 +69,8 @@ OPENAPI = {
     "basePath": "/v1",
     "endpoints": [
         "POST /v1/auth/guest",
+        "POST /v1/auth/password/register",
+        "POST /v1/auth/password/login",
         "POST /v1/auth/email/start",
         "POST /v1/auth/email/confirm",
         "POST /v1/auth/vk",
@@ -216,6 +219,22 @@ def _optional_user_id(request: Request) -> Optional[uuid.UUID]:
     if not auth.lower().startswith("bearer "):
         return None
     return verify_access_token(auth[7:].strip())
+
+
+async def password_auth_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    try:
+        result = await authenticate_password(
+            body.get("login"), body.get("password"),
+            registering=request.path.endswith("/register"),
+            ip=request.remote, device_signal=body.get("device_signal"),
+        )
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
+    tokens = await issue_token_pair(result["user_id"])
+    balance = await get_user_balance(result["user_id"])
+    return json_response({**tokens, "balance": _balance_payload(balance),
+                          "trial_granted": result["trial_granted"]})
 
 
 async def email_start_handler(request: Request) -> Response:
@@ -518,6 +537,7 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     public_auth_paths = {
         "/v1/auth/guest", "/v1/auth/refresh",
         "/v1/auth/email/start", "/v1/auth/email/confirm", "/v1/auth/vk",
+        "/v1/auth/password/register", "/v1/auth/password/login",
         "/v1/telemetry/app-open",
     }
     if path in public_auth_paths and request.method == "POST":
@@ -559,6 +579,8 @@ def create_app() -> web.Application:
     app.router.add_get("/v1/docs", docs_handler)
     app.router.add_post("/v1/auth/guest", guest_auth_handler)
     app.router.add_post("/v1/auth/email/start", email_start_handler)
+    app.router.add_post("/v1/auth/password/register", password_auth_handler)
+    app.router.add_post("/v1/auth/password/login", password_auth_handler)
     app.router.add_post("/v1/auth/email/confirm", email_confirm_handler)
     app.router.add_post("/v1/auth/vk", vk_auth_handler)
     app.router.add_post("/v1/auth/refresh", refresh_auth_handler)

@@ -16,6 +16,12 @@ import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.api.dto.TokenPairDto
 
 interface AppApi {
+    @POST("v1/auth/password/register")
+    suspend fun passwordRegister(@Body body: PasswordAuthRequestDto): TokenPairDto
+
+    @POST("v1/auth/password/login")
+    suspend fun passwordLogin(@Body body: PasswordAuthRequestDto): TokenPairDto
+
     @POST("v1/telemetry/app-open")
     suspend fun appOpen(@Body body: AppOpenRequestDto): AppOpenResponseDto
 

@@ -3,6 +3,7 @@ package ru.tarotsphere.app.data.repository
 import retrofit2.HttpException
 import ru.tarotsphere.app.data.api.AppApi
 import ru.tarotsphere.app.data.api.dto.EmailConfirmRequestDto
+import ru.tarotsphere.app.data.api.dto.PasswordAuthRequestDto
 import ru.tarotsphere.app.data.api.dto.EmailStartRequestDto
 import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.api.dto.VkAuthRequestDto
@@ -41,6 +42,14 @@ class AuthRepositoryImpl(
     override suspend fun requestEmailCode(email: String) = apiCall {
         publicApi.emailStart(EmailStartRequestDto(email.trim(), prefs.deviceSignal()))
         Unit
+    }
+
+    override suspend fun authenticatePassword(login: String, password: String, registering: Boolean): TokenPair = apiCall {
+        val body = PasswordAuthRequestDto(login.trim(), password, prefs.deviceSignal())
+        val tokens = (if (registering) publicApi.passwordRegister(body) else publicApi.passwordLogin(body)).toDomain()
+        prefs.saveTokens(tokens.accessToken, tokens.refreshToken, tokens.userId)
+        prefs.markConfirmed()
+        tokens
     }
 
     override suspend fun confirmEmail(email: String, code: String): TokenPair = apiCall {

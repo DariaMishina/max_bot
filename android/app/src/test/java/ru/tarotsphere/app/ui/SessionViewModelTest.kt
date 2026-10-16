@@ -48,6 +48,37 @@ class SessionViewModelTest {
         assertFalse(model.state.value.needsAuth)
     }
 
+    @Test fun passwordRegistrationRejectsMismatchThenClearsSecretsOnSuccess() = runTest(dispatcher) {
+        val auth = FakeAuth(confirmed = false)
+        val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
+        runCurrent()
+        model.registering(true)
+        model.login("Reader_1")
+        model.password("long password 123")
+        model.passwordConfirmation("different password")
+        model.authenticatePassword()
+        runCurrent()
+        assertFalse(model.state.value.ready)
+        assertTrue(model.state.value.error!!.contains("не совпадают"))
+        model.passwordConfirmation("long password 123")
+        model.authenticatePassword()
+        runCurrent()
+        assertTrue(model.state.value.ready)
+        assertTrue(model.state.value.password.isEmpty())
+        assertTrue(model.state.value.passwordConfirmation.isEmpty())
+    }
+
+    @Test fun passwordLoginDoesNotRequireEmailOrConfirmation() = runTest(dispatcher) {
+        val auth = FakeAuth(confirmed = false)
+        val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
+        runCurrent()
+        model.login("Reader_1")
+        model.password("long password 123")
+        model.authenticatePassword()
+        runCurrent()
+        assertTrue(model.state.value.ready)
+    }
+
     @Test fun vkConfirmationOpensMainApp() = runTest(dispatcher) {
         val auth = FakeAuth(confirmed = false)
         val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
@@ -75,4 +106,6 @@ private class FakeAuth(private val confirmed: Boolean) : AuthRepository {
     override suspend fun confirmVk(accessToken: String) =
         TokenPair("access", "refresh", "user", 3600, null)
     override suspend fun refreshSession() = TokenPair("access", "refresh", "user", 3600, null)
+    override suspend fun authenticatePassword(login: String, password: String, registering: Boolean) =
+        TokenPair("access", "refresh", "user", 3600, null)
 }

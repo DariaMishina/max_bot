@@ -58,6 +58,12 @@ fun TarotNavHost(container: AppContainer) {
         composable(Dest.Auth) {
             AuthScreen(
                 state = state,
+                onPasswordMode = session::passwordMode,
+                onRegistering = session::registering,
+                onLoginChange = session::login,
+                onPasswordChange = session::password,
+                onPasswordConfirmationChange = session::passwordConfirmation,
+                onPasswordSubmit = session::authenticatePassword,
                 onEmailChange = session::email,
                 onCodeChange = session::code,
                 onRequestCode = session::requestEmailCode,

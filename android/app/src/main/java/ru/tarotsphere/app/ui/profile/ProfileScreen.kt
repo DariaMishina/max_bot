@@ -57,6 +57,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
             val methods = profile.identities.joinToString { identity ->
                 when (identity.provider) {
                     "email" -> identity.displayValue
+                    "password" -> "Логин: ${identity.displayValue}"
                     "vk" -> "VK ID"
                     else -> identity.provider
                 }

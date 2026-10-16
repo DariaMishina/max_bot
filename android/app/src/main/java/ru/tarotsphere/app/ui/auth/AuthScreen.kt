@@ -12,6 +12,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Tab
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -42,6 +49,12 @@ fun AuthScreen(
     onVkStart: () -> Unit,
     onVkToken: (String) -> Unit,
     onVkFailure: (String?) -> Unit,
+    onPasswordMode: (Boolean) -> Unit = {},
+    onRegistering: (Boolean) -> Unit = {},
+    onLoginChange: (String) -> Unit = {},
+    onPasswordChange: (String) -> Unit = {},
+    onPasswordConfirmationChange: (String) -> Unit = {},
+    onPasswordSubmit: () -> Unit = {},
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val vkCallback = remember(onVkToken, onVkFailure) {
@@ -61,15 +74,42 @@ fun AuthScreen(
     SphereScreen {
         Spacer(Modifier.height(16.dp))
         SphereHeader(
-            title = if (state.codeSent) "Введите код из письма" else "Войти или создать аккаунт",
-            subtitle = if (state.codeSent) {
+            title = if (state.passwordMode) "Вход по логину и паролю" else if (state.codeSent) "Введите код из письма" else "Войти или создать аккаунт",
+            subtitle = if (!state.passwordMode && state.codeSent) {
                 "Мы отправили шестизначный код на ${state.email}. Он действует 10 минут."
             } else {
                 "Аккаунт сохранит баланс и историю при переустановке или смене телефона."
             },
             eyebrow = "СФЕРА ТАРО",
         )
-        if (!state.codeSent) {
+        if (state.passwordMode) {
+            Row(Modifier.fillMaxWidth()) {
+                Tab(selected = !state.registering, enabled = !state.submitting,
+                    onClick = { onRegistering(false) }, text = { Text("Вход") }, modifier = Modifier.weight(1f))
+                Tab(selected = state.registering, enabled = !state.submitting,
+                    onClick = { onRegistering(true) }, text = { Text("Регистрация") }, modifier = Modifier.weight(1f))
+            }
+            if (state.registering) {
+                StatusPanel("Сохраните логин и пароль",
+                    "Восстановление забытого пароля пока недоступно. Для входа через почту или VK ID выберите другой способ входа.",
+                    StatusTone.Info)
+                Text("Это отдельный аккаунт. Если у вас уже есть аккаунт через почту или VK ID, войдите прежним способом.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedTextField(value = state.login, onValueChange = onLoginChange,
+                label = { Text("Логин") }, supportingText = { Text("6–32 латинские буквы, цифры или _; регистр не важен") },
+                singleLine = true, enabled = !state.submitting, modifier = Modifier.fillMaxWidth())
+            PasswordField(state.password, onPasswordChange, "Пароль", !state.submitting)
+            if (state.registering) {
+                Text("От 12 до 128 символов", style = MaterialTheme.typography.bodySmall)
+                PasswordField(state.passwordConfirmation, onPasswordConfirmationChange, "Подтверждение пароля", !state.submitting)
+            }
+            PrimaryAction(if (state.registering) "Зарегистрироваться" else "Войти", onPasswordSubmit,
+                enabled = !state.submitting)
+            TextButton(onClick = { onPasswordMode(false) }, enabled = !state.submitting) {
+                Text("Другие способы: почта или VK ID")
+            }
+        } else if (!state.codeSent) {
             SecondaryAction(
                 text = "Продолжить через VK ID",
                 onClick = {
@@ -94,6 +134,7 @@ fun AuthScreen(
                 )
                 PrimaryAction("Получить код", onRequestCode, enabled = !state.submitting)
             }
+            TextButton(onClick = { onPasswordMode(true) }, enabled = !state.submitting) { Text("Войти по логину и паролю") }
         } else {
             OutlinedTextField(
                 value = state.code,
@@ -114,11 +155,25 @@ fun AuthScreen(
         if (state.submitting) StatusPanel("Проверяем…", tone = StatusTone.Progress)
         state.error?.let { StatusPanel("Не получилось", it, StatusTone.Error) }
         Text(
-            "Продолжая, вы соглашаетесь с обработкой данных для создания аккаунта. Пароль создавать не нужно.",
+            "Продолжая, вы соглашаетесь с обработкой данных для создания аккаунта.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun PasswordField(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
+        singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            TextButton(onClick = { visible = !visible }, enabled = enabled) {
+                Text(if (visible) "Скрыть" else "Показать")
+            }
+        })
 }
 
 @Preview(widthDp = 360, heightDp = 800, showBackground = true)

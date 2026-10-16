@@ -9,5 +9,6 @@ interface AuthRepository {
     suspend fun requestEmailCode(email: String)
     suspend fun confirmEmail(email: String, code: String): TokenPair
     suspend fun confirmVk(accessToken: String): TokenPair
+    suspend fun authenticatePassword(login: String, password: String, registering: Boolean): TokenPair
     suspend fun refreshSession(): TokenPair
 }

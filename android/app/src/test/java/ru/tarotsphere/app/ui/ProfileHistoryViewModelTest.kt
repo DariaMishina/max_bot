@@ -73,6 +73,8 @@ private class FakeProfileAuth : AuthRepository {
     override suspend fun confirmVk(accessToken: String) =
         TokenPair("access", "refresh", "user", 3600, null)
     override suspend fun refreshSession() = TokenPair("access", "refresh", "user", 3600, null)
+    override suspend fun authenticatePassword(login: String, password: String, registering: Boolean) =
+        TokenPair("access", "refresh", "user", 3600, null)
 }
 private class FakeUser : UserRepository {
     val history = MutableStateFlow(listOf(HistoryItem(1, "Таро", "Q", "", true)))

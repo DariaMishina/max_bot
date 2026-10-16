@@ -23,6 +23,11 @@ data class SessionUiState(
     val codeSent: Boolean = false,
     val submitting: Boolean = false,
     val error: String? = null,
+    val passwordMode: Boolean = true,
+    val registering: Boolean = false,
+    val login: String = "",
+    val password: String = "",
+    val passwordConfirmation: String = "",
 )
 
 class SessionViewModel(
@@ -61,6 +66,56 @@ class SessionViewModel(
     fun email(value: String) {
         if (!_state.value.submitting && !_state.value.codeSent) {
             _state.value = _state.value.copy(email = value.take(320), error = null)
+        }
+    }
+
+    fun passwordMode(enabled: Boolean) {
+        if (!_state.value.submitting) _state.value = _state.value.copy(
+            passwordMode = enabled, password = "", passwordConfirmation = "", code = "", codeSent = false, error = null,
+        )
+    }
+
+    fun registering(enabled: Boolean) {
+        if (!_state.value.submitting) _state.value = _state.value.copy(
+            registering = enabled, password = "", passwordConfirmation = "", error = null,
+        )
+    }
+
+    fun login(value: String) {
+        if (!_state.value.submitting) _state.value = _state.value.copy(login = value.take(32), error = null)
+    }
+
+    fun password(value: String) {
+        if (!_state.value.submitting) _state.value = _state.value.copy(password = value.take(128), error = null)
+    }
+
+    fun passwordConfirmation(value: String) {
+        if (!_state.value.submitting) _state.value = _state.value.copy(passwordConfirmation = value.take(128), error = null)
+    }
+
+    fun authenticatePassword() {
+        val current = _state.value
+        if (current.submitting) return
+        val error = when {
+            !current.login.trim().matches(Regex("[a-zA-Z0-9_]{6,32}")) -> "Логин: 6–32 латинские буквы, цифры или _"
+            current.password.length !in 12..128 -> "Пароль должен содержать от 12 до 128 символов"
+            current.registering && current.password != current.passwordConfirmation -> "Пароли не совпадают"
+            else -> null
+        }
+        if (error != null) {
+            _state.value = current.copy(error = error)
+            return
+        }
+        _state.value = current.copy(submitting = true, error = null)
+        viewModelScope.launch {
+            try {
+                authRepository.authenticatePassword(current.login, current.password, current.registering)
+                _state.value = SessionUiState(loading = false, ready = true)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { _state.value = _state.value.copy(error = e.userMessage())
+            } finally {
+                if (!_state.value.ready) _state.value = _state.value.copy(submitting = false, password = "", passwordConfirmation = "")
+            }
         }
     }
 

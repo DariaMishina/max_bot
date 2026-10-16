@@ -37,6 +37,13 @@ data class EmailStartRequestDto(
 )
 
 @Serializable
+data class PasswordAuthRequestDto(
+    val login: String,
+    val password: String,
+    @SerialName("device_signal") val deviceSignal: String,
+)
+
+@Serializable
 data class EmailConfirmRequestDto(
     val email: String,
     val code: String,

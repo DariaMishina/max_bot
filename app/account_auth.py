@@ -351,16 +351,14 @@ async def confirm_email_challenge(
                 raise AccountAuthError("code_attempts", "Слишком много попыток. Запросите новый код.", 429)
             if not hmac.compare_digest(challenge["code_hash"], code_hash(email, code)):
                 await conn.execute("UPDATE app_email_codes SET attempts = attempts + 1 WHERE id = $1", challenge["id"])
-                raise AccountAuthError("invalid_code", "Неверный код")
-            await conn.execute("UPDATE app_email_codes SET consumed_at = NOW() WHERE id = $1", challenge["id"])
-            return await _confirm_identity_with_conn(
-                conn,
-                "email",
-                email,
-                mask_email(email),
-                current_user_id=current_user_id,
-                device_signal=device_signal,
-            )
+            else:
+                await conn.execute("UPDATE app_email_codes SET consumed_at = NOW() WHERE id = $1", challenge["id"])
+                return await _confirm_identity_with_conn(
+                    conn, "email", email, mask_email(email),
+                    current_user_id=current_user_id, device_signal=device_signal,
+                )
+    # Commit the failed-attempt counter before returning the authentication error.
+    raise AccountAuthError("invalid_code", "Неверный код")
 
 
 async def list_identities(user_id: uuid.UUID) -> list[Dict[str, Any]]:
