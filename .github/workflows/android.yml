@@ -36,18 +36,6 @@ jobs:
             "VKIDRedirectHost=vk.ru" \
             "VKIDRedirectScheme=vk54803401" \
             > local.properties
-      - name: Resolve Android dependencies
-        run: |
-          for attempt in 1 2 3; do
-            if ./gradlew :app:checkDebugAarMetadata --no-daemon; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            echo "Dependency resolution failed (attempt $attempt/3); retrying in 20 seconds"
-            sleep 20
-          done
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :data:testDebugUnitTest :domain:testDebugUnitTest :app:lintDebug --no-daemon
       - uses: actions/upload-artifact@v4
