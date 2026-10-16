@@ -44,6 +44,42 @@ def payload(response):
 
 
 class ApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_app_open_logs_only_hashed_install_identifier(self):
+        install_id = "123e4567-e89b-12d3-a456-426614174000"
+        req = request({
+            "install_id": install_id,
+            "version_name": "0.8.1",
+            "version_code": 7,
+            "channel": "alpha",
+        }, path="/v1/telemetry/app-open")
+        with self.assertLogs(level="INFO") as captured:
+            response = await api.app_open_handler(req)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload(response), {"ok": True})
+        log_output = "\n".join(captured.output)
+        self.assertIn("App launch: install=", log_output)
+        self.assertIn("version=0.8.1(7) channel=alpha", log_output)
+        self.assertNotIn(install_id, log_output)
+
+    async def test_app_open_rejects_untrusted_metadata_without_logging(self):
+        invalid_payloads = [
+            {"install_id": "not-a-uuid", "version_name": "0.8.1", "version_code": 7, "channel": "alpha"},
+            {"install_id": str(uuid.uuid4()), "version_name": "bad\nlog", "version_code": 7, "channel": "alpha"},
+            {"install_id": str(uuid.uuid4()), "version_name": "0.8.1", "version_code": True, "channel": "alpha"},
+            {"install_id": str(uuid.uuid4()), "version_name": "0.8.1", "version_code": 7, "channel": "unknown"},
+        ]
+        for body in invalid_payloads:
+            with self.subTest(body=body):
+                response = await api.app_open_handler(request(body, path="/v1/telemetry/app-open"))
+                self.assertEqual(response.status, 400)
+
+    async def test_app_open_is_public(self):
+        req = request(path="/v1/telemetry/app-open", method="POST")
+        handler = AsyncMock(return_value=api.json_response({"ok": True}))
+        response = await api.auth_middleware(req, handler)
+        self.assertEqual(response.status, 200)
+        handler.assert_awaited_once_with(req)
+
     async def test_app_reuses_existing_bot_tarologist_contact(self):
         environment = {
             "APP_DB_USER": "test",

@@ -15,6 +15,7 @@ import ru.tarotsphere.app.data.BuildConfig
 import ru.tarotsphere.app.data.api.AppApi
 import ru.tarotsphere.app.data.api.AuthInterceptor
 import ru.tarotsphere.app.data.api.TokenAuthenticator
+import ru.tarotsphere.app.data.api.dto.AppOpenRequestDto
 import ru.tarotsphere.app.data.local.SecurePrefs
 import ru.tarotsphere.app.data.repository.AuthRepositoryImpl
 import ru.tarotsphere.app.data.repository.CatalogRepositoryImpl
@@ -80,4 +81,15 @@ class AppContainer(context: Context) {
     val catalogRepository: CatalogRepository = CatalogRepositoryImpl(api, prefs)
     val onboardingStore: OnboardingStore = OnboardingStoreImpl(prefs)
     val ensureGuestSession = EnsureGuestSessionUseCase(authRepository)
+
+    suspend fun reportAppOpen(versionName: String, versionCode: Int, channel: String) {
+        refreshApi.appOpen(
+            AppOpenRequestDto(
+                installId = prefs.installId(),
+                versionName = versionName,
+                versionCode = versionCode,
+                channel = channel,
+            ),
+        )
+    }
 }

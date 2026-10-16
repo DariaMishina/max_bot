@@ -10,6 +10,7 @@ plugins {
 val rustoreConsoleAppId = providers.gradleProperty("RUSTORE_CONSOLE_APP_ID").orElse("2063751721").get()
 val explicitReleaseApiUrl = providers.gradleProperty("APP_API_BASE_URL").orNull?.trim()
 val releaseChannel = providers.gradleProperty("APP_RELEASE_CHANNEL").orNull?.trim()
+val appBuildChannel = releaseChannel ?: "debug"
 val stagingApiUrl = providers.gradleProperty("APP_STAGING_API_BASE_URL")
     .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/")
     .get().trimEnd('/') + "/"
@@ -79,10 +80,11 @@ android {
         applicationId = "ru.tarotsphere.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.8.0"
+        versionCode = 7
+        versionName = "0.8.1"
         manifestPlaceholders["rustoreConsoleAppId"] = rustoreConsoleAppId
         buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", (rustoreConsoleAppId != "0").toString())
+        buildConfigField("String", "APP_RELEASE_CHANNEL", "\"$appBuildChannel\"")
     }
 
     signingConfigs {

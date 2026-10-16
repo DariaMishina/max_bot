@@ -10,9 +10,12 @@ HTTP API Android-приложения «Гадание AI».
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -70,6 +73,7 @@ OPENAPI = {
         "POST /v1/auth/vk",
         "POST /v1/auth/logout",
         "POST /v1/auth/refresh",
+        "POST /v1/telemetry/app-open",
         "GET /v1/me",
         "GET /v1/me/balance",
         "GET /v1/me/history",
@@ -146,6 +150,45 @@ def _user_id_from_request(request: Request) -> Optional[uuid.UUID]:
 
 async def health_handler(_request: Request) -> Response:
     return web.Response(text="OK")
+
+
+_APP_VERSION_RE = re.compile(r"^[0-9A-Za-z._+-]{1,32}$")
+_APP_CHANNELS = {"debug", "alpha", "production"}
+
+
+def _install_log_id(install_id: str) -> str:
+    """Return a stable, non-reversible identifier suitable for server logs."""
+    secret = app_config.app_jwt_secret.get_secret_value().encode("utf-8")
+    digest = hmac.new(secret, f"app-install:{install_id}".encode("utf-8"), hashlib.sha256)
+    return digest.hexdigest()[:16]
+
+
+async def app_open_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    install_id = str(body.get("install_id") or "").strip()
+    version_name = str(body.get("version_name") or "").strip()
+    channel = str(body.get("channel") or "").strip().lower()
+    version_code = body.get("version_code")
+
+    try:
+        uuid.UUID(install_id)
+    except (ValueError, AttributeError):
+        return error_response("invalid_install_id", "Некорректный идентификатор установки")
+    if not _APP_VERSION_RE.fullmatch(version_name):
+        return error_response("invalid_version", "Некорректная версия приложения")
+    if isinstance(version_code, bool) or not isinstance(version_code, int) or not 1 <= version_code <= 2_147_483_647:
+        return error_response("invalid_version_code", "Некорректный код версии")
+    if channel not in _APP_CHANNELS:
+        return error_response("invalid_channel", "Некорректный канал сборки")
+
+    logging.info(
+        "App launch: install=%s version=%s(%s) channel=%s",
+        _install_log_id(install_id),
+        version_name,
+        version_code,
+        channel,
+    )
+    return json_response({"ok": True})
 
 
 async def docs_handler(_request: Request) -> Response:
@@ -475,6 +518,7 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     public_auth_paths = {
         "/v1/auth/guest", "/v1/auth/refresh",
         "/v1/auth/email/start", "/v1/auth/email/confirm", "/v1/auth/vk",
+        "/v1/telemetry/app-open",
     }
     if path in public_auth_paths and request.method == "POST":
         return await handler(request)
@@ -518,6 +562,7 @@ def create_app() -> web.Application:
     app.router.add_post("/v1/auth/email/confirm", email_confirm_handler)
     app.router.add_post("/v1/auth/vk", vk_auth_handler)
     app.router.add_post("/v1/auth/refresh", refresh_auth_handler)
+    app.router.add_post("/v1/telemetry/app-open", app_open_handler)
     app.router.add_post("/v1/auth/logout", logout_handler)
     app.router.add_get("/v1/me", me_handler)
     app.router.add_get("/v1/me/balance", me_balance_handler)

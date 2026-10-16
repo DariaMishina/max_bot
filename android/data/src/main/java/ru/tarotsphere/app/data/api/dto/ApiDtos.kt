@@ -10,6 +10,17 @@ import ru.tarotsphere.app.domain.model.TokenPair
 import ru.tarotsphere.app.domain.model.UserProfile
 
 @Serializable
+data class AppOpenRequestDto(
+    @SerialName("install_id") val installId: String,
+    @SerialName("version_name") val versionName: String,
+    @SerialName("version_code") val versionCode: Int,
+    val channel: String,
+)
+
+@Serializable
+data class AppOpenResponseDto(val ok: Boolean)
+
+@Serializable
 data class GuestRequestDto(
     @SerialName("install_id") val installId: String,
 )

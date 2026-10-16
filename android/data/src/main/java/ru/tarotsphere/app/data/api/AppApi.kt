@@ -16,6 +16,9 @@ import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.api.dto.TokenPairDto
 
 interface AppApi {
+    @POST("v1/telemetry/app-open")
+    suspend fun appOpen(@Body body: AppOpenRequestDto): AppOpenResponseDto
+
     @POST("v1/auth/guest")
     suspend fun guest(@Body body: GuestRequestDto): TokenPairDto
 

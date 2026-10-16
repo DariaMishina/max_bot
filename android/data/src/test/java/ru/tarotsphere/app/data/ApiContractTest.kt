@@ -1,6 +1,7 @@
 package ru.tarotsphere.app.data
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
 import ru.tarotsphere.app.data.api.dto.*
@@ -27,5 +28,21 @@ class ApiContractTest {
         val catalog = json.decodeFromString<CatalogDto>("""{"packages":[],"consultations":[{"id":"basic","name":"Базовая","price_rub":500}],"payment_methods":["rustore","yookassa"],"tarologist_url":"https://example.test/contact"}""").toDomain()
         assertEquals(500, catalog.consultations.single().priceRub)
         assertEquals(2, catalog.paymentMethods.size)
+    }
+    @Test fun appOpenPayloadContainsOnlyExpectedDiagnostics() {
+        val payload = json.encodeToString(
+            AppOpenRequestDto(
+                installId = "123e4567-e89b-12d3-a456-426614174000",
+                versionName = "0.8.1",
+                versionCode = 7,
+                channel = "alpha",
+            ),
+        )
+        assertTrue(payload.contains("\"install_id\""))
+        assertTrue(payload.contains("\"version_name\":\"0.8.1\""))
+        assertTrue(payload.contains("\"version_code\":7"))
+        assertTrue(payload.contains("\"channel\":\"alpha\""))
+        assertFalse(payload.contains("email"))
+        assertFalse(payload.contains("android_id"))
     }
 }
