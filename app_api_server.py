@@ -157,7 +157,7 @@ _APP_CHANNELS = {"debug", "alpha", "production"}
 
 
 def _install_log_id(install_id: str) -> str:
-    """Return a stable, non-reversible identifier suitable for server logs."""
+    """Return a stable pseudonymous identifier suitable for server logs."""
     secret = app_config.app_jwt_secret.get_secret_value().encode("utf-8")
     digest = hmac.new(secret, f"app-install:{install_id}".encode("utf-8"), hashlib.sha256)
     return digest.hexdigest()[:16]
