@@ -44,6 +44,14 @@ data class PasswordAuthRequestDto(
 )
 
 @Serializable
+data class RecoveryRequestDto(
+    val login: String = "", val email: String = "", val password: String = "",
+    @SerialName("challenge_id") val challengeId: String = "", val code: String = "",
+)
+@Serializable
+data class RecoveryResponseDto(val ok: Boolean, @SerialName("challenge_id") val challengeId: String = "")
+
+@Serializable
 data class EmailConfirmRequestDto(
     val email: String,
     val code: String,

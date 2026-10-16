@@ -63,6 +63,11 @@ class SessionViewModel(
         viewModelScope.launch { restoreSession() }
     }
 
+    suspend fun recoveryStart(login: String, email: String, password: String) =
+        authRepository.recoveryStart(false, login, email, password)
+    suspend fun recoveryConfirm(challenge: String, code: String, password: String) =
+        authRepository.recoveryConfirm(false, challenge, code, password)
+
     fun email(value: String) {
         if (!_state.value.submitting && !_state.value.codeSent) {
             _state.value = _state.value.copy(email = value.take(320), error = null)

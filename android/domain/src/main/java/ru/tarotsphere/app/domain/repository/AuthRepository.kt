@@ -3,6 +3,8 @@ package ru.tarotsphere.app.domain.repository
 import ru.tarotsphere.app.domain.model.TokenPair
 
 interface AuthRepository {
+    suspend fun recoveryStart(binding: Boolean, login: String, email: String, password: String): String
+    suspend fun recoveryConfirm(binding: Boolean, challengeId: String, code: String, password: String)
     fun hasAccessToken(): Boolean
     fun currentUserId(): String?
     suspend fun restoreConfirmedSession(): Boolean

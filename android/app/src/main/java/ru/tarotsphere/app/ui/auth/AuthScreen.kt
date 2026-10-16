@@ -55,7 +55,11 @@ fun AuthScreen(
     onPasswordChange: (String) -> Unit = {},
     onPasswordConfirmationChange: (String) -> Unit = {},
     onPasswordSubmit: () -> Unit = {},
+    recoveryStart: suspend (String, String, String) -> String = { _, _, _ -> "" },
+    recoveryConfirm: suspend (String, String, String) -> Unit = { _, _, _ -> },
 ) {
+    var recovering by remember { mutableStateOf(false) }
+    if (recovering) RecoveryForm(false, recoveryStart, recoveryConfirm) { recovering = false }
     val lifecycleOwner = LocalLifecycleOwner.current
     val vkCallback = remember(onVkToken, onVkFailure) {
         object : VKIDAuthCallback {
@@ -91,7 +95,7 @@ fun AuthScreen(
             }
             if (state.registering) {
                 StatusPanel("Сохраните логин и пароль",
-                    "Восстановление забытого пароля пока недоступно. Для входа через почту или VK ID выберите другой способ входа.",
+                    "После регистрации подтвердите почту для восстановления в профиле. До этого сброс забытого пароля недоступен.",
                     StatusTone.Info)
                 Text("Это отдельный аккаунт. Если у вас уже есть аккаунт через почту или VK ID, войдите прежним способом.",
                     style = MaterialTheme.typography.bodySmall)
@@ -106,6 +110,7 @@ fun AuthScreen(
             }
             PrimaryAction(if (state.registering) "Зарегистрироваться" else "Войти", onPasswordSubmit,
                 enabled = !state.submitting)
+            if (!state.registering) TextButton(onClick = { recovering = true }, enabled = !state.submitting) { Text("Забыли пароль?") }
             TextButton(onClick = { onPasswordMode(false) }, enabled = !state.submitting) {
                 Text("Другие способы: почта или VK ID")
             }
@@ -163,7 +168,7 @@ fun AuthScreen(
 }
 
 @Composable
-private fun PasswordField(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean) {
+fun PasswordField(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
         singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth(),

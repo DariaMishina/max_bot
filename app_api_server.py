@@ -38,6 +38,8 @@ from app.account_auth import (
 )
 from app.auth_tokens import issue_token_pair, verify_access_token, verify_refresh_token, revoke_refresh_token
 from app.password_auth import authenticate_password
+from app.password_recovery import start_challenge, confirm_challenge
+from app.auth_tokens import token_auth_version, rotate_refresh_token
 from app.billing import (
     BillingError,
     billing_enabled,
@@ -71,6 +73,10 @@ OPENAPI = {
         "POST /v1/auth/guest",
         "POST /v1/auth/password/register",
         "POST /v1/auth/password/login",
+        "POST /v1/auth/password/reset/start",
+        "POST /v1/auth/password/reset/confirm",
+        "POST /v1/me/recovery-email/start",
+        "POST /v1/me/recovery-email/confirm",
         "POST /v1/auth/email/start",
         "POST /v1/auth/email/confirm",
         "POST /v1/auth/vk",
@@ -214,11 +220,29 @@ async def guest_auth_handler(request: Request) -> Response:
     })
 
 
-def _optional_user_id(request: Request) -> Optional[uuid.UUID]:
+async def _optional_user_id(request: Request) -> Optional[uuid.UUID]:
     auth = request.headers.get("Authorization", "")
     if not auth.lower().startswith("bearer "):
         return None
-    return verify_access_token(auth[7:].strip())
+    token = auth[7:].strip()
+    user_id = verify_access_token(token)
+    user = await get_user(user_id) if user_id else None
+    return user_id if user and token_auth_version(token) == user.get("auth_version", 0) else None
+
+
+async def recovery_handler(request: Request) -> Response:
+    body = await _read_json(request)
+    user_id = request.get("app_user_id") if request.path.startswith("/v1/me/") else None
+    try:
+        if request.path.endswith("/start"):
+            challenge = await start_challenge(user_id=user_id, login=body.get("login"),
+                email=body.get("email"), password=body.get("password"), ip=request.remote)
+            return json_response({"ok": True, "challenge_id": challenge})
+        await confirm_challenge(body.get("challenge_id"), body.get("code"),
+                                user_id=user_id, new_password=body.get("password"))
+        return json_response({"ok": True})
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
 
 
 async def password_auth_handler(request: Request) -> Response:
@@ -231,7 +255,10 @@ async def password_auth_handler(request: Request) -> Response:
         )
     except AccountAuthError as error:
         return error_response(error.code, str(error), status=error.status)
-    tokens = await issue_token_pair(result["user_id"])
+    try:
+        tokens = await issue_token_pair(result["user_id"], expected_version=result.get("auth_version"))
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
     balance = await get_user_balance(result["user_id"])
     return json_response({**tokens, "balance": _balance_payload(balance),
                           "trial_granted": result["trial_granted"]})
@@ -260,7 +287,7 @@ async def email_start_handler(request: Request) -> Response:
 
 async def email_confirm_handler(request: Request) -> Response:
     body = await _read_json(request)
-    current_user_id = _optional_user_id(request)
+    current_user_id = await _optional_user_id(request)
     if not current_user_id:
         migration_refresh = str(body.get("migration_refresh_token") or "").strip()
         current_user_id = await verify_refresh_token(migration_refresh) if migration_refresh else None
@@ -284,7 +311,7 @@ async def email_confirm_handler(request: Request) -> Response:
 
 async def vk_auth_handler(request: Request) -> Response:
     body = await _read_json(request)
-    current_user_id = _optional_user_id(request)
+    current_user_id = await _optional_user_id(request)
     if not current_user_id:
         migration_refresh = str(body.get("migration_refresh_token") or "").strip()
         current_user_id = await verify_refresh_token(migration_refresh) if migration_refresh else None
@@ -310,11 +337,10 @@ async def refresh_auth_handler(request: Request) -> Response:
     raw = (body.get("refresh_token") or "").strip()
     if not raw:
         return error_response("invalid_token", "refresh_token обязателен", status=401)
-    user_id = await verify_refresh_token(raw)
-    if not user_id:
-        return error_response("invalid_token", "Недействительный refresh_token", status=401)
-    await revoke_refresh_token(raw)
-    tokens = await issue_token_pair(user_id)
+    try:
+        tokens = await rotate_refresh_token(raw)
+    except AccountAuthError as error:
+        return error_response(error.code, str(error), status=error.status)
     return json_response(tokens)
 
 
@@ -538,6 +564,7 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
         "/v1/auth/guest", "/v1/auth/refresh",
         "/v1/auth/email/start", "/v1/auth/email/confirm", "/v1/auth/vk",
         "/v1/auth/password/register", "/v1/auth/password/login",
+        "/v1/auth/password/reset/start", "/v1/auth/password/reset/confirm",
         "/v1/telemetry/app-open",
     }
     if path in public_auth_paths and request.method == "POST":
@@ -553,6 +580,8 @@ async def auth_middleware(request: Request, handler: Callable) -> Response:
     user = await get_user(user_id)
     if request.method != "DELETE" and not user:
         return error_response("unauthorized", "Данные гостя удалены", status=401)
+    if user and token_auth_version(token) != user.get("auth_version", 0):
+        return error_response("session_revoked", "Войдите заново", status=401)
     if user and user["is_guest"] and not app_config.app_allow_guest_auth:
         return error_response("account_required", "Войдите через VK ID или email", status=403)
     request["app_user_id"] = user_id
@@ -581,6 +610,10 @@ def create_app() -> web.Application:
     app.router.add_post("/v1/auth/email/start", email_start_handler)
     app.router.add_post("/v1/auth/password/register", password_auth_handler)
     app.router.add_post("/v1/auth/password/login", password_auth_handler)
+    app.router.add_post("/v1/auth/password/reset/start", recovery_handler)
+    app.router.add_post("/v1/auth/password/reset/confirm", recovery_handler)
+    app.router.add_post("/v1/me/recovery-email/start", recovery_handler)
+    app.router.add_post("/v1/me/recovery-email/confirm", recovery_handler)
     app.router.add_post("/v1/auth/email/confirm", email_confirm_handler)
     app.router.add_post("/v1/auth/vk", vk_auth_handler)
     app.router.add_post("/v1/auth/refresh", refresh_auth_handler)

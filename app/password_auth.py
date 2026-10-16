@@ -99,7 +99,7 @@ async def authenticate_password(login: object, password: object, *, registering:
         return result
 
     row = await AppDatabase.fetch_one(
-        "SELECT user_id, password_hash FROM app_password_credentials WHERE login = $1", login,
+        "SELECT c.user_id, c.password_hash, u.auth_version FROM app_password_credentials c JOIN app_users u ON u.user_id=c.user_id WHERE c.login = $1", login,
     )
     # Unknown logins perform the same expensive calculation as an incorrect password.
     encoded = row["password_hash"] if row else "scrypt-v1$" + "00" * 16 + "$" + "00" * 32
@@ -108,4 +108,4 @@ async def authenticate_password(login: object, password: object, *, registering:
     if not row or not valid:
         raise AccountAuthError("invalid_credentials", "Неверный логин или пароль", 401)
     await AppDatabase.execute("UPDATE app_users SET last_active_at = NOW() WHERE user_id = $1", row["user_id"])
-    return {"user_id": row["user_id"], "trial_granted": 0}
+    return {"user_id": row["user_id"], "trial_granted": 0, "auth_version": row["auth_version"]}

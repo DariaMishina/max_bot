@@ -119,7 +119,7 @@ async def invalidate_email_challenge(challenge_id: int) -> None:
     )
 
 
-def _send_email_sync(email: str, code: str) -> None:
+def _send_email_sync(email: str, code: str, purpose: str = "login") -> None:
     host = app_config.app_email_smtp_host.strip()
     sender = app_config.app_email_from.strip()
     password = app_config.app_email_smtp_password
@@ -127,11 +127,13 @@ def _send_email_sync(email: str, code: str) -> None:
         raise AccountAuthError("email_unavailable", "Отправка писем ещё не настроена", 503)
 
     message = EmailMessage()
-    message["Subject"] = "Код входа в Сферу Таро"
+    title = {"login": "Код входа в Сферу Таро", "bind": "Подтверждение почты восстановления — Сфера Таро",
+             "reset": "Сброс пароля — Сфера Таро"}[purpose]
+    message["Subject"] = title
     message["From"] = sender
     message["To"] = email
     message.set_content(
-        f"Код входа: {code}\n\nОн действует {EMAIL_CODE_TTL_MINUTES} минут. "
+        f"{title}\nКод подтверждения: {code}\n\nОн действует {EMAIL_CODE_TTL_MINUTES} минут. "
         "Если вы не запрашивали код, просто проигнорируйте письмо."
     )
     context = ssl.create_default_context()
@@ -151,8 +153,8 @@ def _send_email_sync(email: str, code: str) -> None:
         client.quit()
 
 
-async def send_login_email(email: str, code: str) -> None:
-    await asyncio.to_thread(_send_email_sync, email, code)
+async def send_login_email(email: str, code: str, purpose: str = "login") -> None:
+    await asyncio.to_thread(_send_email_sync, email, code, purpose)
 
 
 async def _fetch_vk_user_id(access_token: str) -> str:
@@ -369,4 +371,8 @@ async def list_identities(user_id: uuid.UUID) -> list[Dict[str, Any]]:
         """,
         user_id,
     )
-    return [dict(row) for row in rows]
+    result = [dict(row) for row in rows]
+    recovery = await AppDatabase.fetch_one("SELECT recovery_email FROM app_password_credentials WHERE user_id=$1", user_id)
+    if recovery and recovery["recovery_email"]:
+        result.append({"provider": "recovery_email", "display_value": mask_email(recovery["recovery_email"])})
+    return result

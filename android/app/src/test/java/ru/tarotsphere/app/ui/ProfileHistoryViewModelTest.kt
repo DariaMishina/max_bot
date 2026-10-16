@@ -64,6 +64,8 @@ class ProfileHistoryViewModelTest {
     }
 }
 private class FakeProfileAuth : AuthRepository {
+    override suspend fun recoveryStart(binding: Boolean, login: String, email: String, password: String) = "challenge"
+    override suspend fun recoveryConfirm(binding: Boolean, challengeId: String, code: String, password: String) = Unit
     override fun hasAccessToken() = true
     override fun currentUserId(): String? = "user"
     override suspend fun restoreConfirmedSession() = true

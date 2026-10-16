@@ -97,6 +97,8 @@ private class FakeOnboarding(private var done: Boolean) : OnboardingStore {
 }
 
 private class FakeAuth(private val confirmed: Boolean) : AuthRepository {
+    override suspend fun recoveryStart(binding: Boolean, login: String, email: String, password: String) = "challenge"
+    override suspend fun recoveryConfirm(binding: Boolean, challengeId: String, code: String, password: String) = Unit
     override fun hasAccessToken() = confirmed
     override fun currentUserId(): String? = if (confirmed) "user" else null
     override suspend fun restoreConfirmedSession() = confirmed

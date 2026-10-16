@@ -64,6 +64,8 @@ fun TarotNavHost(container: AppContainer) {
                 onPasswordChange = session::password,
                 onPasswordConfirmationChange = session::passwordConfirmation,
                 onPasswordSubmit = session::authenticatePassword,
+                recoveryStart = session::recoveryStart,
+                recoveryConfirm = session::recoveryConfirm,
                 onEmailChange = session::email,
                 onCodeChange = session::code,
                 onRequestCode = session::requestEmailCode,

@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 for key, value in {
     "APP_DB_USER": "test", "APP_DB_PASSWORD": "test", "APP_JWT_SECRET": "test-only",
@@ -23,6 +23,8 @@ from app import password_auth as auth
 from app.account_auth import AccountAuthError, confirm_email_challenge, create_email_challenge
 from app.database import AppDatabase
 import app_api_server as api
+from app import password_recovery as recovery
+from app.auth_tokens import issue_token_pair, verify_refresh_token
 
 ROOT = Path(__file__).resolve().parents[1]
 PASSWORD = "A long test password 123!"
@@ -58,7 +60,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
             server_settings={"search_path": self.schema},
         )
         async with self.pool.acquire() as conn:
-            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql"):
+            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql"):
                 await conn.execute((ROOT / name).read_text())
         self.pool_patch = patch.object(AppDatabase, "get_pool", return_value=self.pool)
         self.pool_patch.start()
@@ -132,3 +134,106 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AccountAuthError) as caught:
             await confirm_email_challenge("reader@example.test", code, current_user_id=None, device_signal=None)
         self.assertEqual(caught.exception.code, "code_attempts")
+
+    async def bind_email(self, user_id, email="reader@example.test"):
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            challenge = await recovery.start_challenge(user_id=user_id, email=email, password=PASSWORD, ip="127.0.0.1")
+            code = send.await_args.args[1]
+        await recovery.confirm_challenge(challenge, code, user_id=user_id)
+        return challenge, code
+
+    async def reset_code(self):
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            challenge = await recovery.start_challenge(login="reader_1", email="reader@example.test", ip="127.0.0.1")
+            return challenge, send.await_args.args[1]
+
+    async def test_recovery_http_flow_revokes_access_refresh_and_old_password(self):
+        account = await self.register()
+        user_id = account["user_id"]
+        tokens = await issue_token_pair(user_id)
+        headers = {"Authorization": "Bearer " + tokens["access_token"]}
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            response = await self.client.post("/v1/me/recovery-email/start", headers=headers,
+                json={"email": "reader@example.test", "password": PASSWORD})
+            self.assertEqual(response.status, 200, await response.text())
+            bind = (await response.json())["challenge_id"]
+            code = send.await_args.args[1]
+        response = await self.client.post("/v1/me/recovery-email/confirm", headers=headers,
+            json={"challenge_id": bind, "code": code})
+        self.assertEqual(response.status, 200)
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            response = await self.client.post("/v1/auth/password/reset/start",
+                json={"login": "reader_1", "email": "reader@example.test"})
+            reset = (await response.json())["challenge_id"]
+            code = send.await_args.args[1]
+        payload = {"challenge_id": reset, "code": code, "password": "New long password 456!"}
+        response = await self.client.post("/v1/auth/password/reset/confirm", json=payload)
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.client.get("/v1/me", headers=headers)
+        self.assertEqual(response.status, 401)
+        response = await self.client.post("/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+        self.assertEqual(response.status, 401)
+        response = await self.client.post("/v1/auth/password/login", json={"login": "reader_1", "password": PASSWORD})
+        self.assertEqual(response.status, 401)
+        response = await self.client.post("/v1/auth/password/reset/confirm", json=payload)
+        self.assertEqual(response.status, 400)
+        response = await self.client.post("/v1/auth/password/login", json={"login": "reader_1", "password": payload["password"]})
+        self.assertEqual(response.status, 200)
+        fresh = await response.json()
+        self.assertEqual(fresh["user_id"], str(user_id))
+        response = await self.client.get("/v1/me", headers={"Authorization": "Bearer " + fresh["access_token"]})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(fresh["trial_granted"], 0)
+
+    async def test_reset_unknown_email_neutral_and_delivery_failure_invalidates(self):
+        account = await self.register()
+        await self.bind_email(account["user_id"])
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            for login, email in (("unknown1", "reader@example.test"), ("reader_1", "wrong@example.test")):
+                response = await self.client.post("/v1/auth/password/reset/start", json={"login": login, "email": email})
+                self.assertEqual(response.status, 200)
+                self.assertEqual(set(await response.json()), {"ok", "challenge_id"})
+            send.assert_not_awaited()
+        with patch.object(recovery, "send_login_email", AsyncMock(side_effect=RuntimeError("smtp failed"))):
+            challenge = await recovery.start_challenge(login="reader_1", email="reader@example.test", ip="127.0.0.1")
+        self.assertIsNotNone(await self.pool.fetchval("SELECT consumed_at FROM app_password_challenges WHERE id=$1", uuid.UUID(challenge)))
+
+    async def test_challenge_owner_purpose_expiry_attempts_and_resend(self):
+        account = await self.register()
+        other = await self.register("reader_2", "device-2")
+        with self.assertRaises(AccountAuthError):
+            await recovery.start_challenge(user_id=account["user_id"], email="reader@example.test", password="wrong password 123")
+        with patch.object(recovery, "send_login_email", AsyncMock()) as send:
+            bind = await recovery.start_challenge(user_id=account["user_id"], email="reader@example.test", password=PASSWORD)
+            code = send.await_args.args[1]
+        with self.assertRaises(AccountAuthError):
+            await recovery.confirm_challenge(bind, code, user_id=other["user_id"])
+        with self.assertRaises(AccountAuthError):
+            await recovery.confirm_challenge(bind, code, new_password=PASSWORD)
+        await recovery.confirm_challenge(bind, code, user_id=account["user_id"])
+        old, old_code = await self.reset_code()
+        new, code = await self.reset_code()
+        with self.assertRaises(AccountAuthError):
+            await recovery.confirm_challenge(old, old_code, new_password=PASSWORD)
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            with self.assertRaises(AccountAuthError):
+                await recovery.confirm_challenge(new, wrong, new_password=PASSWORD)
+        self.assertEqual(await self.pool.fetchval("SELECT attempts FROM app_password_challenges WHERE id=$1", uuid.UUID(new)), 5)
+        with self.assertRaises(AccountAuthError):
+            await recovery.confirm_challenge(new, code, new_password=PASSWORD)
+        expired, code = await self.reset_code()
+        await self.pool.execute("UPDATE app_password_challenges SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1", uuid.UUID(expired))
+        with self.assertRaises(AccountAuthError):
+            await recovery.confirm_challenge(expired, code, new_password=PASSWORD)
+
+    async def test_epoch_rejects_token_issuance_and_refresh_created_after_reset(self):
+        from app.auth_tokens import create_refresh_token
+        account = await self.register()
+        await self.bind_email(account["user_id"])
+        challenge, code = await self.reset_code()
+        await recovery.confirm_challenge(challenge, code, new_password=PASSWORD)
+        with self.assertRaises(AccountAuthError):
+            await issue_token_pair(account["user_id"], expected_version=0)
+        late = await create_refresh_token(account["user_id"], auth_version=0)
+        self.assertIsNone(await verify_refresh_token(late))

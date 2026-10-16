@@ -1,6 +1,6 @@
 # tarot sphere — Android (этап 4)
 
-Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая локальная версия `0.8.2-debug` (`versionCode 8`). Обычный вход по логину/паролю требует серверной миграции `007_password_auth.sql` и нового API; см. [порядок установки](../docs/PASSWORD_AUTH_RUNBOOK.md).
+Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая локальная версия `0.8.2-debug` (`versionCode 8`). Вход по логину/паролю и восстановление через подтверждённую почту требуют миграций `007_password_auth.sql`, `008_password_recovery.sql` и нового API; см. [порядок установки](../docs/PASSWORD_AUTH_RUNBOOK.md).
 
 Клиент — Kotlin + Jetpack Compose, модули `app` / `data` / `domain`. API — `app_api_server.py` в корне `max_bot`, порт 8083, отдельная PostgreSQL приложения.
 

@@ -14,11 +14,17 @@ import com.vk.id.VKID
 import com.vk.id.VKIDAuthFail
 import com.vk.id.auth.VKIDAuthCallback
 import ru.tarotsphere.app.ui.components.*
+import ru.tarotsphere.app.ui.auth.RecoveryForm
 
 @Composable
 fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onShop: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var recoveryEmail by remember { mutableStateOf(false) }
+    if (recoveryEmail) RecoveryForm(true, viewModel::recoveryStart, viewModel::recoveryConfirm) {
+        recoveryEmail = false
+        viewModel.refresh()
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val vkCallback = remember(viewModel) {
         object : VKIDAuthCallback {
@@ -58,6 +64,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 when (identity.provider) {
                     "email" -> identity.displayValue
                     "password" -> "Логин: ${identity.displayValue}"
+                    "recovery_email" -> "Почта восстановления: ${identity.displayValue}"
                     "vk" -> "VK ID"
                     else -> identity.provider
                 }
@@ -77,6 +84,12 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium,
                 ) { Text(if (state.linkingVk) "Подключаем VK ID…" else "Привязать VK ID") }
+            }
+            if (profile.identities.any { it.provider == "password" }) {
+                Text("Подтвердите почту, чтобы можно было восстановить забытый пароль.")
+                OutlinedButton(onClick = { recoveryEmail = true }, enabled = !state.loading && !state.deleting && !state.offline) {
+                    Text("Привязать / изменить почту восстановления")
+                }
             }
             state.linkMessage?.let { StatusPanel("VK ID", it) }
         }

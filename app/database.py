@@ -259,7 +259,7 @@ async def get_divination(divination_id: int, user_id: uuid.UUID) -> Optional[Dic
 async def get_user(user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
     row = await AppDatabase.fetch_one(
         """
-        SELECT user_id, is_guest, install_id, created_at, last_active_at
+        SELECT user_id, is_guest, install_id, created_at, last_active_at, auth_version
         FROM app_users
         WHERE user_id = $1
         """,

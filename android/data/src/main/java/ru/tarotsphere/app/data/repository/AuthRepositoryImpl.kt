@@ -4,6 +4,7 @@ import retrofit2.HttpException
 import ru.tarotsphere.app.data.api.AppApi
 import ru.tarotsphere.app.data.api.dto.EmailConfirmRequestDto
 import ru.tarotsphere.app.data.api.dto.PasswordAuthRequestDto
+import ru.tarotsphere.app.data.api.dto.RecoveryRequestDto
 import ru.tarotsphere.app.data.api.dto.EmailStartRequestDto
 import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.api.dto.VkAuthRequestDto
@@ -16,6 +17,16 @@ class AuthRepositoryImpl(
     private val publicApi: AppApi,
     private val prefs: SecurePrefs,
 ) : AuthRepository {
+    override suspend fun recoveryStart(binding: Boolean, login: String, email: String, password: String): String = apiCall {
+        val body = RecoveryRequestDto(login = login.trim(), email = email.trim(), password = password)
+        (if (binding) authedApi.recoveryEmailStart(body) else publicApi.passwordResetStart(body)).challengeId
+    }
+
+    override suspend fun recoveryConfirm(binding: Boolean, challengeId: String, code: String, password: String): Unit = apiCall {
+        val body = RecoveryRequestDto(challengeId = challengeId, code = code, password = password)
+        if (binding) authedApi.recoveryEmailConfirm(body) else publicApi.passwordResetConfirm(body)
+        Unit
+    }
     override fun hasAccessToken(): Boolean = !prefs.getAccessToken().isNullOrBlank()
 
     override fun currentUserId(): String? = prefs.getUserId()

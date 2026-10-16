@@ -16,6 +16,14 @@ import ru.tarotsphere.app.data.api.dto.RefreshRequestDto
 import ru.tarotsphere.app.data.api.dto.TokenPairDto
 
 interface AppApi {
+    @POST("v1/me/recovery-email/start")
+    suspend fun recoveryEmailStart(@Body body: RecoveryRequestDto): RecoveryResponseDto
+    @POST("v1/me/recovery-email/confirm")
+    suspend fun recoveryEmailConfirm(@Body body: RecoveryRequestDto): RecoveryResponseDto
+    @POST("v1/auth/password/reset/start")
+    suspend fun passwordResetStart(@Body body: RecoveryRequestDto): RecoveryResponseDto
+    @POST("v1/auth/password/reset/confirm")
+    suspend fun passwordResetConfirm(@Body body: RecoveryRequestDto): RecoveryResponseDto
     @POST("v1/auth/password/register")
     suspend fun passwordRegister(@Body body: PasswordAuthRequestDto): TokenPairDto
 

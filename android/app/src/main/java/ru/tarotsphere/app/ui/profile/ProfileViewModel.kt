@@ -25,6 +25,10 @@ class ProfileViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(ProfileUiState())
     val state = _state.asStateFlow()
+    suspend fun recoveryStart(login: String, email: String, password: String) =
+        authRepository.recoveryStart(true, login, email, password)
+    suspend fun recoveryConfirm(challenge: String, code: String, password: String) =
+        authRepository.recoveryConfirm(true, challenge, code, password)
     fun refresh() {
         if (_state.value.loading || _state.value.deleting) return
         _state.value = _state.value.copy(loading = true, error = null)
