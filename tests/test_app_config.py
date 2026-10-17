@@ -31,6 +31,11 @@ class AppEnvironmentConfigTests(unittest.TestCase):
             "app_email_from": "sender@example.com",
         }
 
+    def test_trial_limit_rejects_negative_values(self):
+        with self.assertRaises(ValueError):
+            AppSettings(_env_file=None, app_trial_daily_limit=-1)
+        self.assertEqual(AppSettings(_env_file=None, app_trial_daily_limit=0).app_trial_daily_limit, 0)
+
     def test_staging_keeps_test_features_available(self):
         settings = AppSettings(
             _env_file=None,

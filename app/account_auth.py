@@ -17,6 +17,7 @@ import aiohttp
 
 from app.config import app_config
 from app.database import AppDatabase
+from app.trial_grants import claim_trial
 
 EMAIL_CODE_TTL_MINUTES = 10
 EMAIL_CODE_RESEND_SECONDS = 60
@@ -198,7 +199,6 @@ async def _confirm_identity_with_conn(
     current_user_id: Optional[uuid.UUID],
     device_signal: Optional[str],
 ) -> Dict[str, Any]:
-    device_hash = signal_hash("device", device_signal)
     identity_key = f"{provider}:{provider_user_id}"
     # Serialize first claims for the same provider identity so parallel
     # confirmations cannot create two accounts or issue two trials.
@@ -253,34 +253,16 @@ async def _confirm_identity_with_conn(
             display_value,
         )
 
-    granted = 0
-    claim = await conn.fetchval(
-        """
-        INSERT INTO app_trial_claims (identity_key, device_hash, claimed_user_id, granted_amount)
-        VALUES ($1, $2, $3, 0)
-        ON CONFLICT DO NOTHING
-        RETURNING id
-        """,
-        identity_key,
-        device_hash,
-        user_id,
+    # All account-row locks precede the shared gift lock, including ordinary
+    # logins. Otherwise linking an identity and logging in on another device
+    # can acquire these locks in opposite order and deadlock.
+    await conn.execute("SELECT user_id FROM app_users WHERE user_id = $1 FOR UPDATE", user_id)
+    granted = await claim_trial(
+        conn, identity_key=identity_key, user_id=user_id,
+        device_signal=device_signal,
+        eligible=not identity and not converted_guest and not linked_existing_account,
+        amount=TRIAL_DIVINATIONS,
     )
-    if claim and not converted_guest and not linked_existing_account:
-        granted = TRIAL_DIVINATIONS
-        await conn.execute(
-            """
-            UPDATE app_user_balances
-            SET free_divinations_remaining = free_divinations_remaining + $2, updated_at = NOW()
-            WHERE user_id = $1
-            """,
-            user_id,
-            granted,
-        )
-        await conn.execute(
-            "UPDATE app_trial_claims SET granted_amount = $2 WHERE id = $1",
-            claim,
-            granted,
-        )
     await conn.execute("UPDATE app_users SET last_active_at = NOW() WHERE user_id = $1", user_id)
     return {"user_id": user_id, "trial_granted": granted}
 

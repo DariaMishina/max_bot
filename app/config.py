@@ -19,6 +19,9 @@ class AppSettings(BaseSettings):
     app_api_public_url: str = ""
     app_allow_unpaid_test_contact: bool = False
     app_allow_guest_auth: bool = False
+    # Number of welcome packages across all providers in a rolling 24h window.
+    # Zero disables new gifts without disabling registration or paid usage.
+    app_trial_daily_limit: int = Field(default=1000, ge=0)
     app_email_smtp_host: str = ""
     app_email_smtp_port: int = 465
     app_email_smtp_user: str = ""

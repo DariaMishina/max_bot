@@ -250,6 +250,9 @@ CREATE TABLE IF NOT EXISTS app_trial_claims (
     granted_amount     SMALLINT NOT NULL DEFAULT 0,
     created_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_app_trial_claims_granted_created
+    ON app_trial_claims(created_at) WHERE granted_amount > 0;
+
 CREATE INDEX IF NOT EXISTS idx_app_trial_claims_user_id
     ON app_trial_claims(claimed_user_id);
 -- Apply only to app_bot_db. Safe to re-run; the Max bot database is untouched.

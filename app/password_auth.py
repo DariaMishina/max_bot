@@ -75,8 +75,6 @@ async def authenticate_password(login: object, password: object, *, registering:
                                 ip: str | None, device_signal: object = None) -> dict:
     login = normalize_login(login)
     password = validate_password(password)
-    if registering and (not isinstance(device_signal, str) or not 1 <= len(device_signal) <= 256):
-        raise AccountAuthError("invalid_device", "Не удалось определить установку приложения")
     await _throttle(login, ip, registering)
     if registering:
         async with _HASH_SLOTS:

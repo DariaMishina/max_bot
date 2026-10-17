@@ -67,7 +67,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             with self.assertRaises(auth.AccountAuthError) as error:
                 await auth.confirm_email_challenge(
-                    EMAIL, "000000", current_user_id=None, device_signal="device",
+                    EMAIL, "000000", current_user_id=None, device_signal="d123456789abcdef",
                 )
         self.assertEqual(error.exception.code, "invalid_code")
         self.assertIn("attempts = attempts + 1", conn.execute.call_args.args[0])
@@ -83,11 +83,11 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
             },
             None,
         ])
-        conn.fetchval = AsyncMock(side_effect=[USER, 99])
+        conn.fetchval = AsyncMock(side_effect=[USER, False, 99, 0])
         conn.execute = AsyncMock()
         with patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_email_challenge(
-                EMAIL, CODE, current_user_id=None, device_signal="device",
+                EMAIL, CODE, current_user_id=None, device_signal="d123456789abcdef",
             )
         self.assertEqual(result, {"user_id": USER, "trial_granted": 3})
         statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
@@ -109,7 +109,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
         conn.execute = AsyncMock()
         with patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_email_challenge(
-                EMAIL, CODE, current_user_id=None, device_signal="new-device",
+                EMAIL, CODE, current_user_id=None, device_signal="c123456789abcdef",
             )
         self.assertEqual(result["trial_granted"], 0)
         statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
@@ -131,7 +131,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
         conn.execute = AsyncMock()
         with patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_email_challenge(
-                EMAIL, CODE, current_user_id=USER, device_signal="device",
+                EMAIL, CODE, current_user_id=USER, device_signal="d123456789abcdef",
             )
         self.assertEqual(result, {"user_id": USER, "trial_granted": 0})
         statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
@@ -141,7 +141,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
     async def test_email_start_has_neutral_response(self):
         with patch.object(api, "create_email_challenge", AsyncMock(return_value=(4, CODE))), \
                 patch.object(api, "send_login_email", AsyncMock()) as send:
-            response = await api.email_start_handler(request({"email": EMAIL, "device_signal": "device"}))
+            response = await api.email_start_handler(request({"email": EMAIL, "device_signal": "d123456789abcdef"}))
         self.assertEqual(response.status, 200)
         self.assertEqual(api.json.loads(response.text), {"ok": True, "expires_in": 600, "resend_after": 60})
         send.assert_awaited_once_with(EMAIL, CODE)
@@ -149,12 +149,12 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_vk_identity_gets_one_trial_after_provider_verification(self):
         conn = MagicMock()
         conn.fetchrow = AsyncMock(return_value=None)
-        conn.fetchval = AsyncMock(side_effect=[USER, 102])
+        conn.fetchval = AsyncMock(side_effect=[USER, False, 102, 0])
         conn.execute = AsyncMock()
         with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-42")), \
                 patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_vk_access_token(
-                "provider-token", current_user_id=None, device_signal="device",
+                "provider-token", current_user_id=None, device_signal="d123456789abcdef",
             )
         self.assertEqual(result, {"user_id": USER, "trial_granted": 3})
         statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
@@ -177,11 +177,11 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
             response = await api.vk_auth_handler(request({
                 "access_token": "verified-by-provider",
                 "provider_user_id": "attacker-controlled",
-                "device_signal": "device",
+                "device_signal": "d123456789abcdef",
             }))
         self.assertEqual(response.status, 200)
         confirm.assert_awaited_once_with(
-            "verified-by-provider", current_user_id=None, device_signal="device",
+            "verified-by-provider", current_user_id=None, device_signal="d123456789abcdef",
         )
 
     async def test_linking_vk_to_confirmed_account_never_grants_second_trial(self):
@@ -195,7 +195,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-43")), \
                 patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_vk_access_token(
-                "provider-token", current_user_id=USER, device_signal="device",
+                "provider-token", current_user_id=USER, device_signal="d123456789abcdef",
             )
         self.assertEqual(result, {"user_id": USER, "trial_granted": 0})
         statements = "\n".join(call.args[0] for call in conn.execute.await_args_list)
@@ -213,7 +213,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             with self.assertRaises(auth.AccountAuthError) as error:
                 await auth.confirm_vk_access_token(
-                    "provider-token", current_user_id=USER, device_signal="device",
+                    "provider-token", current_user_id=USER, device_signal="d123456789abcdef",
                 )
         self.assertEqual(error.exception.code, "identity_conflict")
 

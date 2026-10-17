@@ -20,7 +20,9 @@ for key, value in {
 import asyncpg
 from aiohttp.test_utils import TestClient, TestServer
 from app import password_auth as auth
-from app.account_auth import AccountAuthError, confirm_email_challenge, create_email_challenge
+from app.account_auth import AccountAuthError, confirm_email_challenge, create_email_challenge, _confirm_identity
+from app.trial_grants import normalize_device_signal
+from app.config import app_config
 from app.database import AppDatabase
 import app_api_server as api
 from app import password_recovery as recovery
@@ -38,6 +40,14 @@ class PasswordTests(unittest.TestCase):
         self.assertTrue(auth.verify_password(PASSWORD, first))
         self.assertFalse(auth.verify_password(PASSWORD + " ", first))
         self.assertFalse(auth.verify_password(PASSWORD, "broken"))
+
+    def test_device_signal_validation(self):
+        self.assertEqual(normalize_device_signal(" A123456789ABCDEF "), "a123456789abcdef")
+        self.assertEqual(normalize_device_signal("abc"), "abc")
+        for value in (None, "", "   ", 123, [], {}, "device-1", "0", "0000000000000000",
+                      "9774d56d682e549c", "x" * 17, "a" * 17, "a\nb"):
+            with self.subTest(value=value):
+                self.assertIsNone(normalize_device_signal(value))
 
     def test_validation(self):
         self.assertEqual(auth.normalize_login(" Reader_1 "), "reader_1")
@@ -60,7 +70,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
             server_settings={"search_path": self.schema},
         )
         async with self.pool.acquire() as conn:
-            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql"):
+            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql"):
                 await conn.execute((ROOT / name).read_text())
         self.pool_patch = patch.object(AppDatabase, "get_pool", return_value=self.pool)
         self.pool_patch.start()
@@ -74,12 +84,12 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
         await self.admin.execute(f'DROP SCHEMA "{self.schema}" CASCADE')
         await self.admin.close()
 
-    async def register(self, login="reader_1", device="device-1"):
+    async def register(self, login="reader_1", device="a123456789abcdef"):
         return await auth.authenticate_password(login, PASSWORD, registering=True, ip="127.0.0.1", device_signal=device)
 
     async def test_http_register_login_refresh_and_delete(self):
         response = await self.client.post("/v1/auth/password/register", json={
-            "login": "Reader_1", "password": PASSWORD, "device_signal": "device-1",
+            "login": "Reader_1", "password": PASSWORD, "device_signal": "a123456789abcdef",
         })
         self.assertEqual(response.status, 200, await response.text())
         registered = await response.json()
@@ -99,7 +109,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_password_credentials"), 0)
         response = await self.client.post("/v1/auth/password/login", json={"login": "reader_1", "password": PASSWORD})
         self.assertEqual(response.status, 401)
-        self.assertEqual((await self.register(device="device-2"))["trial_granted"], 0)
+        self.assertEqual((await self.register(device="b123456789abcdef"))["trial_granted"], 0)
 
     async def test_concurrent_registration_and_device_trial(self):
         results = await asyncio.gather(self.register(), self.register("READER_1"), return_exceptions=True)
@@ -107,6 +117,118 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r.code for r in results if isinstance(r, AccountAuthError)], ["login_taken"])
         self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_users"), 1)
         self.assertEqual((await self.register("reader_2"))["trial_granted"], 0)
+
+    async def identity(self, provider, identity, device):
+        return await _confirm_identity(provider, identity, identity,
+                                       current_user_id=None, device_signal=device)
+
+    async def test_invalid_devices_cannot_get_gifts_through_any_provider(self):
+        for provider in ("password", "email", "vk"):
+            for index, device in enumerate((None, "   ", {}, "not-an-android-id", "0")):
+                result = await self.identity(provider, f"{provider}-{index}", device)
+                self.assertEqual(result["trial_granted"], 0)
+        self.assertEqual(await self.pool.fetchval("SELECT SUM(granted_amount) FROM app_trial_claims"), 0)
+        self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_trial_claims"), 15)
+
+    async def test_http_whitespace_device_registers_without_gift(self):
+        response = await self.client.post("/v1/auth/password/register", json={
+            "login": "reader_1", "password": PASSWORD, "device_signal": "   ",
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        body = await response.json()
+        self.assertEqual(body["trial_granted"], 0)
+        self.assertEqual(body["balance"]["free_divinations_remaining"], 0)
+        self.assertTrue(body["access_token"])
+
+    async def test_denied_identity_survives_deletion_and_device_change(self):
+        first = await self.register()
+        denied = await self.register("reader_2")
+        self.assertEqual(denied["trial_granted"], 0)
+        await self.pool.execute("DELETE FROM app_users WHERE user_id = $1", denied["user_id"])
+        retry = await self.register("reader_2", "b123456789abcdef")
+        self.assertEqual(retry["trial_granted"], 0)
+        self.assertEqual(await self.pool.fetchval(
+            "SELECT free_divinations_remaining FROM app_user_balances WHERE user_id=$1", first["user_id"]), 3)
+
+    async def test_deleted_account_cannot_get_new_identity_gift_on_same_device(self):
+        first = await self.register()
+        await self.pool.execute("DELETE FROM app_users WHERE user_id=$1", first["user_id"])
+        self.assertEqual((await self.register("reader_2"))["trial_granted"], 0)
+
+    async def test_concurrent_link_and_login_preserve_balance(self):
+        first = await self.identity("vk", "reader", "abc")
+        results = await asyncio.wait_for(asyncio.gather(
+            self.identity("vk", "reader", "def"),
+            _confirm_identity("email", "reader@example.test", "reader@example.test",
+                current_user_id=first["user_id"], device_signal="abc"),
+        ), timeout=5)
+        self.assertTrue(all(row["trial_granted"] == 0 for row in results))
+        self.assertEqual(await self.pool.fetchval(
+            "SELECT free_divinations_remaining FROM app_user_balances WHERE user_id=$1", first["user_id"]), 3)
+
+    async def test_concurrent_providers_share_one_device_gift(self):
+        results = await asyncio.gather(*(
+            self.identity(provider, f"account-{i}", "a123456789abcdef")
+            for i, provider in enumerate(("password", "email", "vk", "email", "vk", "password"))
+        ))
+        self.assertEqual(sum(row["trial_granted"] for row in results), 3)
+        self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_trial_claims"), 6)
+        self.assertEqual(await self.pool.fetchval("SELECT SUM(free_divinations_remaining) FROM app_user_balances"), 3)
+
+    async def test_global_budget_is_atomic_and_rolls_over_without_resetting_old_claims(self):
+        with patch.object(app_config, "app_trial_daily_limit", 2):
+            results = await asyncio.gather(*(
+                self.identity("vk" if i % 2 else "email", f"account-{i}", f"{i + 1:016x}")
+                for i in range(8)
+            ))
+            self.assertEqual(sum(row["trial_granted"] for row in results), 6)
+            self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_users"), 8)
+            await self.pool.execute("UPDATE app_trial_claims SET created_at = NOW() - INTERVAL '25 hours'")
+            self.assertEqual((await self.identity("email", "account-0", "abc"))["trial_granted"], 0)
+            self.assertEqual((await self.identity("email", "fresh", "def"))["trial_granted"], 3)
+
+    async def test_zero_budget_preserves_paid_balance_and_login(self):
+        first = await self.register()
+        await self.pool.execute("UPDATE app_user_balances SET paid_divinations_remaining=7 WHERE user_id=$1", first["user_id"])
+        with patch.object(app_config, "app_trial_daily_limit", 0):
+            self.assertEqual((await self.register("reader_2", "b123456789abcdef"))["trial_granted"], 0)
+            login = await auth.authenticate_password("reader_1", PASSWORD, registering=False, ip="127.0.0.1")
+            self.assertEqual(login["user_id"], first["user_id"])
+        balance = await self.pool.fetchrow("SELECT * FROM app_user_balances WHERE user_id=$1", first["user_id"])
+        self.assertEqual(balance["paid_divinations_remaining"], 7)
+        self.assertEqual(balance["free_divinations_remaining"], 3)
+
+    async def test_migration_backfills_legacy_denied_identities_idempotently(self):
+        first = await self.register()
+        denied = await self.register("reader_2")
+        await self.pool.execute("DELETE FROM app_trial_claims WHERE claimed_user_id=$1", denied["user_id"])
+        migration = (ROOT / "app/migrations/009_trial_grants.sql").read_text()
+        await self.pool.execute(migration)
+        await self.pool.execute(migration)
+        self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_trial_claims"), 2)
+        self.assertEqual(await self.pool.fetchval(
+            "SELECT granted_amount FROM app_trial_claims WHERE claimed_user_id=$1", first["user_id"]), 3)
+        await self.pool.execute("DELETE FROM app_users WHERE user_id=$1", denied["user_id"])
+        self.assertEqual((await self.register("reader_2", "b123456789abcdef"))["trial_granted"], 0)
+
+    async def test_account_transaction_rollback_does_not_consume_gift(self):
+        from app.account_auth import _confirm_identity_with_conn
+        async with self.pool.acquire() as conn:
+            with self.assertRaisesRegex(RuntimeError, "simulate failure"):
+                async with conn.transaction():
+                    await _confirm_identity_with_conn(conn, "vk", "rollback", "VK ID",
+                        current_user_id=None, device_signal="abc")
+                    raise RuntimeError("simulate failure")
+        self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_trial_claims"), 0)
+        self.assertEqual(await self.pool.fetchval("SELECT COUNT(*) FROM app_users"), 0)
+        self.assertEqual((await self.identity("vk", "rollback", "abc"))["trial_granted"], 3)
+
+    async def test_legacy_existing_identity_without_claim_cannot_receive_new_gift(self):
+        first = await self.identity("vk", "legacy", "abc")
+        await self.pool.execute("DELETE FROM app_trial_claims")
+        self.assertEqual((await self.identity("vk", "legacy", "def"))["trial_granted"], 0)
+        self.assertEqual(await self.pool.fetchval(
+            "SELECT free_divinations_remaining FROM app_user_balances WHERE user_id=$1", first["user_id"]), 3)
 
     async def test_wrong_password_and_unknown_login_have_same_error_and_limit_persists(self):
         await self.register()
@@ -200,7 +322,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_challenge_owner_purpose_expiry_attempts_and_resend(self):
         account = await self.register()
-        other = await self.register("reader_2", "device-2")
+        other = await self.register("reader_2", "b123456789abcdef")
         with self.assertRaises(AccountAuthError):
             await recovery.start_challenge(user_id=account["user_id"], email="reader@example.test", password="wrong password 123")
         with patch.object(recovery, "send_login_email", AsyncMock()) as send:
