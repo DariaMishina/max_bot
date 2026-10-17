@@ -17,7 +17,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from handlers import common, feedback, divination, pay, daily_card
+from handlers import common, feedback, divination, pay, daily_card, message_router
 from main.botdef import bot
 from main.config_reader import config
 from main.database import Database
@@ -26,10 +26,9 @@ from main.database import Database
 async def main():
     logging.basicConfig(filename="bot.log", encoding="utf-8", level=logging.INFO)
 
-    # Добавляем роутеры к боту
-    # Порядок важен: common — первый (обрабатывает /start, /cancel),
-    # feedback — рано (до unknown_command),
-    # pay — перед divination (приоритет обработчиков оплаты)
+    # message_router — единственный on_message-обработчик. Остальные
+    # роутеры регистрируют команды, bot-start и callback-кнопки.
+    bot.add_router(message_router.router)
     bot.add_router(common.router)
     bot.add_router(feedback.router)
     bot.add_router(pay.router)

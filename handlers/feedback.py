@@ -7,7 +7,7 @@
 """
 import logging
 import aiomax
-from aiomax import fsm, filters
+from aiomax import fsm
 
 from main.botdef import bot
 from main.config_reader import config
@@ -45,7 +45,6 @@ async def handle_leave_feedback_paid(cb: aiomax.Callback, cursor: fsm.FSMCursor)
     )
 
 
-@router.on_message(filters.state('waiting_feedback_paid'))
 async def handle_feedback_paid_text(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Получаем развёрнутый отзыв от купившего пользователя."""
     if message.content and message.content.strip().startswith("/"):
@@ -90,7 +89,6 @@ async def handle_feedback_paid_text(message: aiomax.Message, cursor: fsm.FSMCurs
     cursor.clear()
 
 
-@router.on_message(filters.state('waiting_feedback'))
 async def handle_feedback(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Получаем ответ обратной связи"""
     if message.content and message.content.strip().startswith("/"):

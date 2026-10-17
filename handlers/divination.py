@@ -15,7 +15,7 @@ from html import escape
 import aiohttp
 
 import aiomax
-from aiomax import fsm, filters, buttons
+from aiomax import fsm, buttons
 
 from keyboards.divination import make_divination_kb
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
@@ -48,6 +48,7 @@ from main.question_validation import (
     InvalidQuestionError,
     validate_question_text,
 )
+from main.message_routing import NAVIGATION_MESSAGES
 
 # Лимиты уточняющих вопросов после расклада
 FOLLOW_UP_LIMIT_FREE = 2
@@ -79,6 +80,7 @@ def _result_keyboard(*, free_limit_reached: bool):
 
 # FSM состояния (строковые для aiomax)
 STATE_CHOOSING_DIVINATION = 'choosing_divination'
+STATE_WAITING_FOR_NEW_QUESTION = 'waiting_for_new_question'
 STATE_WAITING_FOR_QUESTION = 'waiting_for_question'
 STATE_SELECTING_CARDS = 'selecting_cards'
 STATE_WAITING_FOR_CARDS_INPUT = 'waiting_for_cards_input'
@@ -95,6 +97,9 @@ async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     from handlers.common import check_channel_subscription, send_channel_sub_prompt
     user_id = ctx.sender.user_id
     logging.info(f"cmd_divination: user_id={user_id}")
+
+    cursor.clear()
+    await get_and_delete_webapp_follow_up_context(user_id)
 
     if not await check_channel_subscription(user_id):
         await send_channel_sub_prompt(ctx)
@@ -116,7 +121,7 @@ async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
         await ctx.reply(PAYWALL_NO_DIVINATIONS_TEXT, keyboard=make_payment_kb(), format='html')
         return
 
-    cursor.clear()
+    cursor.change_state(STATE_WAITING_FOR_NEW_QUESTION)
     
     await ctx.reply(
         "🔮 <b>Новое гадание</b>\n\n"
@@ -131,7 +136,6 @@ async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
 # Логика: если у пользователя нет активного состояния FSM,
 # его текст считается вопросом для нового гадания.
 
-@router.on_message(filters.state(STATE_CHOOSING_DIVINATION))
 async def handle_divination_type_choice(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Выбор типа гадания: Ицзин или Таро"""
     text = (message.content or "").strip()
@@ -172,7 +176,6 @@ async def handle_divination_type_choice(message: aiomax.Message, cursor: fsm.FSM
             )
 
 
-@router.on_message(filters.state(STATE_WAITING_FOR_QUESTION))
 async def process_divination_question(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Обработка вопроса для гадания"""
     text = (message.content or "").strip()
@@ -623,7 +626,6 @@ async def handle_tarot_name_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     )
 
 
-@router.on_message(filters.state(STATE_SELECTING_CARDS))
 async def handle_cards_input_from_selection(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Принять названия карт сразу, без нажатия кнопки «Написать свои карты»."""
     text = (message.content or "").strip()
@@ -636,7 +638,6 @@ async def handle_cards_input_from_selection(message: aiomax.Message, cursor: fsm
     await handle_cards_input(message, cursor)
 
 
-@router.on_message(filters.state(STATE_WAITING_FOR_CARDS_INPUT))
 async def handle_cards_input(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Обработка текстового ввода названий карт."""
     from main.botdef import bot
@@ -850,6 +851,10 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
     Используется из handle_follow_up и при первом уточнении после WebApp-гадания.
     """
     text = (message.content or "").strip()
+
+    # Defense in depth: menu labels are intents, never questions for the LLM.
+    if text in NAVIGATION_MESSAGES:
+        return
     
     if text.startswith("/"):
         if text == "/cancel":
@@ -929,15 +934,55 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
         await message.reply("❌ Ошибка при обработке вопроса. Попробуйте ещё раз.", keyboard=make_back_to_menu_kb())
 
 
-@router.on_message(filters.state(STATE_CHATTING))
 async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Обработка уточняющих вопросов после расклада"""
     await _process_follow_up_message(message, cursor)
 
 
+# ==================== Новый вопрос ====================
+
+async def _start_question_first_flow(
+    message: aiomax.Message,
+    cursor: fsm.FSMCursor,
+    text: str,
+) -> None:
+    """Сохранить новый вопрос и перейти к выбору типа гадания."""
+    from handlers.common import check_channel_subscription, send_channel_sub_prompt
+
+    user_id = message.sender.user_id
+    if not await check_channel_subscription(user_id):
+        await send_channel_sub_prompt(message)
+        return
+
+    logging.info(f"New divination question from user {user_id}: {text[:50]}")
+    cursor.change_data({'question': text})
+    cursor.change_state(STATE_CHOOSING_DIVINATION)
+
+    await message.reply(
+        f"🔮 Ваш вопрос: <i>«{escape(text)}»</i>\n\n"
+        "Выберите тип гадания:",
+        keyboard=make_divination_kb(),
+        format='html'
+    )
+
+
+async def handle_new_divination_question(message: aiomax.Message, cursor: fsm.FSMCursor):
+    """Принять первый вопрос после явного нажатия «Новый расклад»."""
+    text = (message.content or "").strip()
+    if not text or text.startswith("/"):
+        return
+
+    try:
+        text = validate_question_text(text)
+    except InvalidQuestionError as error:
+        await message.reply(str(error), keyboard=make_back_to_menu_kb())
+        return
+
+    await _start_question_first_flow(message, cursor, text)
+
+
 # ==================== Свободный текст как новый вопрос ====================
 
-@router.on_message()
 async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCursor):
     """
     Ловит любой текст без активного состояния FSM — считает его вопросом для нового гадания.
@@ -948,7 +993,7 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
     if not text or text.startswith("/"):
         return
     
-    if text in ["Мои гадания 🔮", "Новый расклад 🃏", "Купить расклады 💎", "Карта дня ✨", "Личная консультация 🔮"]:
+    if text in NAVIGATION_MESSAGES:
         return
     
     if cursor.get_state() is not None:
@@ -970,24 +1015,7 @@ async def handle_free_text_question(message: aiomax.Message, cursor: fsm.FSMCurs
         await _process_follow_up_message(message, cursor)
         return
     
-    # Проверяем подписку на канал (для новых пользователей)
-    from handlers.common import check_channel_subscription, send_channel_sub_prompt
-    if not await check_channel_subscription(user_id):
-        await send_channel_sub_prompt(message)
-        return
-
-    logging.info(f"Free text question from user {user_id}: {text[:50]}")
-    
-    # Сохраняем вопрос и предлагаем выбрать тип гадания
-    cursor.change_data({'question': text})
-    cursor.change_state(STATE_CHOOSING_DIVINATION)
-    
-    await message.reply(
-        f"🔮 Ваш вопрос: <i>«{escape(text)}»</i>\n\n"
-        "Выберите тип гадания:",
-        keyboard=make_divination_kb(),
-        format='html'
-    )
+    await _start_question_first_flow(message, cursor, text)
 
 
 # ==================== Утилиты ====================

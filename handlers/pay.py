@@ -19,7 +19,7 @@ import aiohttp
 import time
 
 import aiomax
-from aiomax import fsm, filters, buttons
+from aiomax import fsm, buttons
 
 from keyboards.pay import make_payment_kb, make_email_confirmation_kb
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
@@ -202,7 +202,6 @@ async def handle_payment_selection(cb: aiomax.Callback, cursor: fsm.FSMCursor):
         )
 
 
-@router.on_message(filters.state(STATE_WAITING_EMAIL))
 async def handle_email_input(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Обработка ввода email"""
     text = (message.content or "").strip()

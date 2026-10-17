@@ -19,7 +19,7 @@ import logging
 from typing import Optional, Tuple
 
 import aiomax
-from aiomax import fsm, filters, buttons
+from aiomax import fsm, buttons
 
 from keyboards.main_menu import make_main_menu, make_back_to_menu_kb
 from keyboards.pay import make_payment_kb
@@ -382,16 +382,23 @@ async def show_balance_cmd(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     await _show_balance(ctx, cursor)
 
 
-@router.on_message(filters.equals("Мои гадания 🔮"))
 async def show_balance_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Показать баланс по кнопке «Мои гадания 🔮»"""
+    cursor.clear()
     await _show_balance(message, cursor)
 
 
-@router.on_message(filters.equals("Новый расклад 🃏"))
 async def new_divination_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Новый расклад 🃏» — просит ввести вопрос"""
     user_id = message.sender.user_id
+
+    # Новый расклад всегда отдельная сессия: не даём следующему
+    # сообщению попасть в старый chatting/WebApp-контекст.
+    from handlers.divination import STATE_WAITING_FOR_NEW_QUESTION
+
+    cursor.clear()
+    await get_and_delete_webapp_follow_up_context(user_id)
+
     can_div, _ = await can_user_divinate(user_id)
     if not can_div:
         try:
@@ -405,7 +412,6 @@ async def new_divination_button(message: aiomax.Message, cursor: fsm.FSMCursor):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
         from handlers.divination import PAYWALL_NO_DIVINATIONS_TEXT
-        cursor.clear()
         await message.reply(
             PAYWALL_NO_DIVINATIONS_TEXT,
             keyboard=make_payment_kb(),
@@ -413,14 +419,13 @@ async def new_divination_button(message: aiomax.Message, cursor: fsm.FSMCursor):
         )
         return
 
-    cursor.clear()
+    cursor.change_state(STATE_WAITING_FOR_NEW_QUESTION)
     await message.reply(
         "🔮 Напиши свой вопрос — о чём хочешь узнать?",
         keyboard=make_back_to_menu_kb()
     )
 
 
-@router.on_message(filters.equals("Купить расклады 💎"))
 async def buy_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Купить расклады 💎» — переходит в оплату"""
     from handlers.pay import cmd_pay_internal
@@ -428,7 +433,6 @@ async def buy_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     await cmd_pay_internal(message)
 
 
-@router.on_message(filters.equals("Личная консультация 🔮"))
 async def consultation_menu_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Личная консультация 🔮» — описание услуги и 2 тарифа."""
     from keyboards.pay import make_consultation_kb
@@ -461,7 +465,6 @@ async def consultation_menu_button(message: aiomax.Message, cursor: fsm.FSMCurso
     )
 
 
-@router.on_message(filters.equals("Карта дня ✨"))
 async def daily_card_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Кнопка «Карта дня ✨» — показать выбор карты дня"""
     from handlers.daily_card import create_daily_card_keyboard
