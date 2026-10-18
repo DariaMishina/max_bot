@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -68,6 +69,91 @@ class DatabaseBackupScriptsTest(unittest.TestCase):
         timer = (REPO_ROOT / "deploy" / "postgres-backup.timer").read_text()
         self.assertIn("Persistent=true", timer)
         self.assertIn("03:00:00 Europe/Moscow", timer)
+
+    def test_retention_keeps_three_latest_completed_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            keys_file = temp_path / "keys.txt"
+            deleted_file = temp_path / "deleted.txt"
+            fake_aws = temp_path / "aws"
+
+            timestamps = [
+                "20261014T000000Z",
+                "20261015T000000Z",
+                "20261016T000000Z",
+                "20261017T000000Z",
+            ]
+            keys = []
+            for timestamp in timestamps:
+                keys.extend(
+                    [
+                        f"daily/max_bot_db/2026/10/14/max_bot_db-{timestamp}.dump.age",
+                        f"daily/app_bot_db/2026/10/14/app_bot_db-{timestamp}.dump.age",
+                        f"daily/manifests/2026/10/14/manifest-{timestamp}.txt.age",
+                    ]
+                )
+            orphan_timestamp = "20261013T000000Z"
+            orphan_key = (
+                "daily/max_bot_db/2026/10/13/"
+                f"max_bot_db-{orphan_timestamp}.dump.age"
+            )
+            keys.append(orphan_key)
+            keys_file.write_text("\t".join(keys) + "\n")
+            fake_aws.write_text(
+                """#!/usr/bin/env bash
+set -eu
+if [[ " $* " == *" list-objects-v2 "* ]]; then
+  cat "$FAKE_KEYS_FILE"
+  exit 0
+fi
+if [[ " $* " == *" delete-object "* ]]; then
+  while (($#)); do
+    if [[ "$1" == "--key" ]]; then
+      printf '%s\\n' "$2" >>"$FAKE_DELETED_FILE"
+      exit 0
+    fi
+    shift
+  done
+fi
+exit 2
+"""
+            )
+            fake_aws.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{temp_path}:{environment['PATH']}",
+                    "FAKE_KEYS_FILE": str(keys_file),
+                    "FAKE_DELETED_FILE": str(deleted_file),
+                    "BACKUP_S3_ENDPOINT": "https://example.invalid",
+                    "BACKUP_S3_BUCKET": "test-bucket",
+                    "BACKUP_S3_PREFIX": "daily",
+                    "BACKUP_RETENTION_SUCCESSFUL_RUNS": "3",
+                }
+            )
+            subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"source {BACKUP_SCRIPT!s}; prune_old_successful_runs",
+                ],
+                check=True,
+                cwd=REPO_ROOT,
+                env=environment,
+            )
+
+            deleted = set(deleted_file.read_text().splitlines())
+            oldest = timestamps[0]
+            self.assertEqual(
+                deleted,
+                {
+                    f"daily/max_bot_db/2026/10/14/max_bot_db-{oldest}.dump.age",
+                    f"daily/app_bot_db/2026/10/14/app_bot_db-{oldest}.dump.age",
+                    f"daily/manifests/2026/10/14/manifest-{oldest}.txt.age",
+                },
+            )
+            self.assertNotIn(orphan_key, deleted)
 
 
 if __name__ == "__main__":

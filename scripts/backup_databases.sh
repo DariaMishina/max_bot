@@ -143,12 +143,81 @@ upload_and_verify() {
     || fail "Size mismatch for $object_key: local=$local_size remote=$remote_size"
 }
 
+list_backup_keys() {
+  aws --endpoint-url "$BACKUP_S3_ENDPOINT" s3api list-objects-v2 \
+    --bucket "$BACKUP_S3_BUCKET" \
+    --prefix "${BACKUP_S3_PREFIX:-daily}/" \
+    --query 'Contents[].Key' \
+    --output text \
+    | tr '\t' '\n' \
+    | awk 'NF && $0 != "None"'
+}
+
+prune_old_successful_runs() {
+  local prefix retention keys_output timestamps_output
+  local key filename timestamp index old_timestamp
+  local -a keys=()
+  local -a completed_timestamps=()
+
+  prefix="${BACKUP_S3_PREFIX:-daily}"
+  retention="${BACKUP_RETENTION_SUCCESSFUL_RUNS:-3}"
+  [[ "$retention" =~ ^[1-9][0-9]*$ ]] \
+    || fail "BACKUP_RETENTION_SUCCESSFUL_RUNS must be a positive integer"
+
+  keys_output="$(list_backup_keys)" \
+    || fail "Cannot list backup objects for retention"
+  if [[ -n "$keys_output" ]]; then
+    while IFS= read -r key; do
+      keys+=("$key")
+    done <<<"$keys_output"
+  fi
+  for key in "${keys[@]}"; do
+    case "$key" in
+      "$prefix"/manifests/*/manifest-*.txt.age)
+        filename="${key##*/}"
+        timestamp="${filename#manifest-}"
+        timestamp="${timestamp%.txt.age}"
+        if [[ "$timestamp" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+          completed_timestamps+=("$timestamp")
+        fi
+        ;;
+    esac
+  done
+
+  if ((${#completed_timestamps[@]} <= retention)); then
+    log "Retention: ${#completed_timestamps[@]} successful runs found; nothing to delete"
+    return
+  fi
+
+  timestamps_output="$(
+    printf '%s\n' "${completed_timestamps[@]}" | sort -u -r
+  )"
+  completed_timestamps=()
+  while IFS= read -r timestamp; do
+    completed_timestamps+=("$timestamp")
+  done <<<"$timestamps_output"
+
+  for ((index = retention; index < ${#completed_timestamps[@]}; index++)); do
+    old_timestamp="${completed_timestamps[$index]}"
+    log "Retention: deleting successful run $old_timestamp"
+    for key in "${keys[@]}"; do
+      if [[ "$key" == "$prefix/"* ]] \
+        && [[ "$key" == *"/manifest-${old_timestamp}.txt.age" \
+          || "$key" == *"-${old_timestamp}.dump.age" ]]; then
+        aws --endpoint-url "$BACKUP_S3_ENDPOINT" s3api delete-object \
+          --bucket "$BACKUP_S3_BUCKET" \
+          --key "$key" >/dev/null
+      fi
+    done
+  done
+}
+
 main() {
   local project_root max_env psy_env girl_env app_production_env
   local work_root timestamp date_path
   local manifest dump_file encrypted_file database_name object_key
 
-  require_command pg_dump pg_restore age aws sha256sum stat awk curl
+  require_command pg_dump pg_restore age aws sha256sum stat awk curl sort tr
   require_variable BACKUP_S3_ENDPOINT
   require_variable BACKUP_S3_BUCKET
   require_variable BACKUP_AGE_RECIPIENT
@@ -207,7 +276,11 @@ main() {
   object_key="${BACKUP_S3_PREFIX:-daily}/manifests/${date_path}/manifest-${timestamp}.txt.age"
   upload_and_verify "$encrypted_file" "$object_key"
 
+  # The manifest is uploaded last and is the completion marker for the whole
+  # run. Only completed runs participate in count-based retention.
   success=1
+  prune_old_successful_runs
+
   if [[ -n "${BACKUP_SUCCESS_HEARTBEAT_URL:-}" ]]; then
     curl --fail --silent --show-error --max-time 15 \
       "${BACKUP_SUCCESS_HEARTBEAT_URL}" >/dev/null
@@ -215,4 +288,6 @@ main() {
   log "Backup completed successfully: $timestamp"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
