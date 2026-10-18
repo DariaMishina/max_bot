@@ -101,11 +101,18 @@ fun AuthScreen(
                     style = MaterialTheme.typography.bodySmall)
             }
             OutlinedTextField(value = state.login, onValueChange = onLoginChange,
-                label = { Text("Логин") }, supportingText = { Text("6–32 латинские буквы, цифры или _; регистр не важен") },
+                label = { Text("Логин") },
+                supportingText = {
+                    Text("3–64: латинские буквы, цифры, _ . @ -; регистр не важен")
+                },
                 singleLine = true, enabled = !state.submitting, modifier = Modifier.fillMaxWidth())
+            if (state.registering) {
+                Text("Логин с @ не привязывает почту для восстановления.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
             PasswordField(state.password, onPasswordChange, "Пароль", !state.submitting)
             if (state.registering) {
-                Text("От 12 до 128 символов", style = MaterialTheme.typography.bodySmall)
+                Text("От 8 до 128 любых символов", style = MaterialTheme.typography.bodySmall)
                 PasswordField(state.passwordConfirmation, onPasswordConfirmationChange, "Подтверждение пароля", !state.submitting)
             }
             PrimaryAction(if (state.registering) "Зарегистрироваться" else "Войти", onPasswordSubmit,

@@ -79,6 +79,29 @@ class SessionViewModelTest {
         assertTrue(model.state.value.ready)
     }
 
+    @Test fun passwordLoginAcceptsExpandedLoginAndEightCharacterPassword() = runTest(dispatcher) {
+        val auth = FakeAuth(confirmed = false)
+        val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
+        runCurrent()
+        model.login("User.Name-1@example.test")
+        model.password("12345678")
+        model.authenticatePassword()
+        runCurrent()
+        assertTrue(model.state.value.ready)
+    }
+
+    @Test fun passwordLoginStillRejectsTooShortCredentials() = runTest(dispatcher) {
+        val auth = FakeAuth(confirmed = false)
+        val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))
+        runCurrent()
+        model.login("ab")
+        model.password("1234567")
+        model.authenticatePassword()
+        runCurrent()
+        assertFalse(model.state.value.ready)
+        assertTrue(model.state.value.error!!.contains("Логин"))
+    }
+
     @Test fun vkConfirmationOpensMainApp() = runTest(dispatcher) {
         val auth = FakeAuth(confirmed = false)
         val model = SessionViewModel(EnsureGuestSessionUseCase(auth), auth, FakeOnboarding(true))

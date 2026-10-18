@@ -14,14 +14,17 @@ _HASH_SLOTS = asyncio.Semaphore(2)
 
 
 def normalize_login(value: object) -> str:
-    if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9_]{6,32}", value.strip()):
-        raise AccountAuthError("invalid_login", "Логин: 6–32 латинские буквы, цифры или _")
+    if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9_.@-]{3,64}", value.strip()):
+        raise AccountAuthError(
+            "invalid_login",
+            "Логин: 3–64 латинские буквы, цифры или символы _ . @ -",
+        )
     return value.strip().lower()
 
 
 def validate_password(value: object) -> str:
-    if not isinstance(value, str) or not 12 <= len(value) <= 128:
-        raise AccountAuthError("invalid_password", "Пароль должен содержать от 12 до 128 символов")
+    if not isinstance(value, str) or not 8 <= len(value) <= 128:
+        raise AccountAuthError("invalid_password", "Пароль должен содержать от 8 до 128 символов")
     return value
 
 

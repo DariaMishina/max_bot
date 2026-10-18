@@ -36,7 +36,7 @@ fun RecoveryForm(binding: Boolean, start: suspend (String, String, String) -> St
                 } else if (challenge.isEmpty()) {
                     Text(if (binding) "Укажите почту и текущий пароль. Затем подтвердите адрес кодом из письма."
                          else "Введите логин и почту, которую ранее подтвердили в профиле. Без привязанной почты сброс недоступен.")
-                    if (!binding) OutlinedTextField(login, { login = it.take(32) }, label = { Text("Логин") }, enabled = !busy, singleLine = true)
+                    if (!binding) OutlinedTextField(login, { login = it.take(64) }, label = { Text("Логин") }, enabled = !busy, singleLine = true)
                     OutlinedTextField(email, { email = it.take(320) }, label = { Text("Почта") }, enabled = !busy, singleLine = true)
                     if (binding) PasswordField(password, { password = it.take(128) }, "Текущий пароль", !busy)
                 } else {
@@ -44,15 +44,15 @@ fun RecoveryForm(binding: Boolean, start: suspend (String, String, String) -> St
                          else "Если логин и подтверждённая почта совпадают, письмо отправлено. Код действует 10 минут.")
                     OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("Код из письма") }, enabled = !busy, singleLine = true)
                     if (!binding) {
-                        PasswordField(password, { password = it.take(128) }, "Новый пароль (12–128 символов)", !busy)
+                        PasswordField(password, { password = it.take(128) }, "Новый пароль (8–128 символов)", !busy)
                         PasswordField(repeated, { repeated = it.take(128) }, "Повторите пароль", !busy)
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (!done) Button(enabled = !busy, onClick = {
                     error = null
-                    if (challenge.isNotEmpty() && !binding && (password != repeated || password.length !in 12..128)) {
-                        error = "Пароли должны совпадать и содержать 12–128 символов"
+                    if (challenge.isNotEmpty() && !binding && (password != repeated || password.length !in 8..128)) {
+                        error = "Пароли должны совпадать и содержать 8–128 символов"
                     } else {
                         busy = true
                         scope.launch {

@@ -87,7 +87,7 @@ class SessionViewModel(
     }
 
     fun login(value: String) {
-        if (!_state.value.submitting) _state.value = _state.value.copy(login = value.take(32), error = null)
+        if (!_state.value.submitting) _state.value = _state.value.copy(login = value.take(64), error = null)
     }
 
     fun password(value: String) {
@@ -102,8 +102,9 @@ class SessionViewModel(
         val current = _state.value
         if (current.submitting) return
         val error = when {
-            !current.login.trim().matches(Regex("[a-zA-Z0-9_]{6,32}")) -> "Логин: 6–32 латинские буквы, цифры или _"
-            current.password.length !in 12..128 -> "Пароль должен содержать от 12 до 128 символов"
+            !current.login.trim().matches(Regex("[a-zA-Z0-9_.@-]{3,64}")) ->
+                "Логин: 3–64 латинские буквы, цифры или символы _ . @ -"
+            current.password.length !in 8..128 -> "Пароль должен содержать от 8 до 128 символов"
             current.registering && current.password != current.passwordConfirmation -> "Пароли не совпадают"
             else -> null
         }

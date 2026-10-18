@@ -51,10 +51,14 @@ class PasswordTests(unittest.TestCase):
 
     def test_validation(self):
         self.assertEqual(auth.normalize_login(" Reader_1 "), "reader_1")
-        for value in (None, 12, "short", "a@b.test", "кириллица", "x" * 33):
+        self.assertEqual(auth.normalize_login(" User.Name-1@example.test "), "user.name-1@example.test")
+        self.assertEqual(auth.normalize_login("abc"), "abc")
+        for value in (None, 12, "ab", "has space", "кириллица", "x" * 65):
             with self.assertRaises(AccountAuthError):
                 auth.normalize_login(value)
-        for value in (None, 12, "short", "x" * 129):
+        self.assertEqual(auth.validate_password("12345678"), "12345678")
+        self.assertEqual(auth.validate_password(PASSWORD), PASSWORD)
+        for value in (None, 12, "1234567", "x" * 129):
             with self.assertRaises(AccountAuthError):
                 auth.validate_password(value)
 
@@ -70,7 +74,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
             server_settings={"search_path": self.schema},
         )
         async with self.pool.acquire() as conn:
-            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql", "app/migrations/010_trial_decision.sql"):
+            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql", "app/migrations/010_trial_decision.sql", "app/migrations/011_password_credentials_policy.sql"):
                 await conn.execute((ROOT / name).read_text())
         self.pool_patch = patch.object(AppDatabase, "get_pool", return_value=self.pool)
         self.pool_patch.start()
