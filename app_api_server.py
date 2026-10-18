@@ -130,6 +130,7 @@ def _balance_payload(balance: Optional[dict]) -> dict:
         "paid_divinations_remaining": balance["paid_divinations_remaining"],
         "unlimited_until": balance.get("unlimited_until"),
         "total_divinations_used": balance.get("total_divinations_used", 0),
+        "trial_status": balance.get("trial_status"),
     }
 
 

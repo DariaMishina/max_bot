@@ -41,9 +41,10 @@ async def claim_trial(
     signal = normalize_device_signal(device_signal)
     device_hash = signal_hash("device", signal)
     await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('app-trial-grants-v1', 0))")
-    device_used = bool(device_hash) and bool(await conn.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM app_trial_claims WHERE device_hash = $1)", device_hash,
-    ))
+    previous_amount = await conn.fetchval(
+        "SELECT granted_amount FROM app_trial_claims WHERE device_hash = $1", device_hash,
+    ) if device_hash else None
+    device_used = previous_amount is not None
     claim_id = await conn.fetchval(
         """INSERT INTO app_trial_claims (identity_key, device_hash, claimed_user_id, granted_amount)
            VALUES ($1, $2, $3, 0)
@@ -58,7 +59,7 @@ async def claim_trial(
     elif not device_hash:
         reason = "invalid_device"
     elif device_used:
-        reason = "device_used"
+        reason = "device_used" if previous_amount > 0 else "device_unavailable"
     else:
         granted_today = await conn.fetchval(
             """SELECT COUNT(*) FROM app_trial_claims
@@ -67,6 +68,9 @@ async def claim_trial(
         if granted_today >= app_config.app_trial_daily_limit:
             reason = "daily_limit"
     if reason:
+        await conn.execute(
+            "UPDATE app_trial_claims SET decision = $2 WHERE id = $1", claim_id, reason,
+        )
         # No raw IP, device identifier, login or email in operational logs.
         log = logger.warning if reason == "daily_limit" else logger.info
         log("Welcome gift denied: reason=%s", reason)
@@ -77,7 +81,7 @@ async def claim_trial(
            WHERE user_id = $1""", user_id, amount,
     )
     await conn.execute(
-        "UPDATE app_trial_claims SET granted_amount = $2 WHERE id = $1", claim_id, amount,
+        "UPDATE app_trial_claims SET granted_amount = $2, decision = 'granted' WHERE id = $1", claim_id, amount,
     )
     logger.info("Welcome gift granted: amount=%s", amount)
     return amount

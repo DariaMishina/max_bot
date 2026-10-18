@@ -92,8 +92,8 @@ fun MainScaffold(container: AppContainer, onSessionEnded: () -> Unit) {
                 ReadingScreen(model, onBack = { readingId = null }, onNew = onNew, onShop = onShop)
             } else when (selected) {
                 0 -> {
-                    val model: SpreadViewModel = viewModel(factory = SpreadViewModel.factory(container.readingRepository))
-                    SpreadScreen(model, onResult = { readingId = it }, onShop = { exhausted = true; onShop() })
+                    val model: SpreadViewModel = viewModel(factory = SpreadViewModel.factory(container.readingRepository, container.userRepository))
+                    SpreadScreen(model, onResult = { readingId = it }, onShop = { exhausted = true; onShop() }, onAccount = { selected = 3 })
                 }
                 1 -> {
                     val model: HistoryViewModel = viewModel(factory = HistoryViewModel.factory(container.userRepository))

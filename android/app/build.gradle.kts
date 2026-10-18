@@ -80,8 +80,8 @@ android {
         applicationId = "ru.tarotsphere.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.2"
+        versionCode = 9
+        versionName = "0.8.3"
         manifestPlaceholders["rustoreConsoleAppId"] = rustoreConsoleAppId
         buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", (rustoreConsoleAppId != "0").toString())
         buildConfigField("String", "APP_RELEASE_CHANNEL", "\"$appBuildChannel\"")

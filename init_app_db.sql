@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS app_trial_claims (
     device_hash        VARCHAR(64) NULL UNIQUE,
     claimed_user_id    UUID NULL REFERENCES app_users(user_id) ON DELETE SET NULL,
     granted_amount     SMALLINT NOT NULL DEFAULT 0,
+    decision           TEXT NULL,
     created_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_app_trial_claims_granted_created

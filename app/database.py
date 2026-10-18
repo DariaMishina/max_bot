@@ -119,7 +119,9 @@ async def get_user_balance(user_id: uuid.UUID) -> Optional[Dict[str, Any]]:
                paid_divinations_remaining,
                unlimited_until,
                total_divinations_used,
-               updated_at
+               updated_at,
+               (SELECT decision FROM app_trial_claims
+                WHERE claimed_user_id = $1 ORDER BY id LIMIT 1) AS trial_status
         FROM app_user_balances
         WHERE user_id = $1
         """,

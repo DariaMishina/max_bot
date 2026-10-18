@@ -8,6 +8,7 @@ data class Balance(
     val paidRemaining: Int,
     val unlimitedUntil: String?,
     val totalUsed: Int,
+    val trialStatus: String? = null,
 ) {
     val hasUnlimited: Boolean
         get() = unlimitedUntil?.let { value ->

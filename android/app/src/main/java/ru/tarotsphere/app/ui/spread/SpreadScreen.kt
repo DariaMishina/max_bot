@@ -24,15 +24,21 @@ import ru.tarotsphere.app.ui.components.*
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 
 @Composable
-fun SpreadScreen(viewModel: SpreadViewModel, onResult: (Long) -> Unit, onShop: () -> Unit) {
+fun SpreadScreen(viewModel: SpreadViewModel, onResult: (Long) -> Unit, onShop: () -> Unit, onAccount: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     LaunchedEffect(state.resultId) {
         state.resultId?.let { onResult(it); viewModel.consumeResult() }
     }
-    LaunchedEffect(state.needsShop) {
-        if (state.needsShop) { onShop(); viewModel.consumeShop() }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.refreshBalance()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    LaunchedEffect(Unit) { viewModel.refreshBalance() }
     SpreadContent(
         state = state, onQuestion = viewModel::question,
         onMode = { mode -> focus.clearFocus(); if (mode != state.mode) viewModel.mode(mode) },
@@ -41,6 +47,7 @@ fun SpreadScreen(viewModel: SpreadViewModel, onResult: (Long) -> Unit, onShop: (
         onNamedSelect = { position, card -> focus.clearFocus(); viewModel.selectNamed(position, card) },
         onLoadCatalog = viewModel::loadCatalog,
         onSubmit = { focus.clearFocus(); viewModel.submit() },
+        onShop = onShop, onAccount = onAccount, onRefresh = viewModel::refreshBalance,
     )
 }
 
@@ -50,6 +57,7 @@ private fun SpreadContent(
     onSelect: (String) -> Unit, onLoadDeck: () -> Unit,
     onNamedQuery: (Int, String) -> Unit, onNamedSelect: (Int, TarotCard) -> Unit,
     onLoadCatalog: () -> Unit, onSubmit: () -> Unit,
+    onShop: () -> Unit = {}, onAccount: () -> Unit = {}, onRefresh: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val editable = !state.submitting && !state.retryPending
@@ -70,6 +78,32 @@ private fun SpreadContent(
         }
     }
     SphereScreen {
+        if (!state.retryPending && !state.submitting) {
+            if (state.loadingBalance) {
+                SphereHeader("Проверяем доступные расклады", "Это займёт несколько секунд.")
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                return@SphereScreen
+            }
+            if (state.balanceError != null) {
+                StatusPanel("Не удалось проверить баланс", state.balanceError, StatusTone.Error)
+                PrimaryAction("Повторить проверку", onRefresh)
+                return@SphereScreen
+            }
+            if (state.needsShop || state.balance?.canDivinate == false) {
+                val message = emptyBalanceMessage(state.balance)
+                SphereHeader(message.first, message.second, "Сфера Таро")
+                if (state.question.isNotBlank()) {
+                    Text("Ваш вопрос и выбранные карты сохранены. После покупки вернитесь во вкладку «Расклад».",
+                        color = colors.onSurfaceVariant)
+                }
+                PrimaryAction("Выбрать пакет", onShop)
+                SecondaryAction("Открыть профиль и сменить аккаунт", onAccount)
+                Text("Если расклады остались в другом аккаунте, войдите в него через профиль.",
+                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                SecondaryAction("Обновить баланс", onRefresh)
+                return@SphereScreen
+            }
+        }
         SphereHeader("О чём спросим карты?", "Можно начать с того, что сейчас занимает ваши мысли.", "Сфера Таро")
         QuestionField(
             state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
@@ -186,4 +220,15 @@ private fun SpreadPreview() {
 private fun ManualSpreadPreview() {
     TarotSphereTheme { SpreadContent(SpreadUiState(question = "Что поможет мне двигаться вперёд?", mode = CardSelectionMode.INTUITIVE,
         deck = (1..9).map { TarotCard(it.toString(), "Карта $it", "") }), {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, {}, {}) }
+}
+
+internal fun emptyBalanceMessage(balance: ru.tarotsphere.app.domain.model.Balance?): Pair<String, String> = when {
+    balance != null && balance.totalUsed > 0 -> "Ваши расклады закончились" to
+        "Выберите пакет, чтобы продолжить. Ваши предыдущие расклады доступны в истории."
+    balance?.trialStatus == "device_used" -> "Приветственный подарок уже получен" to
+        "На этом устройстве три бесплатных расклада уже были предоставлены. Создание нового аккаунта не добавляет бесплатные расклады."
+    balance?.trialStatus == "daily_limit" -> "Приветственный подарок не начислен" to
+        "Выдача новых подарков была временно ограничена при регистрации. В этом аккаунте пока нет доступных раскладов."
+    else -> "Нет доступных раскладов" to
+        "В этом аккаунте сейчас нет бесплатных или оплаченных раскладов. Чтобы продолжить, выберите пакет в магазине."
 }

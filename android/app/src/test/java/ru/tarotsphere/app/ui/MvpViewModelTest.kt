@@ -20,6 +20,55 @@ class MvpViewModelTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun teardown() { Dispatchers.resetMain() }
 
+    @Test fun emptyBalanceBlocksBeforeQuestionAndPurchaseRestoresDraft() = runTest(dispatcher) {
+        val repo = FakeReadings()
+        var balance = Balance(0, 0, null, 0, "device_used")
+        val model = SpreadViewModel(repo, SavedStateHandle()) { balance }
+        runCurrent()
+        assertTrue(model.state.value.needsShop)
+        model.question("Что дальше?")
+        model.submit(); runCurrent()
+        assertTrue(repo.requests.isEmpty())
+        balance = Balance(0, 3, null, 0, "device_used")
+        model.refreshBalance(); runCurrent()
+        assertFalse(model.state.value.needsShop)
+        assertEquals("Что дальше?", model.state.value.question)
+        model.submit(); runCurrent()
+        assertEquals(42L, model.state.value.resultId)
+    }
+    @Test fun failedBalanceCheckDoesNotPretendBalanceIsZero() = runTest(dispatcher) {
+        val repo = FakeReadings()
+        val model = SpreadViewModel(repo, SavedStateHandle()) { throw AppFailure("network", "offline") }
+        runCurrent()
+        assertNotNull(model.state.value.balanceError)
+        assertFalse(model.state.value.needsShop)
+        model.question("Что дальше?"); model.submit(); runCurrent()
+        assertTrue(repo.requests.isEmpty())
+    }
+    @Test fun uncertainRequestCanRetryEvenWhenLastCreditWasSpent() = runTest(dispatcher) {
+        val repo = FakeReadings()
+        val saved = SavedStateHandle(mapOf("question" to "Что дальше?", "request" to "original-key", "pending" to true))
+        val model = SpreadViewModel(repo, saved) { Balance(0, 0, null, 1) }
+        runCurrent(); model.submit(); runCurrent()
+        assertEquals("original-key", repo.requests.single())
+    }
+    @Test fun serverBalanceRejectionKeepsDraftAndIsNotTechnicalError() = runTest(dispatcher) {
+        val repo = FakeReadings().apply { createError = AppFailure("no_balance", "empty") }
+        val model = SpreadViewModel(repo, SavedStateHandle()) { Balance(1, 0, null, 0) }
+        runCurrent(); model.question("Что дальше?"); model.submit(); runCurrent()
+        assertTrue(model.state.value.needsShop)
+        assertNull(model.state.value.error)
+        assertEquals("Что дальше?", model.state.value.question)
+        assertFalse(model.state.value.retryPending)
+    }
+    @Test fun emptyBalanceCopyDistinguishesKnownAndUnknownReasons() {
+        val known = ru.tarotsphere.app.ui.spread.emptyBalanceMessage(Balance(0, 0, null, 0, "device_used"))
+        assertTrue(known.first.contains("подарок"))
+        val old = ru.tarotsphere.app.ui.spread.emptyBalanceMessage(Balance(0, 0, null, 0))
+        assertEquals("Нет доступных раскладов", old.first)
+        val used = ru.tarotsphere.app.ui.spread.emptyBalanceMessage(Balance(0, 0, null, 3, "granted"))
+        assertEquals("Ваши расклады закончились", used.first)
+    }
     @Test fun blankQuestionDoesNotSendRequest() = runTest(dispatcher) {
         val repo = FakeReadings()
         val model = SpreadViewModel(repo, SavedStateHandle())

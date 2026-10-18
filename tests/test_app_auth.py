@@ -83,7 +83,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
             },
             None,
         ])
-        conn.fetchval = AsyncMock(side_effect=[USER, False, 99, 0])
+        conn.fetchval = AsyncMock(side_effect=[USER, None, 99, 0])
         conn.execute = AsyncMock()
         with patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):
             result = await auth.confirm_email_challenge(
@@ -149,7 +149,7 @@ class AccountAuthTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_vk_identity_gets_one_trial_after_provider_verification(self):
         conn = MagicMock()
         conn.fetchrow = AsyncMock(return_value=None)
-        conn.fetchval = AsyncMock(side_effect=[USER, False, 102, 0])
+        conn.fetchval = AsyncMock(side_effect=[USER, None, 102, 0])
         conn.execute = AsyncMock()
         with patch.object(auth, "_fetch_vk_user_id", AsyncMock(return_value="vk-user-42")), \
                 patch.object(auth.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))):

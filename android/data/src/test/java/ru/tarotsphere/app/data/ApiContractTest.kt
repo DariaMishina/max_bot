@@ -8,6 +8,12 @@ import ru.tarotsphere.app.data.api.dto.*
 
 class ApiContractTest {
     private val json = Json { ignoreUnknownKeys = true }
+    @Test fun balanceWorksWithOldAndNewServers() {
+        assertNull(json.decodeFromString<BalanceDto>("{}").toDomain().trialStatus)
+        val balance = json.decodeFromString<BalanceDto>("""{"trial_status":"device_used","paid_divinations_remaining":2}""").toDomain()
+        assertEquals("device_used", balance.trialStatus)
+        assertTrue(balance.canDivinate)
+    }
     @Test fun createAndDetailUseDifferentIdFields() {
         val common = """"question":"Q","cards":[{"id":"00-TheFool","name":"Шут","image_url":"http://internal:8083/static/images/00-TheFool.png"}],"interpretation":"Text","is_free":true,"follow_ups_remaining":2"""
         val created = json.decodeFromString<ReadingDto>("{" + "\"divination_id\":42," + common + "}").toDomain()

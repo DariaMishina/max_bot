@@ -27,9 +27,15 @@ data class SpreadUiState(
     val loadingDeck: Boolean = false, val loadingCatalog: Boolean = false, val submitting: Boolean = false,
     val error: String? = null, val resultId: Long? = null, val needsShop: Boolean = false,
     val retryPending: Boolean = false,
+    val balance: Balance? = null, val loadingBalance: Boolean = false,
+    val balanceError: String? = null,
+
 )
 
-class SpreadViewModel(private val repository: ReadingRepository, private val saved: SavedStateHandle) : ViewModel() {
+class SpreadViewModel(
+    private val repository: ReadingRepository, private val saved: SavedStateHandle,
+    private val loadBalance: (suspend () -> Balance)? = null,
+) : ViewModel() {
     private val _state = MutableStateFlow(SpreadUiState(
         question = saved["question"] ?: "", mode = restoredMode(saved),
         deck = restoredDeck(saved),
@@ -39,10 +45,26 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
     ))
     val state = _state.asStateFlow()
     init {
+        refreshBalance()
         when (_state.value.mode) {
             CardSelectionMode.INTUITIVE -> if (_state.value.deck.isEmpty() && !_state.value.retryPending) loadDeck()
             CardSelectionMode.NAMED -> if (!_state.value.retryPending) loadCatalog()
             CardSelectionMode.RANDOM -> Unit
+        }
+    }
+
+    fun refreshBalance() {
+        val loader = loadBalance ?: return
+        if (_state.value.loadingBalance || _state.value.submitting) return
+        _state.value = _state.value.copy(loadingBalance = true, balanceError = null)
+        viewModelScope.launch {
+            try {
+                val balance = loader()
+                _state.value = _state.value.copy(balance = balance, needsShop = !balance.canDivinate)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(balanceError = e.userMessage())
+            } finally { _state.value = _state.value.copy(loadingBalance = false) }
         }
     }
 
@@ -130,6 +152,15 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
     fun submit() {
         val current = _state.value
         if (current.submitting) return
+        // Retrying an uncertain request must remain possible even if it already
+        // consumed the last credit. The server deduplicates by request ID.
+        if (!current.retryPending) {
+            if (current.needsShop || current.balance?.canDivinate == false) {
+                _state.value = current.copy(needsShop = true, error = null)
+                return
+            }
+            if (loadBalance != null && (current.loadingBalance || current.balanceError != null || current.balance == null)) return
+        }
         val cardIds = when (current.mode) {
             CardSelectionMode.RANDOM -> null
             CardSelectionMode.INTUITIVE -> current.selectedIds.takeIf { it.size == 3 }
@@ -156,7 +187,7 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 val noBalance = (e as? AppFailure)?.code == "no_balance"
-                _state.value = _state.value.copy(error = e.userMessage(), needsShop = noBalance)
+                _state.value = _state.value.copy(error = if (noBalance) null else e.userMessage(), needsShop = noBalance)
                 if (noBalance || (e is AppFailure && e.code in listOf("empty_question", "invalid_question", "invalid_cards", "long_question"))) {
                     saved["pending"] = false
                     saved.remove<String>("request")
@@ -167,12 +198,12 @@ class SpreadViewModel(private val repository: ReadingRepository, private val sav
     }
     fun consumeResult() {
         listOf("question", "manual", "mode", "selected", "namedQueries", "namedIds", "result", "request", "pending", "deckIds", "deckNames", "deckImages").forEach { saved.remove<Any>(it) }
-        _state.value = SpreadUiState()
+        _state.value = SpreadUiState(balance = _state.value.balance)
     }
     fun consumeShop() { _state.value = _state.value.copy(needsShop = false) }
     companion object {
-        fun factory(repository: ReadingRepository) = viewModelFactory {
-            initializer { SpreadViewModel(repository, createSavedStateHandle()) }
+        fun factory(repository: ReadingRepository, users: UserRepository) = viewModelFactory {
+            initializer { SpreadViewModel(repository, createSavedStateHandle(), users::balance) }
         }
     }
 }

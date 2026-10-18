@@ -70,7 +70,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
             server_settings={"search_path": self.schema},
         )
         async with self.pool.acquire() as conn:
-            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql"):
+            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql", "app/migrations/010_trial_decision.sql"):
                 await conn.execute((ROOT / name).read_text())
         self.pool_patch = patch.object(AppDatabase, "get_pool", return_value=self.pool)
         self.pool_patch.start()
@@ -139,6 +139,25 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["trial_granted"], 0)
         self.assertEqual(body["balance"]["free_divinations_remaining"], 0)
         self.assertTrue(body["access_token"])
+
+    async def test_reserved_device_without_grant_does_not_claim_gift_was_received(self):
+        from app.database import get_user_balance
+        with patch.object(app_config, "app_trial_daily_limit", 0):
+            await self.register()
+        denied = await self.register("reader_2")
+        self.assertEqual(denied["trial_granted"], 0)
+        self.assertEqual((await get_user_balance(denied["user_id"]))["trial_status"], "device_unavailable")
+
+    async def test_balance_reports_persisted_trial_decision_without_guessing_legacy_reason(self):
+        from app.database import get_user_balance
+        first = await self.register()
+        second = await self.register("reader_2")
+        self.assertEqual((await get_user_balance(first["user_id"]))["trial_status"], "granted")
+        self.assertEqual((await get_user_balance(second["user_id"]))["trial_status"], "device_used")
+        await self.pool.execute("UPDATE app_trial_claims SET decision=NULL")
+        self.assertIsNone((await get_user_balance(second["user_id"]))["trial_status"])
+        payload = api._balance_payload(await get_user_balance(second["user_id"]))
+        self.assertIsNone(payload["trial_status"])
 
     async def test_denied_identity_survives_deletion_and_device_change(self):
         first = await self.register()

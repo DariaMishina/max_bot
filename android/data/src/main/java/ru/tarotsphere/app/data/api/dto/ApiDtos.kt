@@ -79,12 +79,14 @@ data class BalanceDto(
     @SerialName("paid_divinations_remaining") val paidRemaining: Int = 0,
     @SerialName("unlimited_until") val unlimitedUntil: String? = null,
     @SerialName("total_divinations_used") val totalUsed: Int = 0,
+    @SerialName("trial_status") val trialStatus: String? = null,
 ) {
     fun toDomain() = Balance(
         freeRemaining = freeRemaining,
         paidRemaining = paidRemaining,
         unlimitedUntil = unlimitedUntil,
         totalUsed = totalUsed,
+        trialStatus = trialStatus,
     )
 }
 
