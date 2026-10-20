@@ -1,10 +1,11 @@
-# Стабильный HTTPS для WebApp через xTunnel
+# WebApp и Android API через xTunnel gateway
 
 ## Решение
 
 Используем уже оплаченный постоянный xTunnel и один локальный nginx-gateway.
-Временный Cloudflare Quick Tunnel (`*.trycloudflare.com`) после переключения не
-используем: его адрес меняется при перезапуске сервиса.
+Основной публичный адрес — постоянный xTunnel. Cloudflare Quick Tunnel нельзя
+использовать как адрес клиента: его URL меняется при перезапуске. Служба
+Cloudflare пока сохранена как резервная и не входит в основной маршрут.
 
 ```text
 GitHub Pages / Android
@@ -36,15 +37,19 @@ https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com
 Не запускаем второй xTunnel с той же лицензией: опция `--force` заменит уже
 активный туннель (`last launch wins`) и отключит Android API.
 
-## Статус внедрения на 9 октября 2026
+## Текущий статус (проверено 20 октября 2026)
 
 - nginx установлен и включён в автозапуск на VM;
 - gateway слушает только `127.0.0.1:8084`;
 - xTunnel переключён с `127.0.0.1:8083` на gateway `127.0.0.1:8084`;
 - публичные `/v1/docs`, `/api/webapp/pending-question` и CORS preflight работают;
 - неизвестные публичные пути возвращают `404`;
-- локальный `webapp/index.html` переведён на постоянный xTunnel URL;
-- публикация изменений в GitHub и отключение Cloudflare ещё не выполнялись.
+- `webapp/index.html` использует постоянный xTunnel URL;
+- WebApp публикуется отдельным GitHub Pages workflow;
+- `cloudflared-tunnel.service` остаётся активным как legacy/fallback, но клиент
+  на его временный URL не настроен;
+- Render остаётся endpoint ЮKassa и fallback WebApp, его нельзя отключать вместе
+  с Cloudflare или xTunnel.
 
 ## Порты и ответственность
 
@@ -58,7 +63,7 @@ https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com
 Webhook ЮKassa не переносим автоматически. Его действующий URL и настройку в
 ЮKassa меняют только отдельной задачей после проверки платежей.
 
-## Безопасный порядок внедрения
+## Исторический порядок внедрения
 
 1. Установить nginx, не меняя работающий xTunnel.
 2. Установить `deploy/nginx-tarot-api-gateway.conf` и запустить gateway на 8084.
@@ -68,12 +73,12 @@ Webhook ЮKassa не переносим автоматически. Его де�
 5. Проверить Android API через постоянный публичный URL.
 6. Проверить WebApp API через тот же URL, не создавая гадание.
 7. В `webapp/index.html` заменить временный Cloudflare URL на постоянный xTunnel.
-8. После отдельного разрешения опубликовать WebApp через GitHub Pages.
-9. После успешной проверки отключить `cloudflared-tunnel.service`.
+8. Опубликовать WebApp через GitHub Pages.
+9. Отключать `cloudflared-tunnel.service` только отдельной задачей после проверки,
+   что ни один клиент не использует его текущий URL.
 
-До шага 4 Android продолжает работать через текущий xTunnel на 8083. До шага 8
-опубликованный WebApp продолжает использовать прежний адрес, поэтому gateway
-можно проверить без воздействия на пользователей.
+Эти шаги уже выполнены до публикации WebApp. Раздел оставлен как схема повторного
+развёртывания и отката, а не как список незавершённых работ.
 
 ## Проверки
 
@@ -129,6 +134,7 @@ sudo nginx -t
 sudo journalctl -u nginx -u xtunnel-app --since '15 minutes ago' --no-pager
 ```
 
-Лицензию xTunnel необходимо продлевать до окончания оплаченного периода. Ключ
-остаётся только в `/home/dariamishina/.local/share/xtunnel/license.env` и не
-добавляется в репозиторий.
+Срок и состояние лицензии xTunnel нужно контролировать вместе с внешним health
+endpoint. Ключ остаётся только в
+`/home/dariamishina/.local/share/xtunnel/license.env` и не добавляется в
+репозиторий.

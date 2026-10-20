@@ -1,6 +1,9 @@
 # Сфера Таро — Android
 
-Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая версия `0.8.2` (`versionCode 8`). Вход по логину/паролю и восстановление через подтверждённую почту развёрнуты на staging.
+Приложение для RuStore. Пакет `ru.tarotsphere.app`, текущая версия исходников
+`0.8.3` (`versionCode 9`). Загруженная ранее alpha `0.8.2 (8)` остаётся
+исторической сборкой. Вход по логину/паролю и восстановление через подтверждённую
+почту развёрнуты на staging.
 
 Клиент — Kotlin + Jetpack Compose, модули `app` / `data` / `domain`. API — `app_api_server.py` в корне `max_bot`, порт 8083, отдельная PostgreSQL приложения.
 
@@ -19,7 +22,7 @@
 
 Для VK ID добавьте `VKIDClientID`, `VKIDClientSecret`, `VKIDRedirectHost` и `VKIDRedirectScheme` в игнорируемый `local.properties` по образцу `local.properties.example`. Защищённый ключ не коммитить.
 
-На тестовой VM применены миграции `004_mvp.sql`–`008_password_recovery.sql`.
+На staging VM применены миграции `004_mvp.sql`–`011_password_credentials_policy.sql`.
 
 Из корня `max_bot`:
 
@@ -41,6 +44,8 @@ Release нельзя собрать без явного канала и адре
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. Установить через Run в Android Studio на подключённый телефон.
 
-Актуальные статусы и сценарии приёмки находятся в [основном плане](../docs/PLAN_ANDROID_APP.md); платёжная эксплуатация — в [RuStore runbook](../docs/RUSTORE_BILLING_RUNBOOK.md).
+Актуальные статусы и сценарии приёмки находятся в [основном плане](../docs/PLAN_ANDROID_APP.md);
+платёжная эксплуатация — в [RuStore runbook](../docs/RUSTORE_BILLING_RUNBOOK.md),
+логика пробного доступа — в [описании антифрода](../docs/TRIAL_ANTIFRAUD.md).
 
 Локальные тесты не заменяют проверку живого API и установку на устройство. Приёмка на 5–10 людях остаётся отдельным пунктом плана.

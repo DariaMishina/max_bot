@@ -1,60 +1,69 @@
-# Чеклист ЮKassa для max_bot
+# ЮKassa: рабочая схема и проверка
 
-По гайду из tg_bot ([YOOKASSA_COMPLETE_GUIDE.md](../tg_bot/YOOKASSA_COMPLETE_GUIDE.md)). Что уже сделано в коде и что нужно сделать вручную.
+Документ описывает действующую интеграцию MAX-бота. Это эксплуатационный
+чек-лист, а не план первоначального подключения.
 
----
+## Текущая схема
 
-## ✅ Уже сделано в проекте
+- бот создаёт платёж через `handlers/pay.py` и сохраняет `user_id`, пакет и
+  email в metadata;
+- внешний webhook работает по адресу
+  `https://max-bot-awtw.onrender.com/webhook/yookassa`;
+- Render запускает `webhook_server.py`, проверяет платёж через API ЮKassa и
+  зачисляет покупку идемпотентно;
+- бот на VM также поднимает тот же HTTP-сервер на `PORT=8081`, но менять внешний
+  callback на него без отдельной проверки не нужно;
+- фоновая сверка платежей компенсирует пропущенное HTTP-уведомление.
 
-- **Переменные в `.env`**: `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY`, `SERVICE_URL=https://max-bot-awtw.onrender.com`
-- **Конфиг**: `main/config_reader.py` читает `yookassa_shop_id`, `yookassa_secret_key`
-- **Создание платежа**: `handlers/pay.py` — `create_yookassa_payment()` с metadata `user_id`, `package_id`, `email`
-- **Проверка статуса**: `check_payment_status()` по API ЮKassa
-- **Webhook**: `webhook_server.py` — `POST /webhook/yookassa`, обработка `payment.succeeded`, защита от дублей, обновление БД, уведомление пользователю
-- **Запуск**: `bot.py` поднимает webhook-сервер на `PORT` (8081), если ключи заданы
-- **Return URL**: после оплаты редирект на `SERVICE_URL` (max-bot-awtw.onrender.com)
+`SERVICE_URL` используется также как return URL после оплаты. Секреты магазина
+должны быть одинаково корректно настроены в окружениях, которые создают и
+обрабатывают платежи.
 
----
+## Настройка кабинета ЮKassa
 
-## 📋 Что нужно сделать вручную
+В разделе «Настройки → HTTP-уведомления»:
 
-### 1. Личный кабинет ЮKassa
+- URL: `https://max-bot-awtw.onrender.com/webhook/yookassa`;
+- обязательно включить `payment.succeeded`;
+- `payment.canceled` можно оставить включённым для диагностики;
+- для production использовать ключи и callback production-магазина, не
+  тестового.
 
-- [ ] Войти: [yookassa.ru/my/](https://yookassa.ru/my/)
-- [ ] **Настройки** → **HTTP-уведомления**
-- [ ] Включить уведомления
-- [ ] **URL для уведомлений**: `https://max-bot-awtw.onrender.com/webhook/yookassa`
-  - Обязательно **HTTPS**
-  - Обязательно путь **/webhook/yookassa** в конце
-- [ ] События:
-  - ✅ **payment.succeeded** — обязательно
-  - ✅ **payment.canceled** — рекомендуется
-- [ ] Нажать **«Изменить настройки»**
+Изменение callback — отдельная операция: сначала новый endpoint проверяется на
+health и тестовом платеже, затем меняется настройка кабинета.
 
-### 2. Render (если webhook на Render)
+## Проверка после деплоя
 
-- [ ] **Start Command**: `python webhook_server.py` (не `bot.py`)
-- [ ] В **Environment** заданы: `BOT_TOKEN`, `API_KEY`, `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY`, переменные БД (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`)
-- [ ] При желании: `SERVICE_URL=https://max-bot-awtw.onrender.com` (на Render часто задаётся свой URL)
+```bash
+curl -fsS https://max-bot-awtw.onrender.com/health
+```
 
-### 3. Проверка
+Ожидаемый ответ — `OK`. Затем:
 
-- [ ] Health: открыть в браузере [https://max-bot-awtw.onrender.com/health](https://max-bot-awtw.onrender.com/health) → должно быть **OK**
-- [ ] Тестовый платёж: создать платёж в боте, оплатить (тестовая карта в тестовом магазине или реальная мелкая сумма в продакшене)
-- [ ] В логах: `=== YOOKASSA WEBHOOK RECEIVED ===`, `Payment notification sent to user ...`
+1. создать отдельный тестовый или минимальный реальный платёж;
+2. завершить оплату;
+3. проверить единственное зачисление пакета в БД;
+4. проверить уведомление пользователю;
+5. повторно отправить или обработать тот же webhook и убедиться, что дубля нет;
+6. проверить ручную кнопку статуса платежа и фоновую сверку.
 
-### 4. Продакшен (если переходите с теста)
+В логах полезны события `YOOKASSA WEBHOOK RECEIVED`, идентификатор платежа и
+результат отправки уведомления. Значения секретных ключей в лог не выводятся.
 
-- [ ] В ЮKassa: продакшен **Shop ID** и секретный ключ (**live_**)
-- [ ] В `.env` и на Render: `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` от продакшен-магазина
-- [ ] В ЮKassa в **продакшен** магазине указан webhook URL (не в тестовом)
-- [ ] В тестовом магазине URL уведомлений очищен или отключён, чтобы тестовые платежи не шли в прод
+## Render
 
----
+- start command для webhook-сервиса: `python webhook_server.py`;
+- обязательны `BOT_TOKEN`, `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` и доступ к
+  рабочей БД;
+- `SERVICE_URL` должен совпадать с публичным HTTPS origin;
+- после изменения переменных окружения нужно проверить health и один полный
+  платёжный сценарий.
 
-## 🔗 Полезные ссылки
+Нельзя открывать PostgreSQL для всего интернета ради Render. Доступ ограничивают
+сетевыми правилами и минимально необходимой ролью БД.
+
+## Ссылки
 
 - [Личный кабинет ЮKassa](https://yookassa.ru/my/)
 - [Документация API](https://yookassa.ru/developers/api)
-- [Webhooks](https://yookassa.ru/developers/using-api/webhooks)
-- Полный гайд (tg_bot): [tg_bot/YOOKASSA_COMPLETE_GUIDE.md](../tg_bot/YOOKASSA_COMPLETE_GUIDE.md)
+- [HTTP-уведомления](https://yookassa.ru/developers/using-api/webhooks)
