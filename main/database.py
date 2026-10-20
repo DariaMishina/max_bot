@@ -1089,6 +1089,8 @@ async def ensure_user_balances_nudge_columns() -> None:
 
 
 ACTIVE_PAYMENT_FUNNEL_HOURS = 48
+PAYMENT_NUDGE_COOLDOWN_HOURS = 12
+FREE_NUDGE_CROSS_CATEGORY_COOLDOWN_HOURS = 1
 
 
 def _covering_succeeded_payment_sql(
@@ -1141,6 +1143,36 @@ def _active_payment_funnel_exists_sql(
 def _open_payment_exists_sql(payments_table: str) -> str:
     """Обратная совместимость для старых импортов."""
     return _active_payment_funnel_exists_sql(payments_table)
+
+
+def _unfinished_payment_reminders_exist_sql(payments_table: str) -> str:
+    """Оплата, для которой серия payment reminders ещё не завершена."""
+    return f"""
+        EXISTS (
+            SELECT 1 FROM {payments_table} p
+            WHERE p.user_id = u.user_id
+              AND p.status IN ('pending', 'canceled')
+              AND p.reminder_48h_sent_at IS NULL
+              AND NOT ({_covering_succeeded_payment_sql(payments_table, 'p')})
+        )
+    """
+
+
+def _recent_payment_reminder_exists_sql(
+    payments_table: str,
+    hours: int = PAYMENT_NUDGE_COOLDOWN_HOURS,
+) -> str:
+    """Недавно отправленный payment reminder: другие nudges ждут cooldown."""
+    reminder_columns = ", ".join(
+        f"p.{column}" for _, column in PAYMENT_REMINDER_STAGES.values()
+    )
+    return f"""
+        EXISTS (
+            SELECT 1 FROM {payments_table} p
+            WHERE p.user_id = u.user_id
+              AND GREATEST({reminder_columns}) > NOW() - INTERVAL '{int(hours)} hours'
+        )
+    """
 
 
 def _active_paid_access_sql() -> str:
@@ -1408,12 +1440,80 @@ FREE_NUDGE_STAGES = {
     },
 }
 
-FREE_NUDGE_PREV_SENT = {
-    'c1': {'1h': None, '3h': 'free_nudge_c1_1h_sent_at', '12h': 'free_nudge_c1_3h_sent_at', '24h': 'free_nudge_c1_12h_sent_at', '48h': 'free_nudge_c1_24h_sent_at'},
-    'c2': {'3h': None, '12h': 'free_nudge_c2_3h_sent_at', '24h': 'free_nudge_c2_12h_sent_at', '48h': 'free_nudge_c2_24h_sent_at'},
-    'c3': {'1h': None, '3h': 'free_nudge_c3_1h_sent_at', '12h': 'free_nudge_c3_3h_sent_at', '24h': 'free_nudge_c3_12h_sent_at', '48h': 'free_nudge_c3_24h_sent_at'},
-    'c4': {'3d': None, '7d': 'free_nudge_c4_3d_sent_at'},
+FREE_NUDGE_STAGE_ORDER = {
+    category: tuple(stages.keys())
+    for category, stages in FREE_NUDGE_STAGES.items()
 }
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def pick_highest_due_free_nudge_stage(
+    category: str,
+    anchor_at: datetime,
+    sent_at_by_stage: Dict[str, Optional[datetime]],
+    now: Optional[datetime] = None,
+) -> Optional[str]:
+    """Выбрать один старший просроченный этап C без последовательного catch-up."""
+    if category not in FREE_NUDGE_STAGES:
+        raise ValueError(f"Unknown free nudge category: {category}")
+    if anchor_at is None:
+        return None
+
+    anchor = _as_utc(anchor_at)
+    current = _as_utc(now or datetime.now(timezone.utc))
+    best_stage: Optional[str] = None
+    best_delay = timedelta(0)
+    most_advanced_sent_delay = timedelta(0)
+
+    for stage in FREE_NUDGE_STAGE_ORDER[category]:
+        amount, _, _, unit = FREE_NUDGE_STAGES[category][stage]
+        delay = timedelta(hours=amount) if unit == 'hours' else timedelta(days=amount)
+        if sent_at_by_stage.get(stage) is not None and delay > most_advanced_sent_delay:
+            most_advanced_sent_delay = delay
+
+    for stage in FREE_NUDGE_STAGE_ORDER[category]:
+        amount, _, _, unit = FREE_NUDGE_STAGES[category][stage]
+        delay = timedelta(hours=amount) if unit == 'hours' else timedelta(days=amount)
+        if (
+            delay > most_advanced_sent_delay
+            and sent_at_by_stage.get(stage) is None
+            and anchor <= current - delay
+        ):
+            if best_stage is None or delay > best_delay:
+                best_stage = stage
+                best_delay = delay
+    return best_stage
+
+
+def free_nudge_stages_up_to(category: str, stage: str) -> tuple[str, ...]:
+    """Этапы категории от первого до выбранного включительно."""
+    if (
+        category not in FREE_NUDGE_STAGE_ORDER
+        or stage not in FREE_NUDGE_STAGE_ORDER[category]
+    ):
+        raise ValueError(f"Unknown free nudge category/stage: {category}/{stage}")
+    order = FREE_NUDGE_STAGE_ORDER[category]
+    return order[: order.index(stage) + 1]
+
+
+def _recent_free_nudge_exists_sql(
+    hours: int = FREE_NUDGE_CROSS_CATEGORY_COOLDOWN_HOURS,
+) -> str:
+    """Недавний C-nudge любой категории защищает от пересечения C2/C4."""
+    columns = ", ".join(
+        f"u.{column}"
+        for stages in FREE_NUDGE_STAGES.values()
+        for _, column, _, _ in stages.values()
+    )
+    return f"""
+        GREATEST({columns}) > NOW() - INTERVAL '{int(hours)} hours'
+    """
+
 
 EXPIRED_ACCESS_REMINDER_STAGES = {
     'day0': (0, 'expired_access_day0_sent_at'),
@@ -1511,12 +1611,22 @@ async def mark_paid_inactivity_nudge_sent(user_id: int, stage: str) -> bool:
 
 
 async def get_users_due_for_free_nudge(category: str, stage: str) -> List[Dict[str, Any]]:
-    """Бесплатные пользователи для nudge C1–C4."""
+    """Совместимый stage-фильтр поверх skip-ahead выборки C1–C4."""
     if category not in FREE_NUDGE_STAGES or stage not in FREE_NUDGE_STAGES[category]:
         raise ValueError(f"Unknown free nudge category/stage: {category}/{stage}")
 
-    amount, sent_column, anchor, unit = FREE_NUDGE_STAGES[category][stage]
-    interval = f"{int(amount)} {unit}"
+    due = await get_users_due_for_free_nudges(category)
+    return [target for target in due if target['stage'] == stage]
+
+
+async def get_users_due_for_free_nudges(category: str) -> List[Dict[str, Any]]:
+    """Бесплатные пользователи: по одному старшему просроченному этапу категории."""
+    if category not in FREE_NUDGE_STAGES:
+        raise ValueError(f"Unknown free nudge category: {category}")
+
+    first_stage = FREE_NUDGE_STAGE_ORDER[category][0]
+    amount, _, anchor, unit = FREE_NUDGE_STAGES[category][first_stage]
+    minimum_interval = f"{int(amount)} {unit}"
     users_table = get_table_name("users")
     balances_table = get_table_name("user_balances")
     payments_table = get_table_name("payments")
@@ -1550,52 +1660,69 @@ async def get_users_due_for_free_nudge(category: str, stage: str) -> List[Dict[s
         """,
     }[category]
 
-    prev_sent = FREE_NUDGE_PREV_SENT[category].get(stage)
-    prev_sent_filter = f"AND u.{prev_sent} IS NOT NULL" if prev_sent else ""
     active_paid = _active_paid_access_sql()
+    sent_columns = ", ".join(
+        f"u.{column}" for _, column, _, _ in FREE_NUDGE_STAGES[category].values()
+    )
 
     try:
         await ensure_users_nudge_columns()
+        await ensure_payments_reminder_columns()
         query = f"""
-            SELECT u.user_id, {anchor_expr} AS anchor_at
+            SELECT u.user_id, {anchor_expr} AS anchor_at, {sent_columns}
             FROM {users_table} u
             JOIN {balances_table} ub ON ub.user_id = u.user_id
             WHERE u.is_blocked = FALSE
               AND NOT ({active_paid})
-              AND u.{sent_column} IS NULL
               AND {anchor_expr} IS NOT NULL
-              AND {anchor_expr} <= NOW() - INTERVAL '{interval}'
+              AND {anchor_expr} <= NOW() - INTERVAL '{minimum_interval}'
               AND {category_filter}
               AND NOT ({_active_payment_funnel_exists_sql(
                   payments_table, include_canceled=True
               )})
-              {prev_sent_filter}
+              AND NOT ({_unfinished_payment_reminders_exist_sql(payments_table)})
+              AND NOT ({_recent_payment_reminder_exists_sql(payments_table)})
+              AND NOT (COALESCE(({_recent_free_nudge_exists_sql()}), FALSE))
             ORDER BY u.user_id
         """
         results = await Database.fetch_all(query)
-        return [
-            {
-                'user_id': r['user_id'],
-                'anchor_at': r['anchor_at'],
-                'category': category,
-                'stage': stage,
+        due: List[Dict[str, Any]] = []
+        for row in results:
+            sent_flags = {
+                current: row.get(column)
+                for current, (_, column, _, _) in FREE_NUDGE_STAGES[category].items()
             }
-            for r in results
-        ]
+            stage = pick_highest_due_free_nudge_stage(
+                category,
+                row['anchor_at'],
+                sent_flags,
+            )
+            if stage is not None:
+                due.append({
+                    'user_id': row['user_id'],
+                    'anchor_at': row['anchor_at'],
+                    'category': category,
+                    'stage': stage,
+                })
+        return due
     except Exception as e:
-        logging.error(f"Error getting free nudge users ({category}/{stage}): {e}", exc_info=True)
+        logging.error(f"Error getting free nudge users ({category}): {e}", exc_info=True)
         return []
 
 
 async def mark_free_nudge_sent(user_id: int, category: str, stage: str) -> bool:
     if category not in FREE_NUDGE_STAGES or stage not in FREE_NUDGE_STAGES[category]:
         raise ValueError(f"Unknown free nudge category/stage: {category}/{stage}")
-    _, sent_column, _, _ = FREE_NUDGE_STAGES[category][stage]
     try:
         await ensure_users_nudge_columns()
         users_table = get_table_name("users")
+        set_parts = [
+            f"{FREE_NUDGE_STAGES[category][current][1]} = "
+            f"COALESCE({FREE_NUDGE_STAGES[category][current][1]}, NOW())"
+            for current in free_nudge_stages_up_to(category, stage)
+        ]
         await Database.execute_query(
-            f"UPDATE {users_table} SET {sent_column} = NOW() WHERE user_id = $1 AND {sent_column} IS NULL",
+            f"UPDATE {users_table} SET {', '.join(set_parts)} WHERE user_id = $1",
             user_id,
         )
         return True
@@ -2003,4 +2130,3 @@ async def get_and_delete_webapp_follow_up_context(user_id: int) -> Optional[Dict
     except Exception as e:
         logging.error(f"Error getting webapp follow-up context for user {user_id}: {e}", exc_info=True)
         return None
-

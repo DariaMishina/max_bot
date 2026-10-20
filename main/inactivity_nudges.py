@@ -4,11 +4,11 @@ Event-driven nudge-рассылки: платники (B) и бесплатны�
 Платники: 12ч/1д/48ч/3д/5д/10д молчания — слот 10:00–20:00 MSK, главное меню.
 Бесплатные: часы/дни от якорного события — без слота, проверка каждые 2 мин.
 
-Платники (B): за цикл молчания — один этап, старший из просроченных (skip-ahead).
+Платники (B) и бесплатные (C): за цикл молчания отправляется старший
+просроченный этап (skip-ahead), младшие этапы закрываются без отправки.
 Новое гадание сбрасывает все флаги и начинает цикл заново.
 
-Защита от catch-up: за один тик каждому пользователю уходит максимум ОДИН этап
-на категорию (B / C1 / C2 / C3 / C4).
+Payment reminders имеют приоритет над C-nudges; после них действует cooldown.
 """
 import asyncio
 import logging
@@ -18,7 +18,7 @@ from main.broadcast_schedule import is_in_broadcast_window, is_user_due_in_tick
 from main.database import (
     FREE_NUDGE_STAGES,
     PAID_INACTIVITY_STAGES,
-    get_users_due_for_free_nudge,
+    get_users_due_for_free_nudges,
     get_users_due_for_paid_inactivity_nudge,
     mark_free_nudge_sent,
     mark_paid_inactivity_nudge_sent,
@@ -97,57 +97,49 @@ async def process_inactivity_nudges() -> dict:
             await asyncio.sleep(NUDGE_DELAY_SEC)
 
     for category, stages in FREE_NUDGE_STAGES.items():
-        sent_this_category: set[int] = set()
-
         for stage in stages:
             key = f'{category}_{stage}'
             results['by_type'][key] = {'sent': 0, 'failed': 0, 'blocked': 0}
 
-            due = await get_users_due_for_free_nudge(category, stage)
-            if not due:
-                continue
+        due = await get_users_due_for_free_nudges(category)
+        if due:
+            logging.info(f"Free nudges ({category}): {len(due)} user(s) due (skip-ahead)")
+        for target in due:
+            user_id = target['user_id']
+            stage = target['stage']
+            key = f'{category}_{stage}'
 
-            logging.info(f"Free nudges ({category}/{stage}): {len(due)} user(s) due")
-            for target in due:
-                user_id = target['user_id']
-
-                if user_id in sent_this_category:
-                    results['skipped_catchup'] += 1
-                    continue
-
-                try:
-                    success, unreachable = await send_free_user_nudge(
-                        user_id,
-                        category=category,
-                        stage=stage,
-                    )
-                    outcome = await finalize_broadcast_send(
-                        success,
-                        unreachable,
-                        lambda uid=user_id, cat=category, st=stage: mark_free_nudge_sent(
-                            uid, cat, st
-                        ),
-                    )
-                    if outcome == 'sent':
-                        results['sent'] += 1
-                        results['by_type'][key]['sent'] += 1
-                        sent_this_category.add(user_id)
-                    elif outcome == 'blocked':
-                        results['blocked'] += 1
-                        results['by_type'][key]['blocked'] += 1
-                        sent_this_category.add(user_id)
-                    else:
-                        results['failed'] += 1
-                        results['by_type'][key]['failed'] += 1
-                except Exception as e:
-                    logging.error(
-                        f"Free nudge error ({category}/{stage}) user={user_id}: {e}",
-                        exc_info=True,
-                    )
+            try:
+                success, unreachable = await send_free_user_nudge(
+                    user_id,
+                    category=category,
+                    stage=stage,
+                )
+                outcome = await finalize_broadcast_send(
+                    success,
+                    unreachable,
+                    lambda uid=user_id, cat=category, st=stage: mark_free_nudge_sent(
+                        uid, cat, st
+                    ),
+                )
+                if outcome == 'sent':
+                    results['sent'] += 1
+                    results['by_type'][key]['sent'] += 1
+                elif outcome == 'blocked':
+                    results['blocked'] += 1
+                    results['by_type'][key]['blocked'] += 1
+                else:
                     results['failed'] += 1
                     results['by_type'][key]['failed'] += 1
+            except Exception as e:
+                logging.error(
+                    f"Free nudge error ({category}/{stage}) user={user_id}: {e}",
+                    exc_info=True,
+                )
+                results['failed'] += 1
+                results['by_type'][key]['failed'] += 1
 
-                await asyncio.sleep(NUDGE_DELAY_SEC)
+            await asyncio.sleep(NUDGE_DELAY_SEC)
 
     if any(v for k, v in results.items() if k != 'by_type' and v) or any(
         t['sent'] or t['failed'] for t in results['by_type'].values()
