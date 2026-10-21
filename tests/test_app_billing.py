@@ -44,7 +44,8 @@ class RuStoreBillingTests(unittest.IsolatedAsyncioTestCase):
             "appId": 123,
             "appUserId": str(USER),
             "purchaseId": "purchase-1",
-            "invoiceStatus": "CONFIRMED",
+            # The live sandbox API currently returns this value in lowercase.
+            "invoiceStatus": "confirmed",
             "order": {"itemCode": "3_spreads", "currency": "RUB", "amountCurrent": 9900},
         }
         with patch.object(billing.app_config, "app_rustore_console_app_id", 123), \

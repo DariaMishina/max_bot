@@ -22,6 +22,33 @@ sudo journalctl -u app-api --since '1 hour ago' --no-pager | grep -E 'RuStore|ER
 
 Тревога нужна при повторяющихся `rustore_unavailable`, `invalid_callback`, HTTP 5xx, расхождении покупки и баланса либо отсутствии ожидаемого callback. `purchase_not_confirmed` сразу после оплаты может быть кратковременным и должен исчезнуть после повтора.
 
+## TLS-сертификаты RuStore Public API
+
+Хост `public-api-m.rustore.ru` использует российскую цепочку доверия. На каждой
+VM, которая проверяет покупки, должны быть установлены официальные корневой и
+промежуточный сертификаты Минцифры по инструкции RuStore:
+
+```bash
+curl -fsSLo /tmp/russian_trusted_root_ca.crt \
+  https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt
+curl -fsSLo /tmp/russian_trusted_sub_ca.crt \
+  https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt
+openssl x509 -in /tmp/russian_trusted_root_ca.crt -noout -subject -issuer -dates -fingerprint -sha256
+openssl x509 -in /tmp/russian_trusted_sub_ca.crt -noout -subject -issuer -dates -fingerprint -sha256
+sudo install -m 0644 /tmp/russian_trusted_root_ca.crt \
+  /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+sudo install -m 0644 /tmp/russian_trusted_sub_ca.crt \
+  /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+sudo update-ca-certificates
+curl -fsS -o /dev/null https://public-api-m.rustore.ru/public/auth/
+```
+
+У `curl` допустим HTTP-ответ об отсутствии авторизации, но не допустима ошибка
+`unable to get local issuer certificate`. В `app-api` эта ошибка приводит к HTTP
+500 на `/v1/billing/rustore/verify`; callback затем возвращает
+`payment_not_ready`, потому что покупка ещё не зарегистрирована локально. Не
+отключать проверку TLS и не использовать `curl -k`/`ssl=False` как исправление.
+
 ## Деплой API
 
 1. Убедиться, что тесты CI прошли.

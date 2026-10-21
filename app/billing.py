@@ -260,7 +260,7 @@ async def verify_rustore_purchase(
             raise BillingError("purchase_owner_mismatch", "Покупка принадлежит другому аккаунту", 403)
         if str(data.get("purchaseId")) != purchase_id or order.get("itemCode") != product_id:
             raise BillingError("purchase_mismatch", "Параметры покупки не совпадают", 409)
-        if data.get("invoiceStatus") != "CONFIRMED":
+        if str(data.get("invoiceStatus") or "").upper() != "CONFIRMED":
             raise BillingError("purchase_not_confirmed", "Оплата пока не подтверждена RuStore", 409)
         if order.get("currency") != "RUB" or not _matches_int(order.get("amountCurrent"), product.price_rub * 100):
             raise BillingError("purchase_mismatch", "Цена покупки не совпадает", 409)
