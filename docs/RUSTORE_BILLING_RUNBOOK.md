@@ -40,7 +40,9 @@ sudo install -m 0644 /tmp/russian_trusted_root_ca.crt \
 sudo install -m 0644 /tmp/russian_trusted_sub_ca.crt \
   /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
 sudo update-ca-certificates
-curl -fsS -o /dev/null https://public-api-m.rustore.ru/public/auth/
+curl -sS -o /dev/null \
+  -w 'http=%{http_code} tls_verify=%{ssl_verify_result}\n' \
+  https://public-api-m.rustore.ru/public/auth/
 ```
 
 У `curl` допустим HTTP-ответ об отсутствии авторизации, но не допустима ошибка
