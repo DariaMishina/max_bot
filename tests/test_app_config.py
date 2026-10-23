@@ -76,6 +76,18 @@ class AppEnvironmentConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid production configuration"):
             AppSettings(_env_file=None, **values)
 
+    def test_production_rejects_disabled_http_limits_but_allows_llm_kill_switch(self):
+        values = self.base_production()
+        values.update({
+            "app_api_ip_requests_per_minute": 0,
+            "app_deepseek_daily_request_limit": 0,
+        })
+        with self.assertRaisesRegex(ValueError, "APP_API_IP_REQUESTS_PER_MINUTE"):
+            AppSettings(_env_file=None, **values)
+        values["app_api_ip_requests_per_minute"] = 120
+        settings = AppSettings(_env_file=None, **values)
+        self.assertEqual(settings.app_deepseek_daily_request_limit, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

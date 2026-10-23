@@ -47,6 +47,18 @@ WHERE provider = 'rustore' AND status = 'revoked' AND updated_at >= NOW() - INTE
 SELECT 'callbacks_24h=' || COUNT(*)
 FROM app_payment_notifications
 WHERE provider = 'rustore' AND received_at >= NOW() - INTERVAL '24 hours';
+
+SELECT 'app_llm_requests_24h=' || COUNT(*)
+FROM app_llm_requests
+WHERE created_at >= NOW() - INTERVAL '24 hours';
+
+SELECT 'app_llm_failures_24h=' || COUNT(*)
+FROM app_llm_requests
+WHERE status = 'failed' AND created_at >= NOW() - INTERVAL '24 hours';
+
+SELECT 'app_llm_incomplete_10m=' || COUNT(*)
+FROM app_llm_requests
+WHERE status = 'started' AND created_at < NOW() - INTERVAL '10 minutes';
 SQL
 
 printf 'billing-health: PASS\n'

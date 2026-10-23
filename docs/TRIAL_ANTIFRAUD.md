@@ -46,7 +46,8 @@
 3. Обновить API, выполнить smoke: новый аккаунт получает 3, другой аккаунт на
    том же устройстве — 0; после удаления второго аккаунта и смены устройства
    повторный подарок не появляется. Проверить обычный вход аккаунта модератора.
-4. Наблюдать журнал: `Welcome gift granted` и `Welcome gift denied: reason=...`.
+4. Наблюдать журнал: `Trial event=trial_granted`,
+   `Trial event=trial_already_claimed` и `Trial event=trial_denied reason=...`.
    Причины: `device_used`, `device_unavailable`, `invalid_device`, `existing_account`, `daily_limit`.
    `device_unavailable` означает предыдущую запись устройства без подтверждённой
    выдачи; интерфейс не утверждает, что подарок был получен.

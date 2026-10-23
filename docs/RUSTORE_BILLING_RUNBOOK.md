@@ -12,7 +12,7 @@ curl -fsS http://127.0.0.1:8083/health
 bash scripts/billing_health_report.sh
 ```
 
-Отчёт проверяет доступность API, наличие серверной конфигурации RuStore и выводит только агрегаты за 24 часа: завершённые/отозванные платежи и принятые callback. Нулевые значения допустимы, если покупок не было.
+Отчёт проверяет доступность API, наличие серверной конфигурации RuStore и выводит только безопасные агрегаты: завершённые/отозванные платежи, принятые callback, обращения приложения к LLM, ошибки и зависшие обращения. Нулевые значения допустимы, если операций не было.
 
 Дополнительно проверить журнал без вывода секретов:
 
@@ -20,7 +20,23 @@ bash scripts/billing_health_report.sh
 sudo journalctl -u app-api --since '1 hour ago' --no-pager | grep -E 'RuStore|ERROR|Traceback'
 ```
 
-Тревога нужна при повторяющихся `rustore_unavailable`, `invalid_callback`, HTTP 5xx, расхождении покупки и баланса либо отсутствии ожидаемого callback. `purchase_not_confirmed` сразу после оплаты может быть кратковременным и должен исчезнуть после повтора.
+Тревога нужна при повторяющихся `rustore_unavailable`, `invalid_callback`, HTTP 5xx, расхождении покупки и баланса, отсутствии ожидаемого callback, росте `app_llm_failures_24h` или ненулевом `app_llm_incomplete_10m`. `purchase_not_confirmed` сразу после оплаты может быть кратковременным и должен исчезнуть после повтора.
+
+## Лимиты API и DeepSeek
+
+Приложение имеет собственные лимиты IP/аккаунта и отдельный от бота аварийный
+счётчик обращений DeepSeek. Значения задаются в env: `APP_API_IP_REQUESTS_PER_MINUTE`,
+`APP_AUTH_IP_REQUESTS_PER_15_MINUTES`, `APP_API_USER_REQUESTS_PER_MINUTE`,
+`APP_DIVINATION_USER_REQUESTS_PER_HOUR`, `APP_DEEPSEEK_DAILY_REQUEST_LIMIT` и
+`APP_DEEPSEEK_CONCURRENT_REQUESTS`. Лимит DeepSeek считается атомарно по таблице
+`app_llm_requests` за скользящие 24 часа; неудачные обращения тоже учитываются.
+Код бота Max эту таблицу и эти настройки не использует.
+
+Для аварийной остановки только новых LLM-запросов приложения установить
+`APP_DEEPSEEK_DAILY_REQUEST_LIMIT=0` и перезапустить соответствующий app-api.
+Авторизация, история, покупки и бот продолжат работать; создание расклада и
+уточнение вернут безопасный HTTP 503. После изменения проверить `/health`, журнал
+и затем вернуть согласованный ненулевой бюджет.
 
 ## TLS-сертификаты RuStore Public API
 
@@ -54,7 +70,7 @@ curl -sS -o /dev/null \
 ## Деплой API
 
 1. Убедиться, что тесты CI прошли.
-2. Если появился новый файл в `app/migrations`, сначала сделать свежий backup и вручную применить миграцию только к `app_bot_db`.
+2. Если появился новый файл в `app/migrations`, сначала сделать свежий backup и вручную применить миграцию только к нужной БД приложения. Перед текущей версией обязательна `012_app_llm_budget.sql`.
 3. Запустить `Deploy App API` вручную с `confirm_migrations_applied=true` только после успешной миграции.
 4. Проверить service, `/health`, `billing_health_report.sh` и журнал.
 

@@ -22,6 +22,14 @@ class AppSettings(BaseSettings):
     # Number of welcome packages across all providers in a rolling 24h window.
     # Zero disables new gifts without disabling registration or paid usage.
     app_trial_daily_limit: int = Field(default=1000, ge=0)
+    # Process-local HTTP guards. Zero disables the corresponding bucket.
+    app_api_ip_requests_per_minute: int = Field(default=120, ge=0)
+    app_auth_ip_requests_per_15_minutes: int = Field(default=30, ge=0)
+    app_api_user_requests_per_minute: int = Field(default=60, ge=0)
+    app_divination_user_requests_per_hour: int = Field(default=20, ge=0)
+    # Persistent, application-only LLM circuit breaker. Bot calls do not use it.
+    app_deepseek_daily_request_limit: int = Field(default=500, ge=0)
+    app_deepseek_concurrent_requests: int = Field(default=2, ge=1, le=4)
     app_email_smtp_host: str = ""
     app_email_smtp_port: int = 465
     app_email_smtp_user: str = ""
@@ -61,6 +69,15 @@ class AppSettings(BaseSettings):
             errors.append("APP_ALLOW_GUEST_AUTH must be false")
         if self.app_allow_unpaid_test_contact:
             errors.append("APP_ALLOW_UNPAID_TEST_CONTACT must be false")
+        required_limits = {
+            "APP_API_IP_REQUESTS_PER_MINUTE": self.app_api_ip_requests_per_minute,
+            "APP_AUTH_IP_REQUESTS_PER_15_MINUTES": self.app_auth_ip_requests_per_15_minutes,
+            "APP_API_USER_REQUESTS_PER_MINUTE": self.app_api_user_requests_per_minute,
+            "APP_DIVINATION_USER_REQUESTS_PER_HOUR": self.app_divination_user_requests_per_hour,
+        }
+        for name, value in required_limits.items():
+            if value == 0:
+                errors.append(f"{name} must be greater than zero")
         if self.app_rustore_sandbox:
             errors.append("APP_RUSTORE_SANDBOX must be false")
         if self.app_db_name == "app_bot_db" or any(

@@ -73,7 +73,8 @@ async def claim_trial(
         )
         # No raw IP, device identifier, login or email in operational logs.
         log = logger.warning if reason == "daily_limit" else logger.info
-        log("Welcome gift denied: reason=%s", reason)
+        event = "trial_already_claimed" if reason in {"device_used", "device_unavailable", "existing_account"} else "trial_denied"
+        log("Trial event=%s reason=%s", event, reason)
         return 0
     await conn.execute(
         """UPDATE app_user_balances
@@ -83,5 +84,5 @@ async def claim_trial(
     await conn.execute(
         "UPDATE app_trial_claims SET granted_amount = $2, decision = 'granted' WHERE id = $1", claim_id, amount,
     )
-    logger.info("Welcome gift granted: amount=%s", amount)
+    logger.info("Trial event=trial_granted amount=%s", amount)
     return amount

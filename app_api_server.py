@@ -60,10 +60,12 @@ from app.database import (
     delete_user,
 )
 from app.divination_service import DivinationError, run_tarot, run_follow_up
+from app.rate_limits import SlidingWindowLimiter, client_ip
 from handlers.tarot_cards import TAROT_CARDS, get_card_info, get_random_cards
 
 ROOT = Path(__file__).resolve().parent
 STATIC_IMAGES = ROOT / "static" / "images"
+RATE_LIMITER = SlidingWindowLimiter()
 
 OPENAPI = {
     "title": "Gadanie AI App API",
@@ -414,7 +416,7 @@ async def tarot_handler(request: Request) -> Response:
                 return error_response("invalid_cards", "card_ids должен быть массивом из 3 id")
             result = await run_tarot(user_id, question, card_ids=[str(c) for c in card_ids], request_id=request_id)
     except DivinationError as e:
-        status = 402 if e.code == "no_balance" else 400
+        status = 402 if e.code == "no_balance" else 503 if e.code == "service_budget_exhausted" else 400
         return error_response(e.code, str(e), status=status)
 
     free_after = result.balance_after.get("free_divinations_remaining", 0)
@@ -528,7 +530,11 @@ async def follow_up_handler(request: Request) -> Response:
     try:
         result = await run_follow_up(request["app_user_id"], divination_id, question, request_id)
     except DivinationError as e:
-        return error_response(e.code, str(e), status=404 if e.code == "not_found" else 409 if e.code == "follow_up_limit" else 400)
+        return error_response(
+            e.code,
+            str(e),
+            status=503 if e.code == "service_budget_exhausted" else 404 if e.code == "not_found" else 409 if e.code == "follow_up_limit" else 400,
+        )
     return json_response(result)
 
 
@@ -603,8 +609,32 @@ async def logging_middleware(request: Request, handler: Callable) -> Response:
         return error_response("internal_error", "Внутренняя ошибка", status=500)
 
 
+@web.middleware
+async def rate_limit_middleware(request: Request, handler: Callable) -> Response:
+    if request.path == "/health" or request.path.startswith("/static/") or request.path == "/v1/webhook/rustore":
+        return await handler(request)
+    ip = client_ip(request.remote, request.headers.get("X-Forwarded-For"))
+    checks = [("api_ip", ip, app_config.app_api_ip_requests_per_minute, 60)]
+    if request.path.startswith("/v1/auth/"):
+        checks.append(("auth_ip", ip, app_config.app_auth_ip_requests_per_15_minutes, 15 * 60))
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        user_id = verify_access_token(auth[7:].strip())
+        if user_id:
+            checks.append(("api_user", user_id, app_config.app_api_user_requests_per_minute, 60))
+            if request.path == "/v1/divinations/tarot" or request.path.endswith("/follow-up"):
+                checks.append(("divination_user", user_id, app_config.app_divination_user_requests_per_hour, 3600))
+    for bucket, key, maximum, window in checks:
+        if not RATE_LIMITER.allow(bucket, key, maximum, window):
+            logging.warning("API request denied: event=auth_rate_limited bucket=%s", bucket)
+            response = error_response("rate_limited", "Слишком много запросов. Попробуйте позже.", status=429)
+            response.headers["Retry-After"] = str(window)
+            return response
+    return await handler(request)
+
+
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[logging_middleware, auth_middleware], client_max_size=32 * 1024)
+    app = web.Application(middlewares=[logging_middleware, rate_limit_middleware, auth_middleware], client_max_size=32 * 1024)
     app.router.add_get("/health", health_handler)
     app.router.add_get("/v1/docs", docs_handler)
     app.router.add_post("/v1/auth/guest", guest_auth_handler)

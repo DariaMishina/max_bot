@@ -74,7 +74,7 @@ class PasswordDatabaseTests(unittest.IsolatedAsyncioTestCase):
             server_settings={"search_path": self.schema},
         )
         async with self.pool.acquire() as conn:
-            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql", "app/migrations/010_trial_decision.sql", "app/migrations/011_password_credentials_policy.sql"):
+            for name in ("init_app_db.sql", "app/migrations/005_account_auth.sql", "app/migrations/007_password_auth.sql", "app/migrations/008_password_recovery.sql", "app/migrations/009_trial_grants.sql", "app/migrations/010_trial_decision.sql", "app/migrations/011_password_credentials_policy.sql", "app/migrations/012_app_llm_budget.sql"):
                 await conn.execute((ROOT / name).read_text())
         self.pool_patch = patch.object(AppDatabase, "get_pool", return_value=self.pool)
         self.pool_patch.start()

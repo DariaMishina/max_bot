@@ -1,6 +1,7 @@
 """Tarot and follow-ups for the Android guest; no Max calls or bot tables."""
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass
@@ -10,13 +11,34 @@ from typing import List, Optional
 from handlers.tarot_cards import TAROT_CARDS, get_random_cards
 from main.llm_divination import interpret_tarot_with_llm, call_deepseek
 from main.question_validation import InvalidQuestionError, validate_question_text
+from app.config import app_config
 from app.database import AppDatabase
+from app.llm_budget import AppLlmBudgetExceeded, finish_llm_request, reserve_llm_request
+
+_APP_LLM_SLOTS = asyncio.Semaphore(app_config.app_deepseek_concurrent_requests)
 
 
 class DivinationError(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
+
+
+async def _budgeted_llm_call(user_id: uuid.UUID, operation: str, call):
+    try:
+        budget_id = await reserve_llm_request(user_id, operation)
+    except AppLlmBudgetExceeded as error:
+        raise DivinationError(
+            "service_budget_exhausted",
+            "Сервис временно достиг дневного лимита. Попробуйте позже.",
+        ) from error
+    try:
+        result = await call()
+    except Exception:
+        await finish_llm_request(budget_id, succeeded=False)
+        raise
+    await finish_llm_request(budget_id, succeeded=True)
+    return result
 
 
 @dataclass
@@ -51,6 +73,19 @@ async def run_tarot(
     user_id: uuid.UUID, question: str, *, card_ids: Optional[List[str]] = None,
     random_cards: bool = False, request_id: Optional[uuid.UUID] = None,
 ) -> TarotResult:
+    # Acquire before the outer DB transaction. Budget reservations use a second
+    # connection and this bound prevents pool starvation under a request burst.
+    async with _APP_LLM_SLOTS:
+        return await _run_tarot(
+            user_id, question, card_ids=card_ids,
+            random_cards=random_cards, request_id=request_id,
+        )
+
+
+async def _run_tarot(
+    user_id: uuid.UUID, question: str, *, card_ids: Optional[List[str]] = None,
+    random_cards: bool = False, request_id: Optional[uuid.UUID] = None,
+) -> TarotResult:
     question = validate_question(question)
     if not random_cards:
         _validate_card_ids(card_ids or [])
@@ -75,7 +110,9 @@ async def run_tarot(
             is_free = not unlimited and balance["free_divinations_remaining"] > 0
             if random_cards:
                 card_ids = get_random_cards(3)
-            interpretation = await interpret_tarot_with_llm(question, card_ids)
+            interpretation = await _budgeted_llm_call(
+                user_id, "tarot", lambda: interpret_tarot_with_llm(question, card_ids),
+            )
             if not interpretation.strip():
                 raise DivinationError("empty_result", "Не удалось получить толкование. Попробуйте снова")
             divination_id = await conn.fetchval(
@@ -96,6 +133,11 @@ async def run_tarot(
 
 
 async def run_follow_up(user_id: uuid.UUID, divination_id: int, question: str, request_id: uuid.UUID) -> dict:
+    async with _APP_LLM_SLOTS:
+        return await _run_follow_up(user_id, divination_id, question, request_id)
+
+
+async def _run_follow_up(user_id: uuid.UUID, divination_id: int, question: str, request_id: uuid.UUID) -> dict:
     question = validate_question(question)
     pool = await AppDatabase.get_pool()
     async with pool.acquire() as conn:
@@ -118,11 +160,15 @@ async def run_follow_up(user_id: uuid.UUID, divination_id: int, question: str, r
                 for item in history:
                     messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
                 messages.append({"role": "user", "content": question})
-                answer = await call_deepseek(
-                    messages,
-                    "Ты опытный таролог. Ответь по-русски на уточнение к уже проведённому раскладу, "
-                    "учитывая его контекст. 2–4 предложения, без markdown и HTML.",
-                    max_tokens=500, format_output=False,
+                answer = await _budgeted_llm_call(
+                    user_id,
+                    "follow_up",
+                    lambda: call_deepseek(
+                        messages,
+                        "Ты опытный таролог. Ответь по-русски на уточнение к уже проведённому раскладу, "
+                        "учитывая его контекст. 2–4 предложения, без markdown и HTML.",
+                        max_tokens=500, format_output=False,
+                    ),
                 )
                 if not answer.strip():
                     raise DivinationError("empty_result", "Не удалось получить ответ. Попробуйте снова")
