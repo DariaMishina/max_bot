@@ -177,14 +177,22 @@ async def handle_payment_selection(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     
     user_id = cb.user.user_id
     logging.info(f"Payment package selected: {package['id']} by user {user_id}")
-    
-    cursor.change_data({'package': package})
+
+    payment_reply_message_id = cb.message.id if cb.message else None
+    cursor.change_data({
+        'package': package,
+        'payment_reply_message_id': payment_reply_message_id,
+    })
     
     # Проверяем, есть ли сохраненный email
     saved_email = await get_user_email(user_id)
     
     if saved_email:
-        cursor.change_data({'package': package, 'email': saved_email})
+        cursor.change_data({
+            'package': package,
+            'email': saved_email,
+            'payment_reply_message_id': payment_reply_message_id,
+        })
         cursor.change_state(STATE_CONFIRMING_EMAIL)
         await bot.send_message(
             f"📧 Для чека используем этот email?\n\n<b>{saved_email}</b>",
@@ -293,7 +301,15 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             email=email
         )
         try:
-            await capture_payment_reply_context(payment_id, user_id)
+            await capture_payment_reply_context(
+                payment_id,
+                user_id,
+                reply_message_id=(
+                    data.get('payment_reply_message_id')
+                    or (cb.message.id if cb.message else None)
+                ),
+                reply_source="callback_message",
+            )
         except Exception as reply_context_error:
             logging.error(
                 "Payment %s created, but reply context was not captured: %s",

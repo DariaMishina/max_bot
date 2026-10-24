@@ -148,12 +148,16 @@ class MessageRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "handlers.common.check_channel_subscription",
             AsyncMock(return_value=True),
-        ):
+        ), patch.object(
+            divination, "save_conversation_reply_message", AsyncMock()
+        ) as save_reply:
             await divination.handle_new_divination_question(message, cursor)
 
         self.assertEqual(cursor.state, divination.STATE_CHOOSING_DIVINATION)
         self.assertEqual(cursor.data, {"question": "Что меня ждёт в работе?"})
         message.reply.assert_awaited_once()
+        save_reply.assert_awaited_once()
+        self.assertEqual(save_reply.await_args.args[:3], (42, 100, "message-1"))
 
     async def test_navigation_label_never_reaches_follow_up_llm(self):
         message = make_message("Новый расклад 🃏")

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from main import outbound_messages, reply_updates
+from handlers import pay
 import send_message as send_message_module
 from main.outbound_messages import ReplyTarget
 from main.send_errors import (
@@ -14,8 +15,9 @@ from main.send_errors import (
 
 
 class ReplySelectionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_user_message_has_priority_for_inactivity(self):
+    async def test_conversation_message_has_priority_for_inactivity(self):
         context = {
+            "last_conversation_message_id": "question-mid",
             "last_user_message_id": "user-mid",
             "last_callback_message_id": "callback-mid",
             "last_bot_message_id": "bot-mid",
@@ -24,7 +26,7 @@ class ReplySelectionTests(unittest.IsolatedAsyncioTestCase):
             outbound_messages, "get_reply_context", AsyncMock(return_value=context)
         ):
             target = await outbound_messages.choose_reply_target(42, "paid_inactivity")
-        self.assertEqual(target, ReplyTarget("user-mid", "user_message"))
+        self.assertEqual(target, ReplyTarget("question-mid", "conversation_message"))
 
     async def test_payment_explicit_context_has_priority(self):
         with patch.object(
@@ -34,6 +36,21 @@ class ReplySelectionTests(unittest.IsolatedAsyncioTestCase):
                 42, "payment_reminder", "payment-mid", "callback_message"
             )
         self.assertEqual(target, ReplyTarget("payment-mid", "callback_message"))
+        get_context.assert_not_awaited()
+
+    async def test_payment_anchor_is_not_replaced_by_later_tarot_question(self):
+        context = {
+            "last_conversation_message_id": "later-question-mid",
+            "last_user_message_id": "later-question-mid",
+            "last_callback_message_id": "other-callback-mid",
+        }
+        with patch.object(
+            outbound_messages, "get_reply_context", AsyncMock(return_value=context)
+        ) as get_context:
+            target = await outbound_messages.choose_reply_target(
+                42, "payment_reminder", "payment-button-mid", "callback_message"
+            )
+        self.assertEqual(target, ReplyTarget("payment-button-mid", "callback_message"))
         get_context.assert_not_awaited()
 
 
@@ -150,6 +167,29 @@ class UpdateCaptureTests(unittest.IsolatedAsyncioTestCase):
             await reply_updates.capture_reply_update(update)
         save.assert_awaited_once()
         self.assertEqual(save.await_args.args[:3], (42, 777, "button-mid"))
+
+
+class PaymentAnchorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_package_button_message_is_kept_through_email_flow(self):
+        callback = SimpleNamespace(
+            payload="pay_3_spreads",
+            user=SimpleNamespace(user_id=42),
+            message=SimpleNamespace(id="package-menu-mid"),
+            answer=AsyncMock(),
+        )
+        cursor = SimpleNamespace(
+            data=None,
+            state=None,
+            change_data=lambda value: setattr(cursor, "data", value),
+            change_state=lambda value: setattr(cursor, "state", value),
+        )
+        with (
+            patch.object(pay, "get_user_email", AsyncMock(return_value=None)),
+            patch.object(pay.bot, "send_message", AsyncMock()),
+        ):
+            await pay.handle_payment_selection(callback, cursor)
+        self.assertEqual(cursor.data["payment_reply_message_id"], "package-menu-mid")
+        self.assertEqual(cursor.state, pay.STATE_WAITING_EMAIL)
 
 
 class ErrorClassificationTests(unittest.TestCase):

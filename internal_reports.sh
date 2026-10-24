@@ -678,14 +678,15 @@ execute_query "$QUERY7_BY_SOURCE" "7.2. Гадания по источникам
 QUERY8_REPLY_COVERAGE="
 SELECT
     COUNT(*) AS \"Контекстов\",
+    COUNT(*) FILTER (WHERE last_conversation_message_id IS NOT NULL) AS \"Вопрос к раскладу\",
     COUNT(*) FILTER (WHERE last_user_message_id IS NOT NULL) AS \"Входящее\",
     COUNT(*) FILTER (WHERE last_callback_message_id IS NOT NULL) AS \"Callback\",
     COUNT(*) FILTER (
-        WHERE COALESCE(last_user_message_id, last_callback_message_id,
+        WHERE COALESCE(last_conversation_message_id, last_user_message_id, last_callback_message_id,
                        last_bot_message_id) IS NOT NULL
     ) AS \"Есть reply\",
     COUNT(*) FILTER (
-        WHERE COALESCE(last_user_message_id, last_callback_message_id,
+        WHERE COALESCE(last_conversation_message_id, last_user_message_id, last_callback_message_id,
                        last_bot_message_id) IS NULL
     ) AS \"Нет reply\"
 FROM max_reply_context

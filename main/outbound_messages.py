@@ -56,9 +56,10 @@ def _candidate_columns(touch_type: str) -> tuple[tuple[str, str], ...]:
         return (
             ("last_callback_message_id", "callback_message"),
             ("last_user_message_id", "user_message"),
-            ("last_bot_message_id", "bot_message"),
+            ("last_conversation_message_id", "conversation_message"),
         )
     return (
+        ("last_conversation_message_id", "conversation_message"),
         ("last_user_message_id", "user_message"),
         ("last_callback_message_id", "callback_message"),
         ("last_bot_message_id", "bot_message"),

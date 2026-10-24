@@ -2159,6 +2159,8 @@ async def ensure_reply_context_tables() -> None:
             chat_id BIGINT NULL,
             last_user_message_id TEXT NULL,
             last_user_message_at TIMESTAMP NULL,
+            last_conversation_message_id TEXT NULL,
+            last_conversation_message_at TIMESTAMP NULL,
             last_callback_message_id TEXT NULL,
             last_callback_at TIMESTAMP NULL,
             last_bot_message_id TEXT NULL,
@@ -2166,6 +2168,14 @@ async def ensure_reply_context_tables() -> None:
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
     """)
+    await Database.execute_query(
+        f"ALTER TABLE {context_table} "
+        "ADD COLUMN IF NOT EXISTS last_conversation_message_id TEXT NULL"
+    )
+    await Database.execute_query(
+        f"ALTER TABLE {context_table} "
+        "ADD COLUMN IF NOT EXISTS last_conversation_message_at TIMESTAMP NULL"
+    )
     await Database.execute_query(f"""
         CREATE TABLE IF NOT EXISTS {delivery_table} (
             id BIGSERIAL PRIMARY KEY,
@@ -2234,6 +2244,16 @@ async def save_user_reply_message(
     )
 
 
+async def save_conversation_reply_message(
+    user_id: int, chat_id: int, message_id: str, message_at: datetime
+) -> None:
+    """Save a meaningful divination question separately from generic input."""
+    await _upsert_reply_point(
+        user_id, chat_id, message_id, message_at,
+        "last_conversation_message_id", "last_conversation_message_at",
+    )
+
+
 async def save_callback_reply_message(
     user_id: int, chat_id: int, message_id: str, message_at: datetime
 ) -> None:
@@ -2277,6 +2297,8 @@ async def invalidate_reply_message(user_id: int, message_id: str) -> None:
         UPDATE {table} SET
             last_user_message_at = CASE WHEN last_user_message_id = $2 THEN NULL ELSE last_user_message_at END,
             last_user_message_id = CASE WHEN last_user_message_id = $2 THEN NULL ELSE last_user_message_id END,
+            last_conversation_message_at = CASE WHEN last_conversation_message_id = $2 THEN NULL ELSE last_conversation_message_at END,
+            last_conversation_message_id = CASE WHEN last_conversation_message_id = $2 THEN NULL ELSE last_conversation_message_id END,
             last_callback_at = CASE WHEN last_callback_message_id = $2 THEN NULL ELSE last_callback_at END,
             last_callback_message_id = CASE WHEN last_callback_message_id = $2 THEN NULL ELSE last_callback_message_id END,
             last_bot_message_at = CASE WHEN last_bot_message_id = $2 THEN NULL ELSE last_bot_message_at END,
@@ -2292,20 +2314,27 @@ async def invalidate_reply_message(user_id: int, message_id: str) -> None:
         """, user_id, str(message_id))
 
 
-async def capture_payment_reply_context(payment_id: str, user_id: int) -> None:
+async def capture_payment_reply_context(
+    payment_id: str,
+    user_id: int,
+    reply_message_id: Optional[str] = None,
+    reply_source: str = "explicit",
+) -> None:
     """Pin the reply point belonging to this payment attempt."""
     await ensure_payments_reminder_columns()
-    context = await get_reply_context(user_id) or {}
-    candidates = (
-        ("last_callback_message_id", "callback_message"),
-        ("last_user_message_id", "user_message"),
-        ("last_bot_message_id", "bot_message"),
-    )
-    message_id = source = None
-    for column, candidate_source in candidates:
-        if context.get(column):
-            message_id, source = context[column], candidate_source
-            break
+    message_id = str(reply_message_id) if reply_message_id else None
+    source = reply_source if message_id else None
+    if not message_id:
+        context = await get_reply_context(user_id) or {}
+        candidates = (
+            ("last_callback_message_id", "callback_message"),
+            ("last_user_message_id", "user_message"),
+            ("last_conversation_message_id", "conversation_message"),
+        )
+        for column, candidate_source in candidates:
+            if context.get(column):
+                message_id, source = context[column], candidate_source
+                break
     if not message_id:
         return
     await Database.execute_query(f"""

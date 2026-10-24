@@ -11,6 +11,7 @@ import logging
 import random
 import re
 import time
+from datetime import datetime, timezone
 from html import escape
 import aiohttp
 
@@ -40,6 +41,7 @@ from main.database import (
     update_divination_interpretation, save_pending_question, get_pending_question,
     mark_paywall_reached, update_user_activity_on_divination,
     get_and_delete_webapp_follow_up_context,
+    save_conversation_reply_message,
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
@@ -87,6 +89,25 @@ STATE_WAITING_FOR_CARDS_INPUT = 'waiting_for_cards_input'
 STATE_CHATTING = 'chatting'
 
 router = aiomax.Router()
+
+
+async def _save_question_reply_context(message: aiomax.Message) -> None:
+    """Mark a validated divination/follow-up question as a semantic reply anchor."""
+    message_id = getattr(message, "id", None)
+    if not message_id:
+        return
+    try:
+        await save_conversation_reply_message(
+            message.sender.user_id,
+            message.recipient.chat_id,
+            str(message_id),
+            datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+    except Exception as exc:
+        logging.error(
+            "Could not save divination reply context for user %s: %s",
+            message.sender.user_id, exc, exc_info=True,
+        )
 
 
 # ==================== Команда /divination ====================
@@ -199,6 +220,7 @@ async def process_divination_question(message: aiomax.Message, cursor: fsm.FSMCu
         await message.reply(str(error))
         return
 
+    await _save_question_reply_context(message)
     await process_divination_internal(message, cursor, text)
 
 
@@ -867,6 +889,8 @@ async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCur
     except InvalidQuestionError as error:
         await message.reply(str(error), keyboard=make_back_to_menu_kb())
         return
+
+    await _save_question_reply_context(message)
     
     data = cursor.get_data() or {}
     follow_up_count = data.get('follow_up_count', 0)
@@ -950,6 +974,7 @@ async def _start_question_first_flow(
     from handlers.common import check_channel_subscription, send_channel_sub_prompt
 
     user_id = message.sender.user_id
+    await _save_question_reply_context(message)
     if not await check_channel_subscription(user_id):
         await send_channel_sub_prompt(message)
         return

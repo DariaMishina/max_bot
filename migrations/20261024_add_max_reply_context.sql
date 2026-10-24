@@ -3,12 +3,18 @@ CREATE TABLE IF NOT EXISTS max_reply_context (
     chat_id BIGINT NULL,
     last_user_message_id TEXT NULL,
     last_user_message_at TIMESTAMP NULL,
+    last_conversation_message_id TEXT NULL,
+    last_conversation_message_at TIMESTAMP NULL,
     last_callback_message_id TEXT NULL,
     last_callback_at TIMESTAMP NULL,
     last_bot_message_id TEXT NULL,
     last_bot_message_at TIMESTAMP NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE max_reply_context
+    ADD COLUMN IF NOT EXISTS last_conversation_message_id TEXT NULL;
+ALTER TABLE max_reply_context
+    ADD COLUMN IF NOT EXISTS last_conversation_message_at TIMESTAMP NULL;
 
 CREATE TABLE IF NOT EXISTS max_outbound_deliveries (
     id BIGSERIAL PRIMARY KEY,
