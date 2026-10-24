@@ -15,6 +15,7 @@ from main.database import (
     mark_expired_access_reminder_sent,
 )
 from send_message import send_expired_access_reminder
+from main.outbound_messages import profile_circuit_is_open
 
 REMINDER_DELAY_SEC = 0.1
 
@@ -31,6 +32,8 @@ async def process_expired_access_reminders() -> dict:
     }
 
     if not is_in_broadcast_window():
+        return results
+    if profile_circuit_is_open():
         return results
 
     processed_this_run: set[int] = set()
@@ -83,6 +86,9 @@ async def process_expired_access_reminders() -> dict:
                 results['by_stage'][stage]['failed'] += 1
 
             await asyncio.sleep(REMINDER_DELAY_SEC)
+            if profile_circuit_is_open():
+                logging.warning("Expired access reminders stopped: MAX profile circuit opened")
+                return results
 
     if any(v for k, v in results.items() if k != 'by_stage' and v) or results['by_stage']:
         logging.info(f"Expired access reminders job finished: {results}")

@@ -25,7 +25,14 @@ from main.database import (
     process_successful_payment as db_process_successful_payment,
     Database, can_user_divinate, use_divination, save_divination, get_user_balance,
     get_pending_question, delete_pending_question, save_webapp_follow_up_context,
-    update_user_blocked_status, is_send_blocked_error
+    update_user_blocked_status, is_send_blocked_error,
+    get_payment_reply_context, invalidate_reply_message, log_outbound_delivery,
+)
+from main.outbound_messages import choose_reply_target, open_profile_circuit
+from main.send_errors import (
+    is_invalid_reply_error,
+    is_profile_limited_error,
+    is_transient_send_error,
 )
 from main.metrika_mp import send_conversion_event
 from main.conversions import save_conversion
@@ -46,7 +53,9 @@ def _max_api_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-async def _send_message_direct(user_id: int, text: str, keyboard=None):
+async def _send_message_direct(
+    user_id: int, text: str, keyboard=None, *, payment_id: str | None = None
+):
     """Отправить сообщение через Max API напрямую, минуя bot.session.
     bot.send_message() зависит от сессии, которая создаётся внутри
     start_polling(). При cold start на Render вебхук приходит раньше —
@@ -70,17 +79,68 @@ async def _send_message_direct(user_id: int, text: str, keyboard=None):
             },
         }]
 
+    payment_context = await get_payment_reply_context(payment_id) if payment_id else None
+    target = await choose_reply_target(
+        user_id,
+        "payment_success",
+        payment_context["message_id"] if payment_context else None,
+        payment_context["source"] if payment_context else "explicit",
+    )
+
     connector = aiohttp.TCPConnector(ssl=_max_api_ssl_context())
     async with aiohttp.ClientSession(connector=connector) as session:
-        async with session.post(
-            _MAX_API_MESSAGES_URL, params=params, headers=headers, json=body
-        ) as resp:
-            if resp.status in range(200, 300):
-                logging.info(f"Direct API: message sent to user {user_id}")
-                return True
-            error = await resp.text()
-            logging.error(f"Direct API: failed to send to user {user_id}: {resp.status} - {error}")
-            return False
+        for attempt in (1, 2):
+            request_body = dict(body)
+            if target.message_id:
+                request_body["link"] = {"type": "reply", "mid": target.message_id}
+            async with session.post(
+                _MAX_API_MESSAGES_URL, params=params, headers=headers, json=request_body
+            ) as resp:
+                if resp.status in range(200, 300):
+                    payload = await resp.json()
+                    outbound_id = ((payload.get("message") or {}).get("body") or {}).get("mid")
+                    await log_outbound_delivery(
+                        user_id=user_id, touch_type="payment_success",
+                        reply_message_id=target.message_id, reply_source=target.source,
+                        sent_as_reply=bool(target.message_id), success=True,
+                        api_result=str(resp.status), outbound_message_id=outbound_id,
+                        attempt=attempt, circuit_open=False,
+                    )
+                    logging.info("Direct API: message sent to user %s", user_id)
+                    return True
+                error = await resp.text()
+                exc = RuntimeError(f"HTTP {resp.status}: {error}")
+                profile_limited = is_profile_limited_error(exc)
+                if profile_limited:
+                    open_profile_circuit()
+                error_code = (
+                    "profile_limited" if profile_limited
+                    else "invalid_reply" if is_invalid_reply_error(exc)
+                    else str(resp.status)
+                )
+                await log_outbound_delivery(
+                    user_id=user_id, touch_type="payment_success",
+                    reply_message_id=target.message_id, reply_source=target.source,
+                    sent_as_reply=bool(target.message_id), success=False,
+                    api_result=str(resp.status), error_code=error_code,
+                    attempt=attempt, circuit_open=profile_limited,
+                )
+                if target.message_id and is_invalid_reply_error(exc) and attempt == 1:
+                    invalid_id = target.message_id
+                    await invalidate_reply_message(user_id, invalid_id)
+                    target = await choose_reply_target(
+                        user_id, "payment_success", exclude_message_id=invalid_id
+                    )
+                    continue
+                if is_transient_send_error(exc) and attempt == 1:
+                    await asyncio.sleep(1)
+                    continue
+                logging.error(
+                    "Direct API: failed to send to user %s: %s - %s",
+                    user_id, resp.status, error,
+                )
+                return False
+    return False
 
 
 async def yookassa_webhook_handler(request: Request) -> Response:
@@ -199,7 +259,9 @@ async def yookassa_webhook_handler(request: Request) -> Response:
                 )
                 kb = make_back_to_menu_kb()
 
-            await _send_message_direct(user_id, success_text, keyboard=kb)
+            await _send_message_direct(
+                user_id, success_text, keyboard=kb, payment_id=payment_id
+            )
         except Exception as e:
             logging.warning(f"Could not send payment notification to user {user_id}: {e}")
             if is_send_blocked_error(e):

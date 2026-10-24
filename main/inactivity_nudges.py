@@ -24,6 +24,7 @@ from main.database import (
     mark_paid_inactivity_nudge_sent,
 )
 from send_message import send_free_user_nudge, send_paid_inactivity_nudge
+from main.outbound_messages import profile_circuit_is_open
 
 NUDGE_DELAY_SEC = 0.05
 
@@ -40,6 +41,8 @@ async def process_inactivity_nudges() -> dict:
     }
 
     paid_due_in_window = is_in_broadcast_window()
+    if profile_circuit_is_open():
+        return results
 
     sent_paid_this_run: set[int] = set()
 
@@ -95,6 +98,9 @@ async def process_inactivity_nudges() -> dict:
                 results['by_type'][key]['failed'] += 1
 
             await asyncio.sleep(NUDGE_DELAY_SEC)
+            if profile_circuit_is_open():
+                logging.warning("Inactivity nudges stopped: MAX profile circuit opened")
+                return results
 
     for category, stages in FREE_NUDGE_STAGES.items():
         for stage in stages:
@@ -140,6 +146,9 @@ async def process_inactivity_nudges() -> dict:
                 results['by_type'][key]['failed'] += 1
 
             await asyncio.sleep(NUDGE_DELAY_SEC)
+            if profile_circuit_is_open():
+                logging.warning("Free nudges stopped: MAX profile circuit opened")
+                return results
 
     if any(v for k, v in results.items() if k != 'by_type' and v) or any(
         t['sent'] or t['failed'] for t in results['by_type'].values()

@@ -1,4 +1,5 @@
 import aiomax
+from types import MethodType
 from aiomax import utils as _aiomax_utils
 from main.config_reader import config
 
@@ -55,3 +56,17 @@ def _patched_callback_from_json(data: dict) -> _aiomax_buttons.CallbackButton:
 
 
 _aiomax_buttons.CallbackButton.from_json = _patched_callback_from_json
+
+
+# aiomax schedules business handlers with create_task(). Capture update ids
+# first so payment creation and later background jobs always see the context.
+_aiomax_handle_update = bot.handle_update
+
+
+async def _handle_update_with_reply_context(self, update: dict):
+    from main.reply_updates import capture_reply_update
+    await capture_reply_update(update)
+    return await _aiomax_handle_update(update)
+
+
+bot.handle_update = MethodType(_handle_update_with_reply_context, bot)

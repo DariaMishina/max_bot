@@ -15,6 +15,7 @@ from main.database import (
     mark_payment_reminder_sent,
 )
 from send_message import send_payment_reminder
+from main.outbound_messages import profile_circuit_is_open
 
 REMINDER_DELAY_SEC = 0.05
 
@@ -29,6 +30,8 @@ async def process_payment_reminders() -> dict:
         'blocked': 0,
     }
     processed_this_run: set[str] = set()
+    if profile_circuit_is_open():
+        return results
 
     for stage in PAYMENT_REMINDER_STAGES:
         due = await get_payments_due_for_reminder(stage)
@@ -51,7 +54,9 @@ async def process_payment_reminders() -> dict:
                 continue
 
             try:
-                success, unreachable = await send_payment_reminder(user_id, stage=stage)
+                success, unreachable = await send_payment_reminder(
+                    user_id, stage=stage, payment_id=payment_id
+                )
                 outcome = await finalize_broadcast_send(
                     success,
                     unreachable,
@@ -73,6 +78,9 @@ async def process_payment_reminders() -> dict:
                 results['failed'] += 1
 
             await asyncio.sleep(REMINDER_DELAY_SEC)
+            if profile_circuit_is_open():
+                logging.warning("Payment reminders stopped: MAX profile circuit opened")
+                return results
 
     if any(results.values()):
         logging.info(f"Payment reminders job finished: {results}")

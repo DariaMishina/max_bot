@@ -659,6 +659,7 @@ PAYMENT_REMINDER_PREV_SENT = {
 }
 
 _payments_reminder_columns_ensured = False
+_reply_context_tables_ensured = False
 
 
 async def ensure_payments_reminder_columns() -> None:
@@ -676,6 +677,16 @@ async def ensure_payments_reminder_columns() -> None:
             'reminder_24h_sent_at',
         ):
             await _add_timestamp_column_if_missing(payments_table, column)
+
+        await Database.execute_query(
+            f"ALTER TABLE {payments_table} ADD COLUMN IF NOT EXISTS reply_message_id TEXT NULL"
+        )
+        await Database.execute_query(
+            f"ALTER TABLE {payments_table} ADD COLUMN IF NOT EXISTS reply_source VARCHAR(32) NULL"
+        )
+        await Database.execute_query(
+            f"ALTER TABLE {payments_table} ADD COLUMN IF NOT EXISTS reply_context_at TIMESTAMP NULL"
+        )
 
         await _add_timestamp_column_if_missing(
             payments_table,
@@ -2130,3 +2141,213 @@ async def get_and_delete_webapp_follow_up_context(user_id: int) -> Optional[Dict
     except Exception as e:
         logging.error(f"Error getting webapp follow-up context for user {user_id}: {e}", exc_info=True)
         return None
+
+
+# ==================== MAX reply context ====================
+
+async def ensure_reply_context_tables() -> None:
+    """Create the current reply points and background-delivery audit tables."""
+    global _reply_context_tables_ensured
+    if _reply_context_tables_ensured:
+        return
+
+    context_table = get_table_name("reply_context")
+    delivery_table = get_table_name("outbound_deliveries")
+    await Database.execute_query(f"""
+        CREATE TABLE IF NOT EXISTS {context_table} (
+            user_id BIGINT PRIMARY KEY,
+            chat_id BIGINT NULL,
+            last_user_message_id TEXT NULL,
+            last_user_message_at TIMESTAMP NULL,
+            last_callback_message_id TEXT NULL,
+            last_callback_at TIMESTAMP NULL,
+            last_bot_message_id TEXT NULL,
+            last_bot_message_at TIMESTAMP NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """)
+    await Database.execute_query(f"""
+        CREATE TABLE IF NOT EXISTS {delivery_table} (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            user_id BIGINT NOT NULL,
+            touch_type VARCHAR(80) NOT NULL,
+            touch_stage VARCHAR(40) NULL,
+            reply_message_id TEXT NULL,
+            reply_source VARCHAR(32) NOT NULL,
+            sent_as_reply BOOLEAN NOT NULL DEFAULT FALSE,
+            success BOOLEAN NOT NULL DEFAULT FALSE,
+            api_result VARCHAR(80) NULL,
+            error_code VARCHAR(80) NULL,
+            outbound_message_id TEXT NULL,
+            attempt SMALLINT NOT NULL DEFAULT 1,
+            circuit_open BOOLEAN NOT NULL DEFAULT FALSE
+        )
+    """)
+    await Database.execute_query(
+        f"CREATE INDEX IF NOT EXISTS idx_{delivery_table}_created_at "
+        f"ON {delivery_table}(created_at DESC)"
+    )
+    _reply_context_tables_ensured = True
+
+
+async def _upsert_reply_point(
+    user_id: int,
+    chat_id: Optional[int],
+    message_id: Optional[str],
+    message_at: datetime,
+    id_column: Optional[str] = None,
+    at_column: Optional[str] = None,
+) -> None:
+    await ensure_reply_context_tables()
+    table = get_table_name("reply_context")
+    if id_column and at_column and message_id:
+        await Database.execute_query(f"""
+            INSERT INTO {table} (user_id, chat_id, {id_column}, {at_column}, updated_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                chat_id = COALESCE(EXCLUDED.chat_id, {table}.chat_id),
+                {id_column} = CASE
+                    WHEN {table}.{at_column} IS NULL OR {table}.{at_column} <= EXCLUDED.{at_column}
+                    THEN EXCLUDED.{id_column} ELSE {table}.{id_column} END,
+                {at_column} = CASE
+                    WHEN {table}.{at_column} IS NULL OR {table}.{at_column} <= EXCLUDED.{at_column}
+                    THEN EXCLUDED.{at_column} ELSE {table}.{at_column} END,
+                updated_at = NOW()
+        """, user_id, chat_id, str(message_id), message_at)
+    else:
+        await Database.execute_query(f"""
+            INSERT INTO {table} (user_id, chat_id, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                chat_id = COALESCE(EXCLUDED.chat_id, {table}.chat_id),
+                updated_at = NOW()
+        """, user_id, chat_id)
+
+
+async def save_user_reply_message(
+    user_id: int, chat_id: int, message_id: str, message_at: datetime
+) -> None:
+    await _upsert_reply_point(
+        user_id, chat_id, message_id, message_at,
+        "last_user_message_id", "last_user_message_at",
+    )
+
+
+async def save_callback_reply_message(
+    user_id: int, chat_id: int, message_id: str, message_at: datetime
+) -> None:
+    await _upsert_reply_point(
+        user_id, chat_id, message_id, message_at,
+        "last_callback_message_id", "last_callback_at",
+    )
+
+
+async def save_bot_start_reply_chat(user_id: int, chat_id: int) -> None:
+    await _upsert_reply_point(user_id, chat_id, None, datetime.now(), None, None)
+
+
+async def save_bot_reply_message(
+    user_id: int, chat_id: Optional[int], message_id: str, message_at: datetime
+) -> None:
+    await _upsert_reply_point(
+        user_id, chat_id, message_id, message_at,
+        "last_bot_message_id", "last_bot_message_at",
+    )
+
+
+async def get_reply_context(user_id: int) -> Optional[Dict[str, Any]]:
+    try:
+        await ensure_reply_context_tables()
+        row = await Database.fetch_one(
+            f"SELECT * FROM {get_table_name('reply_context')} WHERE user_id = $1",
+            user_id,
+        )
+        return dict(row) if row else None
+    except Exception as exc:
+        logging.error("Error loading reply context for user %s: %s", user_id, exc, exc_info=True)
+        return None
+
+
+async def invalidate_reply_message(user_id: int, message_id: str) -> None:
+    """Clear every current or payment reply point that references a bad mid."""
+    await ensure_reply_context_tables()
+    table = get_table_name("reply_context")
+    await Database.execute_query(f"""
+        UPDATE {table} SET
+            last_user_message_at = CASE WHEN last_user_message_id = $2 THEN NULL ELSE last_user_message_at END,
+            last_user_message_id = CASE WHEN last_user_message_id = $2 THEN NULL ELSE last_user_message_id END,
+            last_callback_at = CASE WHEN last_callback_message_id = $2 THEN NULL ELSE last_callback_at END,
+            last_callback_message_id = CASE WHEN last_callback_message_id = $2 THEN NULL ELSE last_callback_message_id END,
+            last_bot_message_at = CASE WHEN last_bot_message_id = $2 THEN NULL ELSE last_bot_message_at END,
+            last_bot_message_id = CASE WHEN last_bot_message_id = $2 THEN NULL ELSE last_bot_message_id END,
+            updated_at = NOW()
+        WHERE user_id = $1
+    """, user_id, str(message_id))
+    if await _table_has_column(get_table_name("payments"), "reply_message_id"):
+        await Database.execute_query(f"""
+            UPDATE {get_table_name('payments')}
+            SET reply_message_id = NULL, reply_source = NULL, reply_context_at = NULL
+            WHERE user_id = $1 AND reply_message_id = $2
+        """, user_id, str(message_id))
+
+
+async def capture_payment_reply_context(payment_id: str, user_id: int) -> None:
+    """Pin the reply point belonging to this payment attempt."""
+    await ensure_payments_reminder_columns()
+    context = await get_reply_context(user_id) or {}
+    candidates = (
+        ("last_callback_message_id", "callback_message"),
+        ("last_user_message_id", "user_message"),
+        ("last_bot_message_id", "bot_message"),
+    )
+    message_id = source = None
+    for column, candidate_source in candidates:
+        if context.get(column):
+            message_id, source = context[column], candidate_source
+            break
+    if not message_id:
+        return
+    await Database.execute_query(f"""
+        UPDATE {get_table_name('payments')}
+        SET reply_message_id = COALESCE(reply_message_id, $2),
+            reply_source = COALESCE(reply_source, $3),
+            reply_context_at = COALESCE(reply_context_at, NOW())
+        WHERE payment_id = $1
+    """, payment_id, message_id, source)
+
+
+async def get_payment_reply_context(payment_id: str) -> Optional[Dict[str, str]]:
+    await ensure_payments_reminder_columns()
+    row = await Database.fetch_one(f"""
+        SELECT reply_message_id, reply_source
+        FROM {get_table_name('payments')} WHERE payment_id = $1
+    """, payment_id)
+    if not row or not row["reply_message_id"]:
+        return None
+    return {
+        "message_id": row["reply_message_id"],
+        "source": row["reply_source"] or "explicit",
+    }
+
+
+async def log_outbound_delivery(**values) -> None:
+    """Persist structured delivery metadata without message text."""
+    try:
+        await ensure_reply_context_tables()
+        await Database.execute_query(f"""
+            INSERT INTO {get_table_name('outbound_deliveries')} (
+                user_id, touch_type, touch_stage, reply_message_id, reply_source,
+                sent_as_reply, success, api_result, error_code,
+                outbound_message_id, attempt, circuit_open
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        """,
+            values["user_id"], values["touch_type"], values.get("touch_stage"),
+            values.get("reply_message_id"), values.get("reply_source", "no_context"),
+            values.get("sent_as_reply", False), values.get("success", False),
+            values.get("api_result"), values.get("error_code"),
+            values.get("outbound_message_id"), values.get("attempt", 1),
+            values.get("circuit_open", False),
+        )
+    except Exception as exc:
+        logging.error("Could not persist outbound delivery log: %s", exc, exc_info=True)

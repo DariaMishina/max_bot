@@ -27,7 +27,8 @@ from main.botdef import bot
 from main.config_reader import config
 from main.database import (
     create_payment, process_successful_payment as db_process_successful_payment,
-    update_payment_status, update_user_email, get_user_email, get_latest_pending_payment
+    update_payment_status, update_user_email, get_user_email, get_latest_pending_payment,
+    capture_payment_reply_context,
 )
 from main.conversions import save_conversion, save_paywall_conversion
 from main.metrika_mp import send_conversion_event
@@ -291,6 +292,13 @@ async def handle_email_confirm(cb: aiomax.Callback, cursor: fsm.FSMCursor):
             amount_rub=package['amount_rub'],
             email=email
         )
+        try:
+            await capture_payment_reply_context(payment_id, user_id)
+        except Exception as reply_context_error:
+            logging.error(
+                "Payment %s created, but reply context was not captured: %s",
+                payment_id, reply_context_error, exc_info=True,
+            )
         
         data['payment_id'] = payment_id
         cursor.change_data(data)

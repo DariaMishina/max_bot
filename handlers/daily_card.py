@@ -27,6 +27,7 @@ from main.database import (
     get_user_daily_card_subscription,
 )
 from main.send_errors import is_unreachable_user_error
+from main.outbound_messages import send_background_message
 from handlers.tarot_cards import get_all_available_cards, get_card_info, get_card_image_path
 
 router = aiomax.Router()
@@ -62,15 +63,16 @@ async def send_daily_card_message(user_id: int, auto_update_blocked_status: bool
     try:
         kb = await create_daily_card_keyboard(user_id)
         
-        await bot.send_message(
+        delivered, _ = await send_background_message(
+            user_id,
             "🌅 <b>Доброе утро! Выбери свою карту дня</b>\n\n"
             "Каждый день — новый ответ Вселенной. "
             "Нажми на одну из карт, чтобы узнать послание дня ✨",
-            user_id=user_id,
+            touch_type="daily_card",
             keyboard=kb,
             format='html'
         )
-        return True
+        return delivered
     except Exception as e:
         if is_unreachable_user_error(e):
             if auto_update_blocked_status:

@@ -21,6 +21,7 @@ from handlers import common, feedback, divination, pay, daily_card, message_rout
 from main.botdef import bot
 from main.config_reader import config
 from main.database import Database
+from main.outbound_messages import profile_circuit_is_open
 
 
 async def main():
@@ -47,6 +48,9 @@ async def main():
     async def send_daily_card_job():
         """Задача для отправки карты дня пользователям"""
         try:
+            if profile_circuit_is_open():
+                logging.warning("Daily card skipped: MAX profile circuit is open")
+                return
             from handlers.daily_card import send_daily_card_to_all_users
 
             user_ids = DAILY_CARD_USER_IDS
@@ -118,6 +122,9 @@ async def main():
     async def inactivity_nudges_job():
         """Event-driven nudges: платники (B) + бесплатные (C1–C4)."""
         try:
+            if profile_circuit_is_open():
+                logging.warning("Inactivity nudges skipped: MAX profile circuit is open")
+                return
             from main.inactivity_nudges import process_inactivity_nudges
             await process_inactivity_nudges()
         except Exception as e:
@@ -134,6 +141,9 @@ async def main():
     async def expired_access_reminder_job():
         """Триггер A: серия day0–day7 после истечения платного доступа."""
         try:
+            if profile_circuit_is_open():
+                logging.warning("Expired access reminders skipped: MAX profile circuit is open")
+                return
             from main.expired_access_reminders import process_expired_access_reminders
             results = await process_expired_access_reminders()
             if any(v for k, v in results.items() if k != 'by_stage' and v) or results.get('by_stage'):
@@ -164,6 +174,9 @@ async def main():
     async def payment_reminders_job():
         """Напоминания об оплате: 10м, 1ч, 3ч, 12ч, 24ч, 48ч."""
         try:
+            if profile_circuit_is_open():
+                logging.warning("Payment reminders skipped: MAX profile circuit is open")
+                return
             from main.payment_reminders import process_payment_reminders
             results = await process_payment_reminders()
             if results['sent'] or results['failed']:
@@ -185,6 +198,9 @@ async def main():
     async def tarologist_reminder_job():
         """Рассылка напоминания о тарологе: ср/вс 16:30 MSK."""
         try:
+            if profile_circuit_is_open():
+                logging.warning("Tarologist reminders skipped: MAX profile circuit is open")
+                return
             from main.tarologist_reminders import process_tarologist_reminders
             results = await process_tarologist_reminders()
             logging.info(f"Tarologist reminder job completed: {results}")

@@ -29,6 +29,7 @@ from main.database import (
     get_expired_access_reminder_stage_for_user,
 )
 from main.send_errors import is_unreachable_user_error, mark_user_unreachable
+from main.outbound_messages import choose_reply_target, send_background_message
 
 SendOutcome = tuple[bool, bool]  # (delivered, unreachable_user)
 
@@ -43,6 +44,12 @@ async def send_message_to_user(
     text: str,
     format: str = "html",
     keyboard=None,
+    *,
+    touch_type: str = "manual",
+    touch_stage: str | None = None,
+    explicit_reply_message_id: str | None = None,
+    explicit_reply_source: str = "explicit",
+    reply_target_resolved: bool = False,
 ) -> SendOutcome:
     """
     Отправить сообщение одному пользователю в Max.
@@ -51,12 +58,19 @@ async def send_message_to_user(
         (delivered, unreachable_user)
     """
     try:
-        await bot.send_message(
+        delivered, unreachable = await send_background_message(
+            user_id,
             text,
-            user_id=user_id,
+            touch_type=touch_type,
+            touch_stage=touch_stage,
             keyboard=keyboard,
-            format=format
+            format=format,
+            explicit_reply_message_id=explicit_reply_message_id,
+            explicit_reply_source=explicit_reply_source,
+            reply_target_resolved=reply_target_resolved,
         )
+        if not delivered:
+            return False, unreachable
         print(f"✅ Сообщение отправлено пользователю {user_id}")
         try:
             await update_user_blocked_status(user_id, False)
@@ -101,7 +115,40 @@ async def send_message_to_multiple_users(
     return results
 
 
-async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome:
+async def _send_message_pair(
+    user_id: int,
+    first_text: str,
+    second_text: str,
+    *,
+    touch_type: str,
+    touch_stage: str | None = None,
+    first_format="html",
+    second_format="html",
+    second_keyboard=None,
+) -> SendOutcome:
+    """Send both parts against one pinned reply target."""
+    target = await choose_reply_target(user_id, touch_type)
+    first = await send_message_to_user(
+        user_id, first_text, first_format,
+        touch_type=touch_type, touch_stage=touch_stage,
+        explicit_reply_message_id=target.message_id,
+        explicit_reply_source=target.source,
+        reply_target_resolved=True,
+    )
+    if not first[0]:
+        return first
+    return await send_message_to_user(
+        user_id, second_text, second_format, second_keyboard,
+        touch_type=touch_type, touch_stage=touch_stage,
+        explicit_reply_message_id=target.message_id,
+        explicit_reply_source=target.source,
+        reply_target_resolved=True,
+    )
+
+
+async def send_payment_reminder(
+    user_id: int, stage: str = '10m', payment_id: str | None = None
+) -> SendOutcome:
     """Напоминание об оплате с кнопкой «Оплатить».
 
     stage: '10m' | '1h' | '3h' | '12h' | '24h' | '48h'.
@@ -138,7 +185,19 @@ async def send_payment_reminder(user_id: int, stage: str = '10m') -> SendOutcome
     kb.row(buttons.CallbackButton("💳 Оплатить", "remind_pay"))
 
     print(f"📤 Отправляю напоминание об оплате ({stage}) пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, keyboard=kb)
+    explicit_id = explicit_source = None
+    if payment_id:
+        from main.database import get_payment_reply_context
+        payment_context = await get_payment_reply_context(payment_id)
+        if payment_context:
+            explicit_id = payment_context["message_id"]
+            explicit_source = payment_context["source"]
+    return await send_message_to_user(
+        user_id, text, keyboard=kb,
+        touch_type="payment_reminder", touch_stage=stage,
+        explicit_reply_message_id=explicit_id,
+        explicit_reply_source=explicit_source or "explicit",
+    )
 
 
 async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOutcome:
@@ -181,7 +240,10 @@ async def send_paid_inactivity_nudge(user_id: int, stage: str = '1d') -> SendOut
     from keyboards.main_menu import make_main_menu
 
     print(f"📤 Отправляю paid inactivity nudge ({stage}) пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
+    return await send_message_to_user(
+        user_id, text, keyboard=make_main_menu(), format=None,
+        touch_type="paid_inactivity", touch_stage=stage,
+    )
 
 
 async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendOutcome:
@@ -213,6 +275,7 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
         text = texts.get(stage, texts['1h'])
         return await send_message_to_user(
             user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+            touch_type="free_activation", touch_stage=stage,
         )
 
     if category == 'c2':
@@ -247,6 +310,7 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
 
         return await send_message_to_user(
             user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+            touch_type="free_remaining", touch_stage=stage,
         )
 
     if category == 'c3':
@@ -293,8 +357,13 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
         try:
-            await bot.send_message(text, user_id=user_id, format=None)
-            await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+            delivered, unreachable = await _send_message_pair(
+                user_id, text, payment_text,
+                touch_type="free_paywall", touch_stage=stage,
+                first_format=None, second_keyboard=make_payment_kb(),
+            )
+            if not delivered:
+                return False, unreachable
             try:
                 await update_user_blocked_status(user_id, False)
             except Exception as db_error:
@@ -332,6 +401,7 @@ async def send_free_user_nudge(user_id: int, category: str, stage: str) -> SendO
 
         return await send_message_to_user(
             user_id, text, keyboard=make_divination_nudge_kb(), format=None,
+            touch_type="free_return", touch_stage=stage,
         )
 
     logging.warning(f"Unknown free nudge category {category} for user {user_id}")
@@ -407,8 +477,13 @@ async def send_expired_access_reminder(
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(reminder_text, user_id=user_id, format=None)
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, unreachable = await _send_message_pair(
+            user_id, reminder_text, payment_text,
+            touch_type="expired_access", touch_stage=stage,
+            first_format=None, second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False, unreachable
         print(f"✅ Напоминание об истёкшем доступе ({stage}) отправлено пользователю {user_id}")
         try:
             await update_user_blocked_status(user_id, False)
@@ -461,8 +536,13 @@ async def send_no_divinations_reminder(
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(reminder_text, user_id=user_id, format=None)
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, _ = await _send_message_pair(
+            user_id, reminder_text, payment_text,
+            touch_type="no_divinations", first_format=None,
+            second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False
         print(f"✅ Напоминание и меню оплаты отправлены пользователю {user_id}")
         return True
     except Exception as e:
@@ -498,7 +578,10 @@ async def send_activation_nudge(user_id: int):
         "Выбери расклад в меню ниже ✨"
     )
     print(f"📤 Отправляю welcome-активацию пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, keyboard=make_main_menu(), format=None)
+    return await send_message_to_user(
+        user_id, text, keyboard=make_main_menu(), format=None,
+        touch_type="activation_nudge",
+    )
 
 
 async def send_gentle_nudge(user_id: int):
@@ -511,7 +594,9 @@ async def send_gentle_nudge(user_id: int):
         "Я рядом ✨"
     )
     print(f"📤 Отправляю мягкое напоминание пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, format=None)
+    return await send_message_to_user(
+        user_id, text, format=None, touch_type="gentle_nudge"
+    )
 
 
 async def send_free_return_nudge(user_id: int):
@@ -523,7 +608,9 @@ async def send_free_return_nudge(user_id: int):
         "Загляни, если захочется ясности ✨"
     )
     print(f"📤 Отправляю мягкое напоминание (free return) пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, format=None)
+    return await send_message_to_user(
+        user_id, text, format=None, touch_type="free_return"
+    )
 
 
 async def send_expired_sub_reminder(
@@ -581,8 +668,13 @@ async def send_discussion_announcement(user_id: int):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(announcement_text, user_id=user_id, format='html')
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, _ = await _send_message_pair(
+            user_id, announcement_text, payment_text,
+            touch_type="discussion_announcement",
+            second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False
         print(f"✅ Объявление и меню оплаты отправлены пользователю {user_id}")
         return True
     except Exception as e:
@@ -609,7 +701,9 @@ async def send_own_cards_announcement(user_id: int):
         "Бот распознает карты и сделает толкование 🔮"
     )
     print(f"📤 Отправляю объявление «Написать свои карты» пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, keyboard=make_main_menu())
+    return await send_message_to_user(
+        user_id, text, keyboard=make_main_menu(), touch_type="own_cards_announcement"
+    )
 
 
 async def send_bot_restored(user_id: int):
@@ -622,7 +716,9 @@ async def send_bot_restored(user_id: int):
         "Выбери действие в меню ниже или напиши свой вопрос в чат 💫"
     )
     print(f"📤 Отправляю сообщение о восстановлении бота пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, keyboard=make_main_menu())
+    return await send_message_to_user(
+        user_id, text, keyboard=make_main_menu(), touch_type="bot_restored"
+    )
 
 
 async def send_friday13_promo(user_id: int):
@@ -667,8 +763,12 @@ async def send_friday13_promo(user_id: int):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(promo_text, user_id=user_id, format='html')
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, _ = await _send_message_pair(
+            user_id, promo_text, payment_text,
+            touch_type="friday13_promo", second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False
         print(f"✅ Промо «Пятница 13» отправлено пользователю {user_id}")
         return True
     except Exception as e:
@@ -726,8 +826,12 @@ async def send_tarologist_intro(user_id: int):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(intro_text, user_id=user_id, format='html')
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, _ = await _send_message_pair(
+            user_id, intro_text, payment_text,
+            touch_type="tarologist_intro", second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False
         print(f"✅ Представление таролога отправлено пользователю {user_id}")
         return True
     except Exception as e:
@@ -780,7 +884,12 @@ async def send_consult_diana_contact(user_id: int, package: str = 'detailed'):
         f"📤 Отправляю контакт Дианы ({package_name}) пользователю {user_id}..."
     )
     try:
-        await bot.send_message(text, user_id=user_id, keyboard=kb, format=None)
+        delivered, _ = await send_message_to_user(
+            user_id, text, keyboard=kb, format=None,
+            touch_type="consultation_contact",
+        )
+        if not delivered:
+            return False
         print(f"✅ Контакт Дианы отправлен пользователю {user_id}")
         return True
     except Exception as e:
@@ -832,7 +941,12 @@ async def send_tarologist_reminder(
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(reminder_text, user_id=user_id, keyboard=make_consultation_kb(), format='html')
+        delivered, _ = await send_message_to_user(
+            user_id, reminder_text, keyboard=make_consultation_kb(), format='html',
+            touch_type="tarologist_reminder",
+        )
+        if not delivered:
+            return False
         print(f"✅ Напоминание о тарологе отправлено пользователю {user_id}")
         return True
     except Exception as e:
@@ -881,8 +995,12 @@ async def send_full_moon_promo(user_id: int):
         except Exception as e:
             logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
 
-        await bot.send_message(promo_text, user_id=user_id, format='html')
-        await bot.send_message(payment_text, user_id=user_id, keyboard=make_payment_kb(), format='html')
+        delivered, _ = await _send_message_pair(
+            user_id, promo_text, payment_text,
+            touch_type="full_moon_promo", second_keyboard=make_payment_kb(),
+        )
+        if not delivered:
+            return False
         print(f"✅ Промо «Полнолуние» отправлено пользователю {user_id}")
         return True
     except Exception as e:
@@ -906,7 +1024,9 @@ async def send_feedback_request(user_id: int):
     kb.row(buttons.CallbackButton("📝 Оставить отзыв", "leave_feedback_paid"))
 
     print(f"📤 Отправляю запрос обратной связи пользователю {user_id}...")
-    return await send_message_to_user(user_id, text, format=None, keyboard=kb)
+    return await send_message_to_user(
+        user_id, text, format=None, keyboard=kb, touch_type="feedback_request"
+    )
 
 
 async def _handle_send_error(user_id: int, error: Exception, action_desc: str) -> bool:

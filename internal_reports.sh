@@ -674,6 +674,42 @@ ORDER BY ((d.created_at AT TIME ZONE '$REPORT_TZ_STORED') AT TIME ZONE '$REPORT_
 execute_query "$QUERY7_TOTAL" "7.1. Общее количество гаданий по дням (последние 3 дня)"
 execute_query "$QUERY7_BY_SOURCE" "7.2. Гадания по источникам (последние 3 дня)"
 
+# 8. Reply-покрытие и доставка фоновых касаний
+QUERY8_REPLY_COVERAGE="
+SELECT
+    COUNT(*) AS \"Контекстов\",
+    COUNT(*) FILTER (WHERE last_user_message_id IS NOT NULL) AS \"Входящее\",
+    COUNT(*) FILTER (WHERE last_callback_message_id IS NOT NULL) AS \"Callback\",
+    COUNT(*) FILTER (
+        WHERE COALESCE(last_user_message_id, last_callback_message_id,
+                       last_bot_message_id) IS NOT NULL
+    ) AS \"Есть reply\",
+    COUNT(*) FILTER (
+        WHERE COALESCE(last_user_message_id, last_callback_message_id,
+                       last_bot_message_id) IS NULL
+    ) AS \"Нет reply\"
+FROM max_reply_context
+WHERE user_id NOT IN $EXCLUDE_USERS;
+"
+execute_query "$QUERY8_REPLY_COVERAGE" "8.1. Покрытие reply-контекстом"
+
+QUERY8_REPLY_DELIVERY="
+SELECT
+    touch_type AS \"Тип касания\",
+    reply_source AS \"Источник reply\",
+    COUNT(*) AS \"Попыток\",
+    COUNT(*) FILTER (WHERE success) AS \"Успешно\",
+    COUNT(*) FILTER (WHERE sent_as_reply AND success) AS \"Reply успешно\",
+    COUNT(*) FILTER (WHERE error_code = 'invalid_reply') AS \"Invalid reply\",
+    COUNT(*) FILTER (WHERE error_code = 'profile_limited') AS \"Profile limited\"
+FROM max_outbound_deliveries
+WHERE created_at >= NOW() - INTERVAL '7 days'
+  AND user_id NOT IN $EXCLUDE_USERS
+GROUP BY touch_type, reply_source
+ORDER BY touch_type, COUNT(*) DESC;
+"
+execute_query "$QUERY8_REPLY_DELIVERY" "8.2. Reply-доставка за 7 дней"
+
 # Итоговое сообщение
 print_header "Отчет завершен"
 print_success "Все запросы выполнены"
@@ -683,4 +719,3 @@ echo ""
 
 # Очистка пароля из окружения
 unset PGPASSWORD
-
