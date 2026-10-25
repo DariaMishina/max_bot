@@ -12,10 +12,10 @@
 | API environment | `APP_ENVIRONMENT=staging` | `APP_ENVIRONMENT=production` |
 | База | текущая `app_bot_db` | новая `app_bot_prod_db` |
 | PostgreSQL role | текущая `app_bot_user` | новая `app_bot_prod_user` |
-| API service | пока текущий `app-api.service`, позднее можно `app-api@staging` | `app-api@production` |
+| API service | `app-api@staging` | `app-api@production` |
 | Локальный порт | `8083` | `8093` |
 | Android package | `ru.tarotsphere.app` | `ru.tarotsphere.app` |
-| API URL | текущий xTunnel | отдельный явный production URL |
+| API URL | `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com` | `https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com` |
 | RuStore | sandbox, альфа `0.8.2 (8)` с парольным входом загружена в черновик | реальные платежи, `APP_RUSTORE_SANDBOX=false` |
 
 Production-конфигурация проверяется при запуске. API откажется стартовать, если
@@ -24,12 +24,13 @@ Production-конфигурация проверяется при запуске
 
 ## Что уже существует
 
-Текущие `app_bot_db`, `app_bot_user`, `.env`, `app-api.service`, порт `8083` и
-xTunnel остаются staging без переименования и без переноса данных. Альфа
-`0.8.0 (6)` отклонена модерацией. Миграции 004–011 применены, новый API
-развёрнут, а staging-сборка `0.8.2 (8)` загружена в черновик повторной альфы.
-Текущие исходники имеют версию `0.8.3 (9)`; это следующая сборка, а не замена
-уже загруженного AAB.
+Staging использует прежние `app_bot_db`, `app_bot_user`, порт `8083` и первый
+xTunnel без переноса данных, но его API-конфигурация уже вынесена из общей
+`.env` в root-only файл и запущена как `app-api@staging`. Production поднят
+отдельно на чистой `app_bot_prod_db`, портах `8093`/`8094` и втором xTunnel.
+Оба API и оба туннеля включены в systemd. Миграции 004–012 применены к обеим
+базам. Production callback RuStore 25 октября принял новый тестовый запрос с
+HTTP 200; реальные уведомления пока выключены.
 
 Локальный debug APK использует тот же package и staging API. RuStore Pay нужно
 проверять не в локально установленном debug APK, а в сборке, установленной через
@@ -47,8 +48,9 @@ Git:
 
 Staging-шаблон описывает перенос уже существующих значений из текущего `.env`, а
 не создание новой staging-БД. Production получает другие БД, роль, URL, JWT,
-пароли и платёжные ключи. Права файлов: `root:root`, режим `0600`; каталог —
-`0700`.
+пароль БД и платёжные ключи. SMTP-ящик может быть общим для двух контуров, если
+это осознанное операционное решение; его пароль всё равно хранится только в
+root-only env-файлах. Права файлов: `root:root`, режим `0600`; каталог — `0700`.
 
 Проверка без печати секретов:
 
@@ -60,8 +62,9 @@ venv/bin/python scripts/check_app_environment.py \
   --compare-with /etc/tarot-sphere/app-api-staging.env
 ```
 
-Вторая команда отклонит совпадающие имена БД/роли, порт, URL, JWT, пароли и
-ключи между контурами, не выводя значения секретов.
+Вторая команда отклонит совпадающие имена БД/роли, порт, URL, JWT, пароль БД и
+ключи RuStore между контурами, не выводя значения секретов. Совпадение SMTP
+учётных данных допускается.
 
 Для обоих контуров также задаются лимиты из env-шаблонов. Дневной счётчик
 DeepSeek хранится в каждой БД приложения отдельно и не затрагивает процесс бота
@@ -86,20 +89,20 @@ CREATE DATABASE app_bot_prod_db OWNER app_bot_prod_user;
 
 ## Сервисы и адреса
 
-Шаблон `deploy/app-api@.service` позволяет позднее запустить два процесса из
-одного кода с разными env-файлами и портами. До отдельного согласованного
-переключения существующий `app-api.service` остаётся staging и не удаляется.
+Шаблон `deploy/app-api@.service` запускает два процесса из одного кода с разными
+env-файлами и портами. Старый `app-api.service` выключен; его копия сохранена на
+сервере для оперативного отката staging.
 
-Для production нужен второй HTTPS origin, например:
+Для production используется второй HTTPS origin:
 
 ```text
-текущий xTunnel               -> 127.0.0.1:8083 (staging)
-https://api.example/          -> 127.0.0.1:8093 (production)
+https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com -> 127.0.0.1:8084 -> 127.0.0.1:8083 (staging)
+https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com -> 127.0.0.1:8094 -> 127.0.0.1:8093 (production)
 ```
 
 Тестовые callback RuStore остаются на staging. Перед реальными продажами
-production callback должен указывать на production API. Конкретный production
-адрес и способ переключения ещё не выбраны.
+production callback указывает на production API. Его нельзя включать для
+реальных покупок до успешных локального и внешнего smoke-тестов.
 
 ## Android-сборки
 
@@ -142,12 +145,11 @@ HTTPS URL. После alpha `0.8.2 (8)` следующая версия исхо
 
 ## Что ещё не выполнено
 
-- production-БД и роль не созданы;
-- production-секреты не сгенерированы;
-- второй HTTPS origin не выбран;
-- production systemd service не включён;
-- workflow пока развёртывает только прежний `app-api.service`;
-- production-БД ещё не добавлена в backup и не проверена восстановлением;
-- production AAB с `versionCode >= 9` ещё не собирался.
+- обновлённый deployment workflow для двух шаблонных unit ещё не проверен живым
+  запуском после push;
+- новый production-архив успешно загружен в S3, но контрольное восстановление
+  `app_bot_prod_db` во временную БД ещё не выполнено;
+- production AAB с `versionCode >= 9` ещё не собирался и не прошёл полный smoke;
+- реальные уведомления RuStore включаются только после этого smoke.
 
 Это отдельные инфраструктурные действия. Их не смешивать с текущей staging-альфой.

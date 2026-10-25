@@ -667,6 +667,7 @@ def create_app() -> web.Application:
 
 
 async def start_server() -> None:
+    host = app_config.app_api_bind_host
     port = app_config.app_api_port
     logging.info(
         "App API configuration: environment=%s database=%s sandbox=%s",
@@ -678,9 +679,9 @@ async def start_server() -> None:
     app = create_app()
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, host, port)
     await site.start()
-    logging.info("App API listening on 0.0.0.0:%s", port)
+    logging.info("App API listening on %s:%s", host, port)
 
 
 async def _run_forever() -> None:

@@ -13,6 +13,7 @@ class AppEnvironmentConfigTests(unittest.TestCase):
     def base_production(self) -> dict:
         return {
             "app_environment": "production",
+            "app_api_bind_host": "127.0.0.1",
             "app_api_public_url": "https://api.example.com/",
             "app_db_name": "app_bot_prod_db",
             "app_db_user": "app_bot_prod_user",
@@ -63,6 +64,12 @@ class AppEnvironmentConfigTests(unittest.TestCase):
             "app_rustore_sandbox": True,
         })
         with self.assertRaisesRegex(ValueError, "Invalid production configuration"):
+            AppSettings(_env_file=None, **values)
+
+    def test_production_rejects_public_bind_address(self):
+        values = self.base_production()
+        values["app_api_bind_host"] = "0.0.0.0"
+        with self.assertRaisesRegex(ValueError, "APP_API_BIND_HOST"):
             AppSettings(_env_file=None, **values)
 
     def test_production_rejects_missing_secrets_and_http_url(self):

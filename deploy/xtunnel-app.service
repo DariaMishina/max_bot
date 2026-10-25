@@ -1,7 +1,7 @@
 [Unit]
 Description=xTunnel for Tarot Sphere API gateway (port 8084)
 Wants=network-online.target nginx.service
-After=network-online.target nginx.service app-api.service max-bot.service
+After=network-online.target nginx.service app-api@staging.service max-bot.service
 StartLimitIntervalSec=0
 
 [Service]

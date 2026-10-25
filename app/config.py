@@ -14,6 +14,7 @@ class AppSettings(BaseSettings):
     app_db_name: str = "app_bot_db"
     app_db_user: SecretStr
     app_db_password: SecretStr
+    app_api_bind_host: str = "0.0.0.0"
     app_api_port: int = 8083
     app_jwt_secret: SecretStr
     app_api_public_url: str = ""
@@ -69,6 +70,8 @@ class AppSettings(BaseSettings):
             errors.append("APP_ALLOW_GUEST_AUTH must be false")
         if self.app_allow_unpaid_test_contact:
             errors.append("APP_ALLOW_UNPAID_TEST_CONTACT must be false")
+        if self.app_api_bind_host not in {"127.0.0.1", "::1", "localhost"}:
+            errors.append("APP_API_BIND_HOST must be loopback in production")
         required_limits = {
             "APP_API_IP_REQUESTS_PER_MINUTE": self.app_api_ip_requests_per_minute,
             "APP_AUTH_IP_REQUESTS_PER_15_MINUTES": self.app_auth_ip_requests_per_15_minutes,

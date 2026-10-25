@@ -91,13 +91,18 @@ class AppApiDeploymentTests(unittest.TestCase):
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             return result, calls
 
-    def test_deploy_restarts_only_app_api_and_checks_health(self):
+    def test_deploy_restarts_both_app_environments_and_checks_health(self):
         result, calls = self.simulate()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(['git', 'merge', '--ff-only', 'origin/main'], calls)
-        self.assertIn(['sudo', 'systemctl', 'restart', 'app-api'], calls)
-        self.assertIn(['sudo', 'systemctl', 'is-active', '--quiet', 'app-api'], calls)
-        self.assertTrue(any(call[0] == 'curl' and call[-1].endswith('/health') for call in calls))
+        for environment, port in (("staging", "8083"), ("production", "8093")):
+            unit = f'app-api@{environment}'
+            self.assertIn(['sudo', 'systemctl', 'restart', unit], calls)
+            self.assertIn(['sudo', 'systemctl', 'is-active', '--quiet', unit], calls)
+            self.assertTrue(any(
+                call[0] == 'curl' and call[-1] == f'http://127.0.0.1:{port}/health'
+                for call in calls
+            ))
         self.assertFalse(any('max-bot.service' in arg or 'psql' in arg for call in calls for arg in call))
         self.assertFalse(any(call[:3] == ['git', 'reset', '--hard'] for call in calls))
 
@@ -122,23 +127,24 @@ class AppApiDeploymentTests(unittest.TestCase):
         result, calls = self.simulate(migrations_changed=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn(['git', 'merge', '--ff-only', 'origin/main'], calls)
-        self.assertNotIn(['sudo', 'systemctl', 'restart', 'app-api'], calls)
+        self.assertFalse(any(call[:3] == ['sudo', 'systemctl', 'restart'] for call in calls))
 
     def test_confirmed_migration_allows_deploy(self):
         result, calls = self.simulate(migrations_changed=True, migrations_confirmed=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(['sudo', 'systemctl', 'restart', 'app-api'], calls)
+        self.assertIn(['sudo', 'systemctl', 'restart', 'app-api@staging'], calls)
+        self.assertIn(['sudo', 'systemctl', 'restart', 'app-api@production'], calls)
 
     def test_dirty_tracked_files_stop_before_fetch(self):
         result, calls = self.simulate(dirty=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(call[:2] == ['git', 'fetch'] for call in calls))
-        self.assertNotIn(['sudo', 'systemctl', 'restart', 'app-api'], calls)
+        self.assertFalse(any(call[:3] == ['sudo', 'systemctl', 'restart'] for call in calls))
 
     def test_failed_health_check_fails_deploy(self):
         result, calls = self.simulate(healthy=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(['sudo', 'systemctl', 'status', 'app-api', '--no-pager', '-l'], calls)
+        self.assertIn(['sudo', 'systemctl', 'status', 'app-api@staging', '--no-pager', '-l'], calls)
         self.assertNotIn('App API deploy completed', result.stdout)
 
 

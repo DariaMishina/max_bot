@@ -6,9 +6,10 @@ After=network.target postgresql.service
 Type=simple
 User=dariamishina
 WorkingDirectory=/home/dariamishina/max_bot
-Environment=APP_CONFIG_FILE=/etc/tarot-sphere/app-api-%i.env
 EnvironmentFile=/etc/tarot-sphere/app-api-%i.env
-ExecStartPre=/home/dariamishina/max_bot/venv/bin/python scripts/check_app_environment.py --env-file /etc/tarot-sphere/app-api-%i.env --expected %i
+# Only the validator reads the root-only env file directly. The API itself stays
+# under User=dariamishina and receives values through EnvironmentFile.
+ExecStartPre=+/home/dariamishina/max_bot/venv/bin/python scripts/check_app_environment.py --env-file /etc/tarot-sphere/app-api-%i.env --expected %i
 ExecStart=/home/dariamishina/max_bot/venv/bin/python app_api_server.py
 Restart=always
 RestartSec=10

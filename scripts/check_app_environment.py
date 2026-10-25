@@ -45,7 +45,6 @@ def main() -> None:
         secret_fields = (
             "app_db_password",
             "app_jwt_secret",
-            "app_email_smtp_password",
             "app_rustore_private_key",
             "app_rustore_callback_key",
         )

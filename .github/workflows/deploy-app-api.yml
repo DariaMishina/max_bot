@@ -13,6 +13,8 @@ on:
       - "static/images/**"
       - "init_app_db.sql"
       - "requirements.txt"
+      - "deploy/app-api@.service"
+      - "scripts/check_app_environment.py"
       - ".github/workflows/deploy-app-api.yml"
   workflow_dispatch:
     inputs:
@@ -128,23 +130,34 @@ jobs:
             python -m compileall -q app app_api_server.py main/llm_divination.py handlers/tarot_cards.py
             python -c "import app_api_server"
 
-            sudo systemctl restart app-api
+            sudo install -o root -g root -m 0644 deploy/app-api@.service /etc/systemd/system/app-api@.service
+            sudo systemctl daemon-reload
 
-            HEALTHY=false
-            for attempt in $(seq 1 10); do
-              if sudo systemctl is-active --quiet app-api && \
-                 curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8083/health | grep -qx "OK"; then
-                HEALTHY=true
-                break
+            for environment in staging production; do
+              if [ "$environment" = "staging" ]; then
+                port=8083
+              else
+                port=8093
               fi
-              sleep 2
-            done
+              unit="app-api@${environment}"
+              sudo systemctl restart "$unit"
 
-            if [ "$HEALTHY" != "true" ]; then
-              sudo systemctl status app-api --no-pager -l || true
-              sudo journalctl -u app-api -n 50 --no-pager || true
-              echo "App API deploy failed: service or health check is not ready"
-              exit 1
-            fi
+              HEALTHY=false
+              for attempt in $(seq 1 10); do
+                if sudo systemctl is-active --quiet "$unit" && \
+                   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${port}/health" | grep -qx "OK"; then
+                  HEALTHY=true
+                  break
+                fi
+                sleep 2
+              done
+
+              if [ "$HEALTHY" != "true" ]; then
+                sudo systemctl status "$unit" --no-pager -l || true
+                sudo journalctl -u "$unit" -n 50 --no-pager || true
+                echo "App API deploy failed: $unit or its health check is not ready"
+                exit 1
+              fi
+            done
 
             echo "App API deploy completed: $TARGET_COMMIT"

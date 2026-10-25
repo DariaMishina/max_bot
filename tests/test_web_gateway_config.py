@@ -24,6 +24,18 @@ class WebGatewayConfigTests(unittest.TestCase):
         self.assertIn("xtunnel http 8084 --local 127.0.0.1:8084", service)
         self.assertNotIn("xtunnel http 8083", service)
 
+    def test_production_gateway_and_tunnel_use_isolated_ports(self):
+        config = (ROOT / "deploy/nginx-tarot-api-production.conf").read_text()
+        service = (ROOT / "deploy/xtunnel-app-production.service").read_text()
+
+        self.assertIn("listen 127.0.0.1:8094;", config)
+        self.assertNotIn("location ^~ /api/webapp/", config)
+        self.assertGreaterEqual(config.count("proxy_pass http://127.0.0.1:8093;"), 2)
+        self.assertIn("location / {\n        return 404;", config)
+        self.assertIn("production-license.env", service)
+        self.assertIn("app-api@production.service", service)
+        self.assertIn("xtunnel http 8094 --local 127.0.0.1:8094", service)
+
 
 if __name__ == "__main__":
     unittest.main()
