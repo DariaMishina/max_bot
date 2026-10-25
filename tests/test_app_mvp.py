@@ -44,6 +44,17 @@ def payload(response):
 
 
 class ApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_guest_route_is_not_registered_when_guest_auth_is_disabled(self):
+        with patch.object(api.app_config, "app_allow_guest_auth", False):
+            app = api.create_app()
+        paths = {route.resource.canonical for route in app.router.routes()}
+        self.assertNotIn("/v1/auth/guest", paths)
+
+        with patch.object(api.app_config, "app_allow_guest_auth", True):
+            app = api.create_app()
+        paths = {route.resource.canonical for route in app.router.routes()}
+        self.assertIn("/v1/auth/guest", paths)
+
     async def test_app_open_logs_only_hashed_install_identifier(self):
         install_id = "123e4567-e89b-12d3-a456-426614174000"
         req = request({

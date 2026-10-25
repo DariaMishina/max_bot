@@ -805,7 +805,7 @@ verify, месячная подписка с ускоренным sandbox-про
 
 ### Этап 5.5. Production-контур и release-gate (3–6 дней)
 
-**Статус на 25 октября:** staging переведён на root-only конфигурацию и `app-api@staging`; production поднят отдельно на чистой `app_bot_prod_db`, втором HTTPS origin и `app-api@production`. Миграция `012_app_llm_budget.sql` применена к обеим БД. Новый production callback RuStore принял тестовое уведомление с HTTP 200, а production-БД включена в успешный зашифрованный backup. Реальные уведомления ещё выключены до полного smoke production-кандидата. UX привязки VK ID/email по решению владельца пока отложен.
+**Статус на 25 октября:** staging переведён на root-only конфигурацию и `app-api@staging`; production поднят отдельно на чистой `app_bot_prod_db`, втором HTTPS origin и `app-api@production`. Миграция `012_app_llm_budget.sql` применена к обеим БД. Новый production callback RuStore принял тестовое уведомление с HTTP 200, а production-БД включена в успешный зашифрованный backup. В коде production больше не регистрирует `/auth/guest`, а release-интерфейс не показывает незапущенные консультации и ЮKassa. Локально собран подписанный production APK `0.8.3 (9)` с production URL, SHA-256 `604016b99f09821f4a2304f54e67eb524aff5b63db141bbd2b566c8be3cf03b1`; его установка и smoke-тест ещё не выполнялись. Реальные уведомления ещё выключены до полного smoke production-кандидата. UX привязки VK ID/email по решению владельца пока отложен.
 
 Сейчас debug-версия автоматически выдаёт 3 бесплатных расклада новому `install_id`, поэтому она не является production-кандидатом. На этапе 4.7 подарок переносится на подтверждённый аккаунт VK ID/email, а `ANDROID_ID` используется только как дополнительный сигнал. Этап 5.5 проверяет, что эта схема действительно включена в production и тестовый гостевой путь туда не попал.
 
@@ -818,7 +818,7 @@ verify, месячная подписка с ускоренным sandbox-про
 - [x] На уровне кода развести адреса API: debug использует `APP_STAGING_API_BASE_URL`, а release требует явные `APP_RELEASE_CHANNEL=alpha|production` и `APP_API_BASE_URL`; два HTTPS origin созданы и возвращают `/v1/docs` с HTTP 200.
 - [x] Сохранить единый package `ru.tarotsphere.app` для debug, alpha и production. Новый package в VK ID не нужен; контуры разделяются API/БД/секретами, а не `applicationId`.
 - [x] Запретить release-сборку без явного канала и HTTPS URL: alpha принимает staging URL, production обязан использовать другой URL; добавить локальную проверку package name, RuStore ID, подписи, резервной копии ключа и отсутствия секретов в Git.
-- [ ] Проверить production URL внутри следующего готового APK/AAB и зафиксировать отдельные адреса staging/prod.
+- [x] Проверить production URL внутри следующего готового APK/AAB и зафиксировать отдельные адреса staging/prod: в локальном `0.8.3 (9)` найден только production origin, staging origin отсутствует.
 
 Файлы и порядок развёртывания: `docs/ANDROID_ENVIRONMENTS.md`, `deploy/app-api@.service`, отдельные env-шаблоны staging/production и `scripts/check_app_environment.py`.
 

@@ -637,7 +637,8 @@ def create_app() -> web.Application:
     app = web.Application(middlewares=[logging_middleware, rate_limit_middleware, auth_middleware], client_max_size=32 * 1024)
     app.router.add_get("/health", health_handler)
     app.router.add_get("/v1/docs", docs_handler)
-    app.router.add_post("/v1/auth/guest", guest_auth_handler)
+    if app_config.app_allow_guest_auth:
+        app.router.add_post("/v1/auth/guest", guest_auth_handler)
     app.router.add_post("/v1/auth/email/start", email_start_handler)
     app.router.add_post("/v1/auth/password/register", password_auth_handler)
     app.router.add_post("/v1/auth/password/login", password_auth_handler)

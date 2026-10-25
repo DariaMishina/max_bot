@@ -22,7 +22,11 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
     SphereScreen {
         SphereHeader(
             title = "Больше пространства для вопросов",
-            subtitle = "Выберите запас раскладов или личную встречу с тарологом.",
+            subtitle = if (BuildConfig.DEBUG) {
+                "Выберите запас раскладов или личную встречу с тарологом."
+            } else {
+                "Выберите запас раскладов для самостоятельного диалога с картами."
+            },
             eyebrow = "Магазин",
         )
         if (exhausted) StatusPanel(
@@ -47,18 +51,18 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                         description = if (pack.isSubscription) "Без ограничений на число раскладов в течение месяца" else "Сохраняются в вашем балансе",
                     ) { selectedId = pack.id; consultation = false }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SectionHeading("Лично с Дианой", "Индивидуальная консультация с тарологом и вниманием к вашей ситуации.")
-                catalog.consultations.forEach { pack ->
-                    PackageCard(
-                        title = pack.name,
-                        price = "${pack.priceRub} ₽",
-                        description = "Оплата картой через ЮKassa",
-                        action = "Выбрать консультацию",
-                        emphasized = true,
-                    ) { selectedId = pack.id; consultation = true }
-                }
                 if (BuildConfig.DEBUG) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    SectionHeading("Лично с Дианой", "Индивидуальная консультация с тарологом и вниманием к вашей ситуации.")
+                    catalog.consultations.forEach { pack ->
+                        PackageCard(
+                            title = pack.name,
+                            price = "${pack.priceRub} ₽",
+                            description = "Оплата картой через ЮKassa",
+                            action = "Выбрать консультацию",
+                            emphasized = true,
+                        ) { selectedId = pack.id; consultation = true }
+                    }
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Только для проверки", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
@@ -77,8 +81,6 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                             })
                         }
                     }
-                } else {
-                    StatusPanel("Контакт после оплаты", "Он станет доступен после подтверждённой покупки консультации.")
                 }
             }
         }
