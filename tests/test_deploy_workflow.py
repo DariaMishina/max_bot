@@ -33,13 +33,16 @@ elif name in ('python', 'python3') and args[:2] == ['-m', 'venv']:
     activate.write_text('# fake virtual environment\\n')
 elif name == 'sudo' and args[:2] in (['systemctl', 'is-active'], ['systemctl', 'status']):
     sys.exit(0 if os.environ['DEPLOY_TEST_BOT_ACTIVE'] == '1' else 3)
+elif name == 'curl':
+    if args[-1].endswith('/ready'):
+        sys.exit(0 if os.environ['DEPLOY_TEST_BOT_READY'] == '1' else 22)
 elif name == 'pip':
     raise SystemExit('Use python -m pip; do not upgrade pip during deployment')
 """
 
 
 class DeploymentTests(unittest.TestCase):
-    def simulate(self, *, changed=False, new_environment=False, active=True):
+    def simulate(self, *, changed=False, new_environment=False, active=True, ready=True):
         workflow = (ROOT / '.github/workflows/deploy.yml').read_text()
         script = textwrap.dedent(workflow.split('          script: |\n', 1)[1])
         with tempfile.TemporaryDirectory(prefix='max-deploy-test-') as directory:
@@ -52,7 +55,7 @@ class DeploymentTests(unittest.TestCase):
                 activate.write_text('# fake virtual environment\n')
             commands = root / 'commands'
             commands.mkdir()
-            for name in ('git', 'python', 'python3', 'pip', 'sudo', 'sleep'):
+            for name in ('git', 'python', 'python3', 'pip', 'sudo', 'curl', 'sleep'):
                 command = commands / name
                 command.write_text(f'#!{sys.executable}\n' + FAKE_COMMAND)
                 command.chmod(0o755)
@@ -66,6 +69,7 @@ class DeploymentTests(unittest.TestCase):
                 DEPLOY_TEST_LOG=str(log),
                 DEPLOY_TEST_REQUIREMENTS_CHANGED=str(int(changed)),
                 DEPLOY_TEST_BOT_ACTIVE=str(int(active)),
+                DEPLOY_TEST_BOT_READY=str(int(ready)),
             )
             result = subprocess.run(
                 ['/bin/bash', '-e', '-c', script], cwd=project, env=env,
@@ -95,6 +99,12 @@ class DeploymentTests(unittest.TestCase):
         result, calls = self.simulate(active=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(['sudo', 'systemctl', 'is-active', '--quiet', 'max-bot.service'], calls)
+        self.assertNotIn('Деплой завершен успешно', result.stdout)
+
+    def test_failed_readiness_fails_deployment(self):
+        result, calls = self.simulate(ready=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any(call[0] == 'curl' and call[-1].endswith('/ready') for call in calls))
         self.assertNotIn('Деплой завершен успешно', result.stdout)
 
 

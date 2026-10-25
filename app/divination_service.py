@@ -24,9 +24,9 @@ class DivinationError(Exception):
         super().__init__(message)
 
 
-async def _budgeted_llm_call(user_id: uuid.UUID, operation: str, call):
+async def _budgeted_llm_call(operation: str, call):
     try:
-        budget_id = await reserve_llm_request(user_id, operation)
+        budget_id = await reserve_llm_request(operation)
     except AppLlmBudgetExceeded as error:
         raise DivinationError(
             "service_budget_exhausted",
@@ -111,7 +111,7 @@ async def _run_tarot(
             if random_cards:
                 card_ids = get_random_cards(3)
             interpretation = await _budgeted_llm_call(
-                user_id, "tarot", lambda: interpret_tarot_with_llm(question, card_ids),
+                "tarot", lambda: interpret_tarot_with_llm(question, card_ids),
             )
             if not interpretation.strip():
                 raise DivinationError("empty_result", "Не удалось получить толкование. Попробуйте снова")
@@ -161,7 +161,6 @@ async def _run_follow_up(user_id: uuid.UUID, divination_id: int, question: str, 
                     messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
                 messages.append({"role": "user", "content": question})
                 answer = await _budgeted_llm_call(
-                    user_id,
                     "follow_up",
                     lambda: call_deepseek(
                         messages,

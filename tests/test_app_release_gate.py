@@ -2,7 +2,6 @@
 import json
 import os
 import unittest
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 for key, value in {
@@ -46,20 +45,22 @@ class SlidingWindowTests(unittest.TestCase):
 
 class LlmBudgetTests(unittest.IsolatedAsyncioTestCase):
     async def test_reservation_is_atomic_and_fail_closed_at_limit(self):
-        user_id = uuid.uuid4()
         conn = MagicMock()
         conn.execute = AsyncMock()
         conn.fetchval = AsyncMock(side_effect=[499, 42])
         with patch.object(llm_budget.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))), \
                 patch.object(llm_budget.app_config, "app_deepseek_daily_request_limit", 500):
-            self.assertEqual(await llm_budget.reserve_llm_request(user_id, "tarot"), 42)
+            self.assertEqual(await llm_budget.reserve_llm_request("tarot"), 42)
         self.assertIn("pg_advisory_xact_lock", conn.execute.await_args.args[0])
+        insert_call = conn.fetchval.await_args_list[1]
+        self.assertNotIn("user_id", insert_call.args[0])
+        self.assertEqual(insert_call.args[1:], ("tarot",))
 
         conn.fetchval = AsyncMock(return_value=500)
         with patch.object(llm_budget.AppDatabase, "get_pool", AsyncMock(return_value=fake_pool(conn))), \
                 patch.object(llm_budget.app_config, "app_deepseek_daily_request_limit", 500):
             with self.assertRaises(llm_budget.AppLlmBudgetExceeded):
-                await llm_budget.reserve_llm_request(user_id, "tarot")
+                await llm_budget.reserve_llm_request("tarot")
 
     async def test_failed_provider_call_consumes_reserved_slot(self):
         call = AsyncMock(side_effect=RuntimeError("provider down"))
@@ -67,13 +68,13 @@ class LlmBudgetTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(service, "reserve_llm_request", AsyncMock(return_value=9)), \
                 patch.object(service, "finish_llm_request", finish):
             with self.assertRaises(RuntimeError):
-                await service._budgeted_llm_call(uuid.uuid4(), "tarot", call)
+                await service._budgeted_llm_call("tarot", call)
         finish.assert_awaited_once_with(9, succeeded=False)
 
     async def test_budget_exhaustion_has_safe_public_error(self):
         with patch.object(service, "reserve_llm_request", AsyncMock(side_effect=llm_budget.AppLlmBudgetExceeded)):
             with self.assertRaises(service.DivinationError) as raised:
-                await service._budgeted_llm_call(uuid.uuid4(), "tarot", AsyncMock())
+                await service._budgeted_llm_call("tarot", AsyncMock())
         self.assertEqual(raised.exception.code, "service_budget_exhausted")
 
 

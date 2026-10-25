@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 
 from app.config import app_config
 from app.database import AppDatabase
@@ -12,11 +11,13 @@ class AppLlmBudgetExceeded(Exception):
     pass
 
 
-async def reserve_llm_request(user_id: uuid.UUID, operation: str) -> int:
+async def reserve_llm_request(operation: str) -> int:
     """Atomically consume one rolling-24h request slot across API workers.
 
     Reservations deliberately survive provider failures: failed upstream calls may
-    still cost money and must count toward the emergency ceiling.
+    still cost money and must count toward the emergency ceiling. They are not tied
+    to a user: the budget is global, and a foreign-key check from a second database
+    transaction would deadlock with the caller's lock on that user.
     """
     limit = app_config.app_deepseek_daily_request_limit
     pool = await AppDatabase.get_pool()
@@ -30,8 +31,7 @@ async def reserve_llm_request(user_id: uuid.UUID, operation: str) -> int:
                 logging.warning("App LLM request denied: reason=daily_budget operation=%s", operation)
                 raise AppLlmBudgetExceeded
             request_id = await conn.fetchval(
-                "INSERT INTO app_llm_requests (user_id, operation) VALUES ($1, $2) RETURNING id",
-                user_id,
+                "INSERT INTO app_llm_requests (operation) VALUES ($1) RETURNING id",
                 operation,
             )
     return int(request_id)
