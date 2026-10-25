@@ -29,6 +29,7 @@ from main.database import (
     get_payment_reply_context, invalidate_reply_message, log_outbound_delivery,
 )
 from main.outbound_messages import choose_reply_target, open_profile_circuit
+from main.health_monitor import details_handler, live_handler, ready_handler
 from main.send_errors import (
     is_invalid_reply_error,
     is_profile_limited_error,
@@ -498,6 +499,9 @@ def create_webhook_app() -> web.Application:
     app.router.add_post('/api/webapp/cards', webapp_cards_handler)
     app.router.add_options('/api/webapp/cards', cors_preflight)
     app.router.add_get('/health', health_check)
+    app.router.add_get('/live', live_handler)
+    app.router.add_get('/ready', ready_handler)
+    app.router.add_get('/health/details', details_handler)
     app.router.add_post('/', root_handler)
     app.router.add_get('/', root_handler)
 

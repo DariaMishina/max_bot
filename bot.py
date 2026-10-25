@@ -21,11 +21,24 @@ from handlers import common, feedback, divination, pay, daily_card, message_rout
 from main.botdef import bot
 from main.config_reader import config
 from main.database import Database
+from main.health_monitor import health_runtime
 from main.outbound_messages import profile_circuit_is_open
 
 
 async def main():
     logging.basicConfig(filename="bot.log", encoding="utf-8", level=logging.INFO)
+
+    health_runtime.configure(
+        service_name="max_bot",
+        bot=bot,
+        database=Database,
+        deepseek_api_key=config.api_key.get_secret_value(),
+        deepseek_model="deepseek-flash",
+    )
+
+    @bot.on_ready()
+    async def start_health_probes():
+        health_runtime.start()
 
     # message_router — единственный on_message-обработчик. Остальные
     # роутеры регистрируют команды, bot-start и callback-кнопки.
@@ -243,16 +256,16 @@ async def main():
         f"{TAROLOGIST_REMINDER_HOUR:02d}:{TAROLOGIST_REMINDER_MINUTE:02d} MSK"
     )
 
-    # Запускаем webhook сервер для ЮKassa (если настроены ключи)
+    # HTTP health server is mandatory and independent from YooKassa settings.
     webhook_runner = None
     try:
         from webhook_server import start_webhook_server
+        port = int(os.environ.get('PORT', 8081))
+        webhook_runner = await start_webhook_server(port)
         if config.yookassa_shop_id and config.yookassa_secret_key:
-            port = int(os.environ.get('PORT', 8081))
-            webhook_runner = await start_webhook_server(port)
             logging.info(f"Webhook server started for YooKassa notifications on port {port}")
         else:
-            logging.info("YooKassa keys not configured, webhook server not started")
+            logging.info(f"Health server started on port {port}; YooKassa is disabled")
     except Exception as e:
         logging.warning(f"Could not start webhook server: {e}")
 
@@ -262,6 +275,7 @@ async def main():
     finally:
         scheduler.shutdown()
         logging.info("APScheduler stopped")
+        await health_runtime.stop()
         await Database.close_pool()
         if webhook_runner:
             await webhook_runner.cleanup()
