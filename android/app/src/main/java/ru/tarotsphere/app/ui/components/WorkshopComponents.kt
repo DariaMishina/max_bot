@@ -16,8 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,6 +25,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 
 object WorkshopSpacing {
     val screen = 20.dp
@@ -65,8 +69,14 @@ fun SphereLazyScreen(
 
 @Composable
 fun SphereHeader(title: String, subtitle: String? = null, eyebrow: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        eyebrow?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        eyebrow?.let {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(it.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+                    letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.secondary)
+                WorkshopBranch(Modifier.size(width = 90.dp, height = 44.dp))
+            }
+        }
         Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
         subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
@@ -83,22 +93,27 @@ fun SectionHeading(title: String, subtitle: String? = null, modifier: Modifier =
 }
 
 @Composable
-fun PrimaryAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun PrimaryAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+                  olive: Boolean = false) {
     Button(
         onClick = onClick, enabled = enabled,
-        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp), shape = MaterialTheme.shapes.medium,
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(28.dp),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
         colors = ButtonDefaults.buttonColors(
+            containerColor = if (olive) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+            contentColor = if (olive) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
-    ) { Text(text) }
+    ) { Text(text, textAlign = TextAlign.Center) }
 }
 
 @Composable
 fun SecondaryAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     OutlinedButton(onClick, modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = enabled,
-        shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) { Text(text) }
+        shape = RoundedCornerShape(24.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(text, textAlign = TextAlign.Center)
+    }
 }
 
 @Composable
@@ -111,12 +126,12 @@ fun ChoiceOption(title: String, description: String, selected: Boolean, onClick:
         border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) colors.primary else colors.outlineVariant),
     ) {
         Row(Modifier.heightIn(min = 72.dp).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = selected, onClick = null, enabled = enabled)
-            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = if (enabled) colors.onSurface else colors.onSurfaceVariant)
                 Text(description, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             }
+            Spacer(Modifier.width(12.dp))
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
         }
     }
 }
@@ -148,7 +163,8 @@ enum class StatusTone { Info, Error, Progress }
 @Composable
 fun StatusPanel(title: String, body: String? = null, tone: StatusTone = StatusTone.Info, onRetry: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
-    Surface(color = if (tone == StatusTone.Error) colors.errorContainer else colors.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+    Surface(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = if (tone == StatusTone.Error) colors.errorContainer else colors.secondaryContainer, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (tone == StatusTone.Progress) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
             val foreground = if (tone == StatusTone.Error) colors.onErrorContainer else colors.onSecondaryContainer
@@ -174,7 +190,7 @@ fun BalanceSummary(
     Surface(color = colors.secondaryContainer, shape = MaterialTheme.shapes.large) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Ваш запас", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                Text("Ваш запас", style = MaterialTheme.typography.labelMedium, color = colors.onSecondaryContainer)
                 Text(
                     if (unlimitedText != null) "Безлимит активен" else "Расклады на новые вопросы",
                     style = MaterialTheme.typography.titleLarge,
@@ -230,13 +246,9 @@ fun PackageCard(
         border = BorderStroke(1.dp, if (emphasized) colors.primary.copy(alpha = 0.35f) else colors.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = foreground.copy(alpha = 0.76f)) }
-                }
-                Text(price, style = MaterialTheme.typography.titleLarge)
-            }
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
+            Text(price, style = MaterialTheme.typography.headlineMedium, color = colors.primary)
             SecondaryAction(action, onChoose)
         }
     }
@@ -246,12 +258,19 @@ fun PackageCard(
 @Composable
 fun SphereEmblem(modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
     Canvas(modifier) {
-        val diameter = size.minDimension * 0.68f
-        val radius = diameter / 2f
-        val stroke = Stroke(width = 1.4.dp.toPx())
-        drawCircle(color, radius, center, style = stroke)
-        drawOval(color.copy(alpha = 0.65f), topLeft = Offset(center.x - radius * 0.42f, center.y - radius), size = Size(radius * 0.84f, diameter), style = stroke)
-        drawLine(color, Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), strokeWidth = 1.dp.toPx())
-        drawCircle(color, 3.dp.toPx(), Offset(center.x + radius * 0.82f, center.y - radius * 0.55f))
+        val radius = size.minDimension * 0.36f
+        val star = Path().apply {
+            moveTo(center.x, center.y - radius)
+            lineTo(center.x + radius * 0.23f, center.y - radius * 0.23f)
+            lineTo(center.x + radius, center.y)
+            lineTo(center.x + radius * 0.23f, center.y + radius * 0.23f)
+            lineTo(center.x, center.y + radius)
+            lineTo(center.x - radius * 0.23f, center.y + radius * 0.23f)
+            lineTo(center.x - radius, center.y)
+            lineTo(center.x - radius * 0.23f, center.y - radius * 0.23f)
+            close()
+        }
+        drawPath(star, color)
+        drawCircle(color.copy(alpha = 0.45f), radius * 0.72f, center, style = Stroke(size.minDimension * 0.018f))
     }
 }

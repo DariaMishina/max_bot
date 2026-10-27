@@ -124,9 +124,9 @@ private fun SpreadContent(
         Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Как откроем карты?", style = MaterialTheme.typography.titleLarge)
             Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ChoiceOption("🔮 Довериться колоде", "Три карты выпадут случайно", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM) }, editable)
-                ChoiceOption("🃏 Выбрать карты интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE) }, editable)
-                ChoiceOption("✍️ Указать выпавшие карты", "Введите три карты из своего расклада", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED) }, editable)
+                ChoiceOption("Довериться колоде", "Три случайные карты для вашего вопроса", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM) }, editable)
+                ChoiceOption("Выбрать интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE) }, editable)
+                ChoiceOption("Указать свои карты", "Выберите названия карт вашей колоды", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED) }, editable)
             }
         }
         if (state.mode == CardSelectionMode.INTUITIVE) {

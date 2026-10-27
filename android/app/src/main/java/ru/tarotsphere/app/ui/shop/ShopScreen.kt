@@ -21,7 +21,7 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
     val selected = (if (consultation) state.catalog?.consultations else state.catalog?.packages)?.find { it.id == selectedId }
     SphereScreen {
         SphereHeader(
-            title = "Больше пространства для вопросов",
+            title = "Продолжите знакомство",
             subtitle = if (BuildConfig.DEBUG) {
                 "Выберите запас раскладов или личную встречу с тарологом."
             } else {
@@ -30,12 +30,12 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
             eyebrow = "Магазин",
         )
         if (exhausted) StatusPanel(
-            "Подарочные расклады закончились",
+            "Доступные расклады закончились",
             "Все готовые толкования сохранены в истории. Здесь можно выбрать продолжение.",
         )
         if (state.catalog?.billingEnabled == false) StatusPanel(
             "Оплата готовится к запуску",
-            "Покупки включатся после настройки товаров и ключей в RuStore Консоли.",
+            "Покупки временно недоступны. Готовые расклады можно перечитать в истории.",
         )
         when {
             state.loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary)
@@ -91,7 +91,7 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${selected.priceRub} ₽", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                Text("Оплата проходит в защищённой форме RuStore. Баланс пополнится только после проверки покупки сервером.")
+                Text("Оплата проходит в RuStore. После подтверждения покупки расклады появятся на вашем балансе.")
                 if (!consultation && "rustore" in state.catalog!!.paymentMethods) Button(onClick = {
                     selectedId = null
                     viewModel.buy(selected.id)

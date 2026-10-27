@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
@@ -22,9 +23,13 @@ import ru.tarotsphere.app.domain.model.TarotCard
 
 @Composable
 fun TarotCardBack(modifier: Modifier = Modifier) {
-    Box(modifier.background(MaterialTheme.colorScheme.secondaryContainer).padding(7.dp)
-        .border(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-        SphereEmblem(Modifier.fillMaxWidth(0.82f).aspectRatio(1f), color = MaterialTheme.colorScheme.secondary)
+    val colors = MaterialTheme.colorScheme
+    Box(modifier.background(Brush.verticalGradient(listOf(colors.secondaryContainer, colors.surface))).padding(7.dp)
+        .border(1.dp, colors.secondary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+        WorkshopBranch(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.65f).aspectRatio(1.9f).padding(4.dp))
+        SphereEmblem(Modifier.fillMaxWidth(0.7f).aspectRatio(1f), color = colors.secondary)
+        WorkshopBranch(Modifier.align(Alignment.BottomStart).fillMaxWidth(0.65f).aspectRatio(1.9f)
+            .graphicsLayer { rotationZ = 180f }.padding(4.dp))
     }
 }
 

@@ -78,7 +78,9 @@ fun AuthScreen(
     SphereScreen {
         Spacer(Modifier.height(16.dp))
         SphereHeader(
-            title = if (state.passwordMode) "Вход по логину и паролю" else if (state.codeSent) "Введите код из письма" else "Войти или создать аккаунт",
+            title = if (state.passwordMode) {
+                if (state.registering) "Создайте своё пространство" else "С возвращением"
+            } else if (state.codeSent) "Проверьте вашу почту" else "Сохраните свои расклады",
             subtitle = if (!state.passwordMode && state.codeSent) {
                 "Мы отправили шестизначный код на ${state.email}. Он действует 10 минут."
             } else {
@@ -101,6 +103,7 @@ fun AuthScreen(
                     style = MaterialTheme.typography.bodySmall)
             }
             OutlinedTextField(value = state.login, onValueChange = onLoginChange,
+                shape = MaterialTheme.shapes.medium,
                 label = { Text("Логин") },
                 supportingText = {
                     Text("3–64: латинские буквы, цифры, _ . @ -; регистр не важен")
@@ -133,6 +136,7 @@ fun AuthScreen(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Или продолжите по email", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
+                    shape = MaterialTheme.shapes.medium,
                     value = state.email,
                     onValueChange = onEmailChange,
                     label = { Text("Электронная почта") },
@@ -149,6 +153,7 @@ fun AuthScreen(
             TextButton(onClick = { onPasswordMode(true) }, enabled = !state.submitting) { Text("Войти по логину и паролю") }
         } else {
             OutlinedTextField(
+                shape = MaterialTheme.shapes.medium,
                 value = state.code,
                 onValueChange = onCodeChange,
                 label = { Text("Код из письма") },
@@ -178,6 +183,7 @@ fun AuthScreen(
 fun PasswordField(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
+        shape = MaterialTheme.shapes.medium,
         singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),

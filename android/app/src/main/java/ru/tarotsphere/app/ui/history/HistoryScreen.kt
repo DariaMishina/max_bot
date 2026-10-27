@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.domain.model.HistoryItem
@@ -72,6 +74,7 @@ fun HistoryScreen(viewModel: HistoryViewModel, onOpen: (Long) -> Unit, onNew: ()
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -82,7 +85,7 @@ private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(displayDate(item.createdAt), style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                 Surface(color = colors.surfaceVariant, shape = MaterialTheme.shapes.small) {
                     Text(
@@ -94,8 +97,10 @@ private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
                 }
             }
             Text(item.question, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
-            HorizontalDivider(color = colors.outlineVariant)
-            Text("Открыть толкование  →", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Открыть толкование", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.primary)
+            }
         }
     }
 }

@@ -110,9 +110,10 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 if (state.sending) "Отправляем…" else "Отправить сообщение",
                 viewModel::sendFeedback,
                 enabled = state.feedback.isNotBlank() && !state.sending && !state.deleting,
+                olive = true,
             )
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        WorkshopDivider()
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionHeading("Управление данными", "Удаление затронет аккаунт, историю, сообщения и оставшиеся расклады.")
             state.deleteError?.let { StatusPanel("Не удалось удалить данные", it, StatusTone.Error) }

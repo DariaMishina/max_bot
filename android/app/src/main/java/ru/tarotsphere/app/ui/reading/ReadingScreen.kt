@@ -83,10 +83,11 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
                     }
                 }
             }
-            HorizontalDivider(color = colors.outlineVariant)
+            WorkshopDivider()
             ReadingText(reading.interpretation)
-            HorizontalDivider(color = colors.outlineVariant)
-            SphereHeader("О чём ещё хотите спросить?", "Можно задать ещё: ${reading.followUpsRemaining}")
+            Text("Решения остаются за вами.", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            WorkshopDivider()
+            SectionHeading("Уточнения к раскладу", "Доступно вопросов: ${reading.followUpsRemaining}")
             reading.followUps.forEachIndexed { index, followUp ->
                 Surface(color = colors.surface, shape = MaterialTheme.shapes.large) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -113,6 +114,7 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
                     PrimaryAction(
                         if (state.sending) "Готовим ответ…" else if (state.retryPending) "Повторить вопрос" else "Задать вопрос",
                         onClick = { focus.clearFocus(); viewModel.send() }, enabled = !state.sending && isMeaningfulQuestion(state.question),
+                        olive = true,
                     )
                 }
             } else StatusPanel("Все уточняющие вопросы заданы", "Вы можете задать другой вопрос в новом раскладе.")

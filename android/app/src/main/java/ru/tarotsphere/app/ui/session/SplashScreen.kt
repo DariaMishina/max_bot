@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import ru.tarotsphere.app.ui.components.WorkshopBrand
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +39,8 @@ fun SplashScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        WorkshopBrand(Modifier.size(132.dp))
+        Spacer(Modifier.height(16.dp))
         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.displaySmall, color = Gold)
         Spacer(Modifier.height(8.dp))
         Text("Персональные расклады и история", style = MaterialTheme.typography.bodyMedium)
