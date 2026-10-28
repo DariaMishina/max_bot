@@ -28,7 +28,7 @@ python bot.py
 ```
 
 Минимально нужны `BOT_TOKEN`, `API_KEY` и переменные `DB_*`. Полный перечень и
-безопасные примеры находятся в [`.env.example`](.env.example). Секреты и
+безопасные примеры находятся в [`.env.example`](../.env.example). Секреты и
 локальный `.env` в Git не добавляются.
 
 `init_db.sql` создаёт базовую схему бота. Последующие изменения схемы применяются
@@ -83,14 +83,14 @@ git diff --check
 
 ## Документация
 
-- [Рассылки и напоминания](docs/BROADCASTS.md)
-- [План и статус Android-приложения](docs/PLAN_ANDROID_APP.md)
-- [Staging и production Android](docs/ANDROID_ENVIRONMENTS.md)
-- [RuStore Billing runbook](docs/RUSTORE_BILLING_RUNBOOK.md)
-- [Антифрод пробного доступа](docs/TRIAL_ANTIFRAUD.md)
-- [Резервное копирование PostgreSQL](docs/DATABASE_BACKUP_PLAN.md)
-- [План распознавания физических карт](docs/PLAN_PHOTO_READING.md)
-- [Метрика лендинга](docs/LANDING_METRIKA_README.md)
+- [Рассылки и напоминания](BROADCASTS.md)
+- [План и статус Android-приложения](PLAN_ANDROID_APP.md)
+- [Staging и production Android](ANDROID_ENVIRONMENTS.md)
+- [RuStore Billing runbook](RUSTORE_BILLING_RUNBOOK.md)
+- [Антифрод пробного доступа](TRIAL_ANTIFRAUD.md)
+- [Резервное копирование PostgreSQL](DATABASE_BACKUP_PLAN.md)
+- [План распознавания физических карт](PLAN_PHOTO_READING.md)
+- [Метрика лендинга](LANDING_METRIKA_README.md)
 
 `docs/OFFER_ANDROID_DRAFT.md` и `docs/PRIVACY_POLICY_ANDROID_DRAFT.md` — рабочие
 юридические черновики, а не опубликованные документы.

@@ -6,6 +6,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.booleanResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,10 +19,16 @@ import com.vk.id.auth.VKIDAuthCallback
 import ru.tarotsphere.app.ui.components.*
 import ru.tarotsphere.app.ui.auth.RecoveryForm
 import ru.tarotsphere.app.BuildConfig
+import ru.tarotsphere.app.R
 
 @Composable
 fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onShop: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
+    val legalDocumentsEnabled = booleanResource(R.bool.legal_documents_enabled)
+    val legalOfferUrl = stringResource(R.string.legal_offer_url)
+    val legalPrivacyUrl = stringResource(R.string.legal_privacy_url)
+    val legalConsentUrl = stringResource(R.string.legal_personal_data_consent_url)
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var recoveryEmail by remember { mutableStateOf(false) }
     if (recoveryEmail) RecoveryForm(true, viewModel::recoveryStart, viewModel::recoveryConfirm) {
@@ -114,6 +123,21 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 olive = true,
             )
         }
+        if (legalDocumentsEnabled) {
+            WorkshopDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionHeading("Документы", "Откроются в браузере на сайте Teletype.")
+                LegalDocumentButton("Пользовательское соглашение (публичная оферта)") {
+                    uriHandler.openUri(legalOfferUrl)
+                }
+                LegalDocumentButton("Политика конфиденциальности") {
+                    uriHandler.openUri(legalPrivacyUrl)
+                }
+                LegalDocumentButton("Согласие на обработку персональных данных") {
+                    uriHandler.openUri(legalConsentUrl)
+                }
+            }
+        }
         WorkshopDivider()
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionHeading("Управление данными", "Удаление затронет аккаунт, историю, сообщения и оставшиеся расклады.")
@@ -143,4 +167,15 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
         confirmButton = { TextButton(onClick = { confirmDelete = false; viewModel.deleteData() }) { Text("Удалить навсегда", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена") } },
     )
+}
+
+@Composable
+private fun LegalDocumentButton(label: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Text(label)
+    }
 }

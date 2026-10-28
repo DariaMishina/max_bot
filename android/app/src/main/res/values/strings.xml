@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Сфера Таро</string>
+    <bool name="legal_documents_enabled">false</bool>
+    <string name="legal_offer_url" translatable="false"></string>
+    <string name="legal_privacy_url" translatable="false"></string>
+    <string name="legal_personal_data_consent_url" translatable="false"></string>
 </resources>

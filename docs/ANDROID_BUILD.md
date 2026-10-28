@@ -14,7 +14,7 @@
 - Уточнения с серверным лимитом 2/5 и защитой от повторной отправки.
 - История с подгрузкой страниц, полный результат, кэш Room для чтения без сети.
 - Баланс, обратная связь, удаление гостевых данных.
-- Каталог пакетов и консультаций; реальная оплата пакетов через RuStore Pay готова к настройке консоли. ЮKassa отложена.
+- Каталог пакетов и консультаций; покупки через RuStore Pay проверены в sandbox по статусу основного плана от 22 октября. ЮKassa отложена.
 
 ## Запуск
 
@@ -30,22 +30,29 @@
 bash scripts/check_android.sh
 ```
 
-Debug использует staging-адрес xTunnel `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/` и тот же package `ru.tarotsphere.app`. Другой staging-адрес задаётся через `-PAPP_STAGING_API_BASE_URL=https://staging.example/`. Настройки приложения VK ID менять не нужно. Покупки проверяются в сборке, установленной через тестовый канал RuStore, а не в локальном debug APK.
+Debug использует staging-адрес xTunnel `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/` и отдельный package `ru.tarotsphere.app.test`.
+Название на телефоне — «Сфера Таро — тест», версия — `0.8.3-test`.
+Приложение устанавливается рядом с production. Другой staging-адрес задаётся через
+`-PAPP_STAGING_API_BASE_URL=https://staging.example/`; `APP_API_BASE_URL` не меняет
+debug API. VK ID и покупки в локальном debug отключены: используйте вход по
+логину/паролю или email и отдельный staging-аккаунт. Интеграции проверяются через
+зарегистрированную магазинную сборку, а не через этот APK.
 
 Release нельзя собрать без явного канала и адреса. Для alpha используется staging:
 
 ```bash
+cd android
 ./gradlew :app:bundleRelease \
   -PAPP_RELEASE_CHANNEL=alpha \
   -PAPP_API_BASE_URL=https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/
 ```
 
-Для production задаются `-PAPP_RELEASE_CHANNEL=production` и отдельный HTTPS URL, отличный от staging. URL не должен содержать `/v1`. Схема контуров описана в [руководстве staging/production](../docs/ANDROID_ENVIRONMENTS.md).
+Для production задаются `-PAPP_RELEASE_CHANNEL=production` и отдельный HTTPS URL, отличный от staging. URL не должен содержать `/v1`. Схема контуров описана в [руководстве staging/production](ANDROID_ENVIRONMENTS.md).
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. Установить через Run в Android Studio на подключённый телефон.
 
-Актуальные статусы и сценарии приёмки находятся в [основном плане](../docs/PLAN_ANDROID_APP.md);
-платёжная эксплуатация — в [RuStore runbook](../docs/RUSTORE_BILLING_RUNBOOK.md),
-логика пробного доступа — в [описании антифрода](../docs/TRIAL_ANTIFRAUD.md).
+Актуальные статусы и сценарии приёмки находятся в [основном плане](PLAN_ANDROID_APP.md);
+платёжная эксплуатация — в [RuStore runbook](RUSTORE_BILLING_RUNBOOK.md),
+логика пробного доступа — в [описании антифрода](TRIAL_ANTIFRAUD.md).
 
-Локальные тесты не заменяют проверку живого API и установку на устройство. Приёмка на 5–10 людях остаётся отдельным пунктом плана.
+Локальные тесты не заменяют проверку живого API и установку на устройство. Отдельная приёмка на 5–10 людях исключена из первой версии; оставшиеся проверки production candidate перечислены в основном плане.

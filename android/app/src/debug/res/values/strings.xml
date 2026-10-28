@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Сфера Таро — тест</string>
+    <bool name="legal_documents_enabled">true</bool>
+    <string name="legal_offer_url" translatable="false">https://teletype.in/\@gadanie_ai_rustore/u8plBfVPsAC</string>
+    <string name="legal_privacy_url" translatable="false">https://teletype.in/\@gadanie_ai_rustore/EEkVb0ze-sd</string>
+    <string name="legal_personal_data_consent_url" translatable="false">https://teletype.in/\@gadanie_ai_rustore/-Sntlgjf2Va</string>
 </resources>
