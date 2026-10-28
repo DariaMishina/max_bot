@@ -33,6 +33,10 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
             "Доступные расклады закончились",
             "Все готовые толкования сохранены в истории. Здесь можно выбрать продолжение.",
         )
+        if (!BuildConfig.RUSTORE_BILLING_CONFIGURED) StatusPanel(
+            "Просмотр тестового магазина",
+            "Пакеты можно посмотреть, но оплата в этой сборке отключена.",
+        )
         if (state.catalog?.billingEnabled == false) StatusPanel(
             "Оплата готовится к запуску",
             "Покупки временно недоступны. Готовые расклады можно перечитать в истории.",
@@ -91,8 +95,10 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${selected.priceRub} ₽", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                Text("Оплата проходит в RuStore. После подтверждения покупки расклады появятся на вашем балансе.")
-                if (!consultation && "rustore" in state.catalog!!.paymentMethods) Button(onClick = {
+                Text(if (BuildConfig.RUSTORE_BILLING_CONFIGURED)
+                    "Оплата проходит в RuStore. После подтверждения покупки расклады появятся на вашем балансе."
+                else "В этой тестовой сборке покупки отключены. Деньги не списываются.")
+                if (!consultation && BuildConfig.RUSTORE_BILLING_CONFIGURED && "rustore" in state.catalog!!.paymentMethods) Button(onClick = {
                     selectedId = null
                     viewModel.buy(selected.id)
                 }, enabled = state.purchasingId == null, modifier = Modifier.fillMaxWidth()) {

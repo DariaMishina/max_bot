@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- No production OAuth callback registration or payment SDK initialization. -->
+        <activity android:name="com.vk.id.internal.auth.RedirectUriReceiverActivity"
+            tools:node="remove" />
+        <provider android:name="ru.rustore.sdk.pay.RuStorePayContentProvider"
+            tools:node="remove" />
+    </application>
+</manifest>

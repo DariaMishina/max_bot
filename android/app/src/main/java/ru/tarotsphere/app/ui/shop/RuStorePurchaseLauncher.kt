@@ -1,5 +1,7 @@
 package ru.tarotsphere.app.ui.shop
 
+import ru.tarotsphere.app.BuildConfig
+
 import ru.rustore.sdk.pay.RuStorePayClient
 import ru.rustore.sdk.pay.model.AcknowledgementState
 import ru.rustore.sdk.pay.model.AppUserId
@@ -29,6 +31,10 @@ class RuStorePurchaseLauncher : PurchaseLauncher {
         appUserId: String,
         result: (Result<RuStorePurchaseProof>) -> Unit,
     ) {
+        if (!BuildConfig.RUSTORE_BILLING_CONFIGURED) {
+            result(Result.failure(IllegalStateException("Покупки недоступны в локальной тестовой сборке")))
+            return
+        }
         val params = ProductPurchaseParams(
             productId = ProductId(productId),
             appUserId = AppUserId(appUserId),
@@ -49,6 +55,7 @@ class RuStorePurchaseLauncher : PurchaseLauncher {
     }
 
     override fun acknowledge(purchaseId: String) {
+        if (!BuildConfig.RUSTORE_BILLING_CONFIGURED) return
         purchases.updateAcknowledgementState(
             purchaseId = PurchaseId(purchaseId),
             state = AcknowledgementState.ACKNOWLEDGED,

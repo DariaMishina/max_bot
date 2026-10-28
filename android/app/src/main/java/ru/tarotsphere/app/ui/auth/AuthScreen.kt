@@ -37,6 +37,7 @@ import ru.tarotsphere.app.ui.components.StatusPanel
 import ru.tarotsphere.app.ui.components.StatusTone
 import ru.tarotsphere.app.ui.session.SessionUiState
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
+import ru.tarotsphere.app.BuildConfig
 
 @Composable
 fun AuthScreen(
@@ -76,6 +77,7 @@ fun AuthScreen(
         }
     }
     SphereScreen {
+        if (BuildConfig.DEBUG) StatusPanel("Тестовая версия", "Отдельный тестовый аккаунт. Войдите по логину и паролю или email. Данные основной версии здесь не отображаются.")
         Spacer(Modifier.height(16.dp))
         SphereHeader(
             title = if (state.passwordMode) {
@@ -122,10 +124,10 @@ fun AuthScreen(
                 enabled = !state.submitting)
             if (!state.registering) TextButton(onClick = { recovering = true }, enabled = !state.submitting) { Text("Забыли пароль?") }
             TextButton(onClick = { onPasswordMode(false) }, enabled = !state.submitting) {
-                Text("Другие способы: почта или VK ID")
+                Text(if (BuildConfig.VK_AUTH_ENABLED) "Другие способы: почта или VK ID" else "Другой способ: почта")
             }
         } else if (!state.codeSent) {
-            SecondaryAction(
+            if (BuildConfig.VK_AUTH_ENABLED) SecondaryAction(
                 text = "Продолжить через VK ID",
                 onClick = {
                     onVkStart()

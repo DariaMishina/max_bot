@@ -2,10 +2,15 @@
 
 ## Принцип разделения
 
-У всех Android-сборок остаётся один package name — `ru.tarotsphere.app`. Это уже
-зарегистрированное приложение VK ID и RuStore; новый package в VK ID добавлять не
-нужно. Контуры разделяются адресом API, серверной БД, секретами и режимом RuStore,
-а не `applicationId`.
+С 28 октября локальный debug APK имеет отдельный package `ru.tarotsphere.app.test`
+и название «Сфера Таро — тест». Он устанавливается рядом с production и имеет
+собственное локальное хранилище. Debug всегда использует `APP_STAGING_API_BASE_URL`,
+даже если одновременно передан `APP_API_BASE_URL` для release.
+
+Магазинные release-сборки пока сохраняют package `ru.tarotsphere.app`, уже
+зарегистрированный в VK ID и RuStore. Их alpha и production нельзя установить
+рядом: для alpha нужен отдельный тестовый телефон/профиль. Серверные контуры
+разделяются адресом API, БД, секретами и режимом RuStore.
 
 | Компонент | Staging | Production |
 |---|---|---|
@@ -14,7 +19,7 @@
 | PostgreSQL role | текущая `app_bot_user` | новая `app_bot_prod_user` |
 | API service | `app-api@staging` | `app-api@production` |
 | Локальный порт | `8083` | `8093` |
-| Android package | `ru.tarotsphere.app` | `ru.tarotsphere.app` |
+| Android package | локально `ru.tarotsphere.app.test`; alpha RuStore `ru.tarotsphere.app` | `ru.tarotsphere.app` |
 | API URL | `https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com` | `https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com` |
 | RuStore | sandbox, альфа `0.8.2 (8)` с парольным входом загружена в черновик | реальные платежи, `APP_RUSTORE_SANDBOX=false` |
 
@@ -32,9 +37,15 @@ xTunnel без переноса данных, но его API-конфигура
 базам. Production callback RuStore 25 октября принял новый тестовый запрос с
 HTTP 200; реальные уведомления пока выключены.
 
-Локальный debug APK использует тот же package и staging API. RuStore Pay нужно
-проверять не в локально установленном debug APK, а в сборке, установленной через
-тестовый канал RuStore.
+Локальный debug APK использует отдельный package и staging API. VK ID и оплата
+отключены; вход доступен по логину/паролю и email. Callback-activity VK удалена из
+debug manifest, платёжная схема зависит от applicationId, автозапуск Pay SDK
+отключён. Тестовая версия не перехватывает callback основной версии.
+
+RuStore Pay и VK ID проверяются отдельно в зарегистрированной магазинной сборке.
+Для полного параллельного staging, включая эти интеграции, нужно зарегистрировать
+тестовый package и его сертификат в соответствующих кабинетах и использовать
+отдельные параметры интеграций. Это не требуется для проверки дизайна.
 
 ## Файлы конфигурации
 
@@ -114,8 +125,11 @@ cd android
   -PAPP_STAGING_API_BASE_URL=https://staging-api.example/
 ```
 
-Package остаётся `ru.tarotsphere.app`; менять настройки приложения VK ID не
-нужно.
+Результат: `app/build/outputs/apk/debug/app-debug.apk`, package
+`ru.tarotsphere.app.test`, версия `0.8.3-test`, имя «Сфера Таро — тест».
+Проверка изоляции после сборки: `python3 scripts/check_android_test_build.py`
+из корня репозитория. Production удалять не нужно. Для staging нужен отдельный
+аккаунт (или уже существующий staging-аккаунт); баланс production не переносится.
 
 Следующая alpha-сборка, если понадобится до production:
 

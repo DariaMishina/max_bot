@@ -8,13 +8,15 @@ plugins {
 }
 
 val stagingApiBaseUrl = providers.gradleProperty("APP_STAGING_API_BASE_URL")
-    .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/")
+    .orElse("https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com/").get().trimEnd('/') + "/"
 val apiBaseUrl = providers.gradleProperty("APP_API_BASE_URL")
     .orElse(stagingApiBaseUrl).get().trimEnd('/') + "/"
-val apiUri = URI(apiBaseUrl)
-require(apiUri.scheme == "https" && !apiUri.host.isNullOrBlank() && apiUri.rawUserInfo == null &&
-    apiUri.rawQuery == null && apiUri.rawFragment == null && apiUri.path == "/") {
-    "APP_API_BASE_URL must be an HTTPS origin, e.g. https://example.tunnel4.com/ (without /v1)"
+for (url in listOf(stagingApiBaseUrl, apiBaseUrl)) {
+    val apiUri = URI(url)
+    require(apiUri.scheme == "https" && !apiUri.host.isNullOrBlank() && apiUri.rawUserInfo == null &&
+        apiUri.rawQuery == null && apiUri.rawFragment == null && apiUri.path == "/") {
+        "API URL must be an HTTPS origin, e.g. https://example.tunnel4.com/ (without /v1)"
+    }
 }
 
 android {
@@ -33,6 +35,13 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+
+    buildTypes {
+        debug {
+            // A release URL passed in the same invocation must never redirect the test app.
+            buildConfigField("String", "API_BASE_URL", "\"$stagingApiBaseUrl\"")
+        }
     }
 
     compileOptions {

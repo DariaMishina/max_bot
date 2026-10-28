@@ -15,6 +15,7 @@ import com.vk.id.VKIDAuthFail
 import com.vk.id.auth.VKIDAuthCallback
 import ru.tarotsphere.app.ui.components.*
 import ru.tarotsphere.app.ui.auth.RecoveryForm
+import ru.tarotsphere.app.BuildConfig
 
 @Composable
 fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onShop: () -> Unit) {
@@ -74,7 +75,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 if (methods.isBlank()) "Баланс и история привязаны к аккаунту."
                 else "Способ входа: $methods. Баланс и история восстановятся после повторного входа.",
             )
-            if (profile.identities.none { it.provider == "vk" }) {
+            if (BuildConfig.VK_AUTH_ENABLED && profile.identities.none { it.provider == "vk" }) {
                 OutlinedButton(
                     onClick = {
                         viewModel.beginVkLink()

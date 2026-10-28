@@ -19,7 +19,7 @@
             android:value="${rustoreConsoleAppId}" />
         <meta-data
             android:name="sdk_pay_scheme_value"
-            android:value="ru.tarotsphere.app.rustore.pay" />
+            android:value="${applicationId}.rustore.pay" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,7 +33,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="ru.tarotsphere.app.rustore.pay" />
+                <data android:scheme="${applicationId}.rustore.pay" />
             </intent-filter>
         </activity>
     </application>

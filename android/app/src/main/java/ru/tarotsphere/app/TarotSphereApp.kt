@@ -17,7 +17,7 @@ class TarotSphereApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        VKID.init(this)
+        if (BuildConfig.VK_AUTH_ENABLED) VKID.init(this)
         container = AppContainer(this)
         applicationScope.launch {
             runCatching {

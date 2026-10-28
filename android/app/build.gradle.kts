@@ -84,6 +84,7 @@ android {
         versionName = "0.8.3"
         manifestPlaceholders["rustoreConsoleAppId"] = rustoreConsoleAppId
         buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", (rustoreConsoleAppId != "0").toString())
+        buildConfigField("boolean", "VK_AUTH_ENABLED", "true")
         buildConfigField("String", "APP_RELEASE_CHANNEL", "\"$appBuildChannel\"")
     }
 
@@ -108,7 +109,11 @@ android {
             )
         }
         debug {
-            versionNameSuffix = "-debug"
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            buildConfigField("String", "APP_RELEASE_CHANNEL", "\"debug\"")
+            buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", "false")
+            buildConfigField("boolean", "VK_AUTH_ENABLED", "false")
         }
     }
 
