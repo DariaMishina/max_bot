@@ -3,11 +3,13 @@
 package ru.tarotsphere.app.ui.spread
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
@@ -60,6 +62,9 @@ private fun SpreadContent(
     onShop: () -> Unit = {}, onAccount: () -> Unit = {}, onRefresh: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
+    var editingSetup by rememberSaveable { mutableStateOf(state.mode == CardSelectionMode.RANDOM || !isMeaningfulQuestion(state.question)) }
+    val scrollState = rememberScrollState()
+    LaunchedEffect(editingSetup) { scrollState.animateScrollTo(0) }
     val editable = !state.submitting && !state.retryPending
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -77,7 +82,7 @@ private fun SpreadContent(
             actionRequester.bringIntoView()
         }
     }
-    SphereScreen {
+    SphereScreen(scrollState) {
         if (!state.retryPending && !state.submitting) {
             if (state.loadingBalance) {
                 SphereHeader("Проверяем доступные расклады", "Это займёт несколько секунд.")
@@ -104,39 +109,51 @@ private fun SpreadContent(
                 return@SphereScreen
             }
         }
-        SphereHeader("О чём спросим карты?", "Можно начать с того, что сейчас занимает ваши мысли.", "Сфера Таро")
-        QuestionField(
-            state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
-            placeholder = "На что обратить внимание в отношениях?",
-            onImeDone = {
-                focus.clearFocus()
-                keyboard?.hide()
-                scope.launch { delay(120); modeRequester.bringIntoView() }
-            },
-        )
-        if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
-            Text(
-                "Напишите вопрос или тему словами.",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.error,
+        if (editingSetup || !isMeaningfulQuestion(state.question)) {
+            SphereHeader("О чём спросим карты?", "Один вопрос. Три карты. Новый взгляд.", "Ваш личный расклад")
+            WorkshopStep("01", "Ваш вопрос")
+            QuestionField(
+                state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
+                placeholder = "На что обратить внимание в отношениях?",
+                onImeDone = {
+                    focus.clearFocus()
+                    keyboard?.hide()
+                    scope.launch { delay(120); modeRequester.bringIntoView() }
+                },
             )
-        }
-        Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Как откроем карты?", style = MaterialTheme.typography.titleLarge)
-            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ChoiceOption("Довериться колоде", "Три случайные карты для вашего вопроса", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM) }, editable)
-                ChoiceOption("Выбрать интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE) }, editable)
-                ChoiceOption("Указать свои карты", "Выберите названия карт вашей колоды", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED) }, editable)
+            if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
+                Text(
+                    "Напишите вопрос или тему словами.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.error,
+                )
+            }
+            Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                WorkshopStep("02", "Как откроем карты?")
+                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ChoiceOption("Довериться колоде", "Три случайные карты для вашего вопроса", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM); editingSetup = true }, editable)
+                    ChoiceOption("Выбрать интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
+                    ChoiceOption("Указать свои карты", "Выберите названия карт вашей колоды", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
+                }
+            }
+        } else {
+            SphereHeader(if (state.mode == CardSelectionMode.INTUITIVE) "Откройте три карты" else "Ваша колода",
+                "Прошлое, настоящее и будущее вашего вопроса", "Ваш личный расклад")
+            WorkshopSheet {
+                Text("Ваш вопрос", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                Text(state.question, style = MaterialTheme.typography.titleLarge)
+                TextButton(onClick = { editingSetup = true }, enabled = editable) { Text("Изменить вопрос или способ выбора") }
             }
         }
         if (state.mode == CardSelectionMode.INTUITIVE) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SphereHeader("Выбрано ${state.selectedIds.size} из 3", when (state.selectedIds.size) {
+            WorkshopSheet {
+                SelectionProgress(state.selectedIds.size)
+                Text(when (state.selectedIds.size) {
                     0 -> "Первая карта — прошлое. Нажмите на любую рубашку."
                     1 -> "Вторая карта — настоящее."
                     2 -> "Третья карта — будущее."
                     else -> "Карты выбраны. Повторное нажатие отменяет выбор."
-                })
+                }, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                 if (state.loadingDeck) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
                 state.deck.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -151,7 +168,7 @@ private fun SpreadContent(
             }
         }
         if (state.mode == CardSelectionMode.NAMED) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WorkshopSheet {
                 SphereHeader("Карты вашего расклада", "Начните вводить название и выберите карту из подсказок.")
                 if (state.loadingCatalog) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
                 listOf("Прошлое", "Настоящее", "Будущее").forEachIndexed { index, position ->

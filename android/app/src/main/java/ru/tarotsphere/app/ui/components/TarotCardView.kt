@@ -24,12 +24,10 @@ import ru.tarotsphere.app.domain.model.TarotCard
 @Composable
 fun TarotCardBack(modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    Box(modifier.background(Brush.verticalGradient(listOf(colors.secondaryContainer, colors.surface))).padding(7.dp)
-        .border(1.dp, colors.secondary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-        WorkshopBranch(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.65f).aspectRatio(1.9f).padding(4.dp))
-        SphereEmblem(Modifier.fillMaxWidth(0.7f).aspectRatio(1f), color = colors.secondary)
-        WorkshopBranch(Modifier.align(Alignment.BottomStart).fillMaxWidth(0.65f).aspectRatio(1.9f)
-            .graphicsLayer { rotationZ = 180f }.padding(4.dp))
+    Box(modifier.workshopPaper().padding(5.dp)
+        .border(1.dp, colors.tertiary.copy(alpha = 0.6f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+        WorkshopWreath(Modifier.fillMaxSize().padding(5.dp))
+        SphereEmblem(Modifier.fillMaxWidth(0.43f).aspectRatio(1f), color = colors.tertiary)
     }
 }
 

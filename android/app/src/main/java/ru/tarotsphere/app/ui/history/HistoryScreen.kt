@@ -81,7 +81,7 @@ private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Открыть расклад", onClick = onOpen),
         color = colors.surface,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.small,
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -96,7 +96,7 @@ private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
                     )
                 }
             }
-            Text(item.question, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+            Text(item.question, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Открыть толкование", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = colors.primary)
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.primary)

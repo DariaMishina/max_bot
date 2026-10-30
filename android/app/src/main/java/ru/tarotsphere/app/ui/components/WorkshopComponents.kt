@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -38,11 +39,11 @@ object WorkshopSpacing {
 }
 
 @Composable
-fun SphereScreen(content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding(), contentAlignment = Alignment.TopCenter) {
+fun SphereScreen(scrollState: ScrollState = rememberScrollState(), content: @Composable ColumnScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().workshopPaper().imePadding(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxWidth().fillMaxHeight()
-                .verticalScroll(rememberScrollState()).padding(WorkshopSpacing.screen),
+                .verticalScroll(scrollState).padding(WorkshopSpacing.screen),
             verticalArrangement = Arrangement.spacedBy(WorkshopSpacing.section),
             content = content,
         )
@@ -55,7 +56,7 @@ fun SphereLazyScreen(
     content: LazyListScope.() -> Unit,
 ) {
     Box(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding(),
+        Modifier.fillMaxSize().workshopPaper().imePadding(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
@@ -69,16 +70,21 @@ fun SphereLazyScreen(
 
 @Composable
 fun SphereHeader(title: String, subtitle: String? = null, eyebrow: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        eyebrow?.let {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(it.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
-                    letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.secondary)
-                WorkshopBranch(Modifier.size(width = 90.dp, height = 44.dp))
-            }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            WorkshopBranch(Modifier.size(54.dp, 38.dp))
+            Text(eyebrow ?: "Сфера Таро", Modifier.weight(1f), textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelMedium, letterSpacing = 1.sp,
+                color = MaterialTheme.colorScheme.secondary)
+            WorkshopBranch(Modifier.size(54.dp, 38.dp))
         }
-        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
-        subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Text(title, Modifier.fillMaxWidth().semantics { heading() }, textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
+        subtitle?.let { Text(it, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        WorkshopDivider(Modifier.padding(horizontal = 36.dp))
     }
 }
 
@@ -246,10 +252,13 @@ fun PackageCard(
         border = BorderStroke(1.dp, if (emphasized) colors.primary.copy(alpha = 0.35f) else colors.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SphereEmblem(Modifier.size(38.dp), colors.tertiary)
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            }
             description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
             Text(price, style = MaterialTheme.typography.headlineMedium, color = colors.primary)
-            SecondaryAction(action, onChoose)
+            if (emphasized) PrimaryAction(action, onChoose) else SecondaryAction(action, onChoose)
         }
     }
 }

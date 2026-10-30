@@ -47,10 +47,10 @@ private val Pages = listOf(
 
 @Composable
 private fun OnboardingCards() {
-    Box(Modifier.fillMaxWidth().height(216.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().height(250.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         listOf(-1, 1, 0).forEach { position ->
             TarotCardBack(Modifier.offset(x = (position * 58).dp, y = (if (position == 0) -5 else 8).dp)
-                .size(width = 98.dp, height = 158.dp).graphicsLayer { rotationZ = position * 12f }
+                .size(width = 118.dp, height = 190.dp).graphicsLayer { rotationZ = position * 12f }
                 .clip(RoundedCornerShape(12.dp)))
         }
     }
@@ -61,7 +61,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { Pages.size })
     val scope = rememberCoroutineScope()
     val last = pagerState.currentPage == Pages.lastIndex
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
+    Box(Modifier.fillMaxSize().workshopPaper().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 WorkshopBrand(Modifier.size(44.dp))

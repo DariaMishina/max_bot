@@ -52,6 +52,7 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                     PackageCard(
                         title = pack.name,
                         price = "${pack.priceRub} ₽",
+                        emphasized = pack.isSubscription,
                         description = if (pack.isSubscription) "Без ограничений на число раскладов в течение месяца" else "Сохраняются в вашем балансе",
                     ) { selectedId = pack.id; consultation = false }
                 }

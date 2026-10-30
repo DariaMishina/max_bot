@@ -103,7 +103,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
             }
             state.linkMessage?.let { StatusPanel("VK ID", it) }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        WorkshopSheet {
             SectionHeading("Помогите сделать Сферу лучше", "Расскажите, что оказалось полезным, непонятным или лишним.")
             OutlinedTextField(
                 value = state.feedback, onValueChange = viewModel::feedback, label = { Text("Сообщение") },

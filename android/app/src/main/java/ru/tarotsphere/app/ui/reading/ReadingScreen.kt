@@ -9,6 +9,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.tooling.preview.Preview
+import ru.tarotsphere.app.domain.model.*
+import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,9 +53,17 @@ internal fun emphasizeReadingSections(value: String): AnnotatedString {
 @Composable
 fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> Unit, onShop: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val focus = LocalFocusManager.current
     BackHandler(onBack = onBack)
     LaunchedEffect(viewModel) { viewModel.refresh() }
+    ReadingContent(state, onBack, onNew, onShop, viewModel::refresh, viewModel::question, viewModel::send)
+}
+
+@Composable
+private fun ReadingContent(
+    state: ReadingUiState, onBack: () -> Unit, onNew: () -> Unit, onShop: () -> Unit,
+    onRefresh: () -> Unit, onQuestion: (String) -> Unit, onSend: () -> Unit,
+) {
+    val focus = LocalFocusManager.current
     val colors = MaterialTheme.colorScheme
     SphereScreen {
         TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp)) {
@@ -58,48 +71,38 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
             Spacer(Modifier.width(8.dp))
             Text("Назад")
         }
-        SphereHeader("Ваше толкование", eyebrow = "Время прислушаться к себе")
+        SphereHeader("Ваше толкование", "Три карты — один взгляд на вашу ситуацию", "Время прислушаться к себе")
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
-        state.error?.let { StatusPanel("Не удалось обновить расклад", it, StatusTone.Error, viewModel::refresh) }
-        if (state.offline) StatusPanel("Сохранённый расклад", "Для новых уточняющих вопросов понадобится интернет.", onRetry = viewModel::refresh)
+        state.error?.let { StatusPanel("Не удалось обновить расклад", it, StatusTone.Error, onRefresh) }
+        if (state.offline) StatusPanel("Сохранённый расклад", "Для новых уточняющих вопросов понадобится интернет.", onRetry = onRefresh)
         state.reading?.let { reading ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            WorkshopSheet {
                 Text("Ваш вопрос", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                 Text(reading.question, style = MaterialTheme.typography.titleLarge)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                reading.cards.forEachIndexed { index, card ->
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            listOf("Прошлое", "Настоящее", "Будущее").getOrElse(index) { "Карта" },
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.secondary,
-                        )
-                        var revealed by remember(card.id) { mutableStateOf(false) }
-                        LaunchedEffect(card.id) { revealed = true }
-                        TarotCardView(card, revealed)
-                        Text(card.name, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+            WorkshopSheet {
+                ReadingCards(reading.cards)
+                WorkshopDivider()
+                SectionHeading("Что говорят карты", "Персональная ИИ-интерпретация")
+                ReadingText(reading.interpretation)
+                Text("Решения остаются за вами.", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
-            WorkshopDivider()
-            ReadingText(reading.interpretation)
-            Text("Решения остаются за вами.", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            WorkshopDivider()
-            SectionHeading("Уточнения к раскладу", "Доступно вопросов: ${reading.followUpsRemaining}")
+            SphereHeader("Продолжим диалог?", "Уточните то, что важно именно вам", "Уточнения к раскладу")
+            Text("Доступно вопросов: ${reading.followUpsRemaining}", style = MaterialTheme.typography.labelLarge, color = colors.secondary)
             reading.followUps.forEachIndexed { index, followUp ->
-                Surface(color = colors.surface, shape = MaterialTheme.shapes.large) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Уточняющий вопрос ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
-                        Text(followUp.question, style = MaterialTheme.typography.titleMedium, color = colors.primary)
-                        ReadingText(followUp.answer)
-                    }
+                WorkshopSheet {
+                    Text("Ваш вопрос · ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                    Text(followUp.question, style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                }
+                WorkshopSheet(olive = true) {
+                    Text("Ответ к раскладу", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                    ReadingText(followUp.answer)
                 }
             }
             if (reading.followUpsRemaining > 0 || state.retryPending) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuestionField(state.question, viewModel::question, label = "Ваш уточняющий вопрос", minLines = 2,
+                WorkshopSheet(olive = true) {
+                    SectionHeading("Что ещё хочется понять?")
+                    QuestionField(state.question, onQuestion, label = "Ваш уточняющий вопрос", minLines = 2,
                         enabled = !state.sending && !state.retryPending)
                     if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
                         Text(
@@ -113,7 +116,7 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
                     if (state.retryPending && !state.sending) StatusPanel("Можно повторить вопрос", "Повтор отправит тот же вопрос и не уменьшит доступное количество вопросов.")
                     PrimaryAction(
                         if (state.sending) "Готовим ответ…" else if (state.retryPending) "Повторить вопрос" else "Задать вопрос",
-                        onClick = { focus.clearFocus(); viewModel.send() }, enabled = !state.sending && isMeaningfulQuestion(state.question),
+                        onClick = { focus.clearFocus(); onSend() }, enabled = !state.sending && isMeaningfulQuestion(state.question),
                         olive = true,
                     )
                 }
@@ -121,5 +124,62 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
             SecondaryAction("Новый расклад", onNew)
             TextButton(onClick = onShop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Купить расклады") }
         }
+    }
+}
+
+@Composable
+private fun ReadingCards(cards: List<TarotCard>) {
+    val largeText = LocalDensity.current.fontScale > 1.3f
+    if (largeText) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            cards.forEachIndexed { index, card ->
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    RevealedCard(card, Modifier.width(88.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CardPosition(index)
+                        Text(card.name, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            cards.forEachIndexed { index, card ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardPosition(index)
+                    RevealedCard(card)
+                    Text(card.name, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardPosition(index: Int) {
+    Text(listOf("Прошлое", "Настоящее", "Будущее").getOrElse(index) { "Карта" },
+        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+}
+
+@Composable
+private fun RevealedCard(card: TarotCard, modifier: Modifier = Modifier) {
+    val preview = LocalInspectionMode.current
+    var revealed by remember(card.id) { mutableStateOf(preview) }
+    LaunchedEffect(card.id) { revealed = true }
+    TarotCardView(card, revealed, modifier)
+}
+
+@Preview(name = "Результат · 360", widthDp = 360, heightDp = 1000)
+@Preview(name = "Результат · 412", widthDp = 412, heightDp = 1000)
+@Preview(name = "Результат · 200%", widthDp = 360, heightDp = 1000, fontScale = 2f)
+@Composable
+private fun ReadingPreview() {
+    TarotSphereTheme {
+        ReadingContent(ReadingUiState(reading = Reading(
+            1, "Что поможет мне двигаться вперёд и найти время для важного?",
+            listOf(TarotCard("1", "Солнце", ""), TarotCard("2", "Луна", ""), TarotCard("3", "Звезда", "")),
+            "Прошлое: Вспомните то, что уже помогало вам.\n\nНастоящее: Дайте себе время прислушаться к своим желаниям.\n\nБудущее: Начните с небольшого шага.",
+            true, "2026-10-30", listOf(FollowUp("Как сделать первый шаг?", "Выберите небольшое действие, которое зависит от вас.")), 1,
+        )), {}, {}, {}, {}, {}, {})
     }
 }

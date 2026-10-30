@@ -2,14 +2,14 @@ package ru.tarotsphere.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Paper = Color(0xFFF6F1E8)
-val PaperSurface = Color(0xFFFFFCF7)
+val Paper = Color(0xFFF6EFDF)
+val PaperSurface = Color(0xFFFFFAEF)
 val PaperInset = Color(0xFFEFE7DC)
 val WorkshopInk = Color(0xFF302824)
 val WorkshopMuted = Color(0xFF6E635B)
-val Wine = Color(0xFF713C50)
+val Wine = Color(0xFF722C40)
 val WineSoft = Color(0xFFF0DFE4)
-val Olive = Color(0xFF64705A)
+val Olive = Color(0xFF596346)
 val OliveSoft = Color(0xFFE5E9DD)
 val PaperOutline = Color(0xFF88796F)
 val PaperDivider = Color(0xFFDCD1C5)
