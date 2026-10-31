@@ -491,7 +491,13 @@ async def cors_preflight(request: Request) -> Response:
 
 def create_webhook_app() -> web.Application:
     """Создание приложения для webhook"""
+    import os
+    from main.webapp_api import install
+
     app = web.Application()
+    local_webapp = os.environ.get('WEBAPP_LOCAL') == 'true'
+    if local_webapp:
+        install(app, include_index=True)
 
     app.router.add_post('/webhook/yookassa', yookassa_webhook_handler)
     app.router.add_get('/api/webapp/pending-question', webapp_pending_question_handler)
@@ -503,7 +509,9 @@ def create_webhook_app() -> web.Application:
     app.router.add_get('/ready', ready_handler)
     app.router.add_get('/health/details', details_handler)
     app.router.add_post('/', root_handler)
-    app.router.add_get('/', root_handler)
+    if not local_webapp:
+        app.router.add_get('/', root_handler)
+        install(app, include_index=False)
 
     return app
 
@@ -546,7 +554,7 @@ async def start_webhook_server(port: int = None):
         if request.path.startswith('/api/'):
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Max-Init-Data'
         return response
 
     app.middlewares.append(cors_middleware)
@@ -555,9 +563,10 @@ async def start_webhook_server(port: int = None):
     await runner.setup()
 
     try:
-        site = web.TCPSite(runner, '0.0.0.0', port)
+        host = os.environ.get('HOST', '0.0.0.0')
+        site = web.TCPSite(runner, host, port)
         await site.start()
-        logging.info(f"Webhook server started successfully on 0.0.0.0:{port}")
+        logging.info(f"Webhook server started successfully on {host}:{port}")
         logging.info(f"Webhook URL: {service_url}/webhook/yookassa")
         logging.info(f"Health check: {service_url}/health")
     except Exception as e:

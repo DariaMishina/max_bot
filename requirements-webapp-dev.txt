@@ -1,0 +1,2 @@
+-r requirements-webapp.txt
+playwright>=1.50,<2

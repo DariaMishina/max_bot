@@ -481,7 +481,8 @@ async def create_yookassa_payment(
     description: str,
     email: str,
     user_id: int,
-    package_id: str
+    package_id: str,
+    idempotence_key: str | None = None,
 ) -> dict:
     """Создать платёж в ЮKassa"""
     shop_id = config.yookassa_shop_id.get_secret_value()
@@ -489,7 +490,7 @@ async def create_yookassa_payment(
     
     auth = base64.b64encode(f"{shop_id}:{secret_key}".encode()).decode()
     
-    idempotence_key = str(uuid.uuid4())
+    idempotence_key = idempotence_key or str(uuid.uuid4())
     
     payment_data = {
         "amount": {

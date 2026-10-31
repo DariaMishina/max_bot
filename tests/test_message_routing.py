@@ -54,6 +54,23 @@ class MessageRoutingTests(unittest.IsolatedAsyncioTestCase):
     def test_every_navigation_intent_has_exactly_one_handler(self):
         self.assertEqual(set(message_router.NAVIGATION_HANDLERS), set(NAVIGATION_MESSAGES))
 
+    def test_menu_keeps_production_buttons_and_app_entry_last(self):
+        from keyboards.main_menu import make_main_menu
+        menu = make_main_menu()
+        self.assertEqual([row[0].text for row in menu.buttons], [
+            'Новый расклад 🃏', 'Личная консультация 🔮', 'Карта дня ✨',
+            'Мои гадания 🔮', 'Купить расклады 💎', 'Открыть приложение ✧',
+        ])
+
+    async def test_my_readings_keeps_production_balance_action(self):
+        message = make_message('Мои гадания 🔮')
+        cursor = FakeCursor(divination.STATE_CHATTING)
+        with patch.object(common, '_show_balance', AsyncMock()) as balance, patch.object(common, 'open_webapp_button', AsyncMock()) as app:
+            await common.show_balance_button(message, cursor)
+        balance.assert_awaited_once_with(message, cursor)
+        app.assert_not_awaited()
+        self.assertIsNone(cursor.state)
+
     async def test_new_reading_wins_over_chatting_state(self):
         message = make_message("Новый расклад 🃏")
         cursor = FakeCursor(
@@ -133,10 +150,11 @@ class MessageRoutingTests(unittest.IsolatedAsyncioTestCase):
             common, "get_and_delete_webapp_follow_up_context", AsyncMock(return_value={})
         ) as clear_webapp, patch.object(
             common, "can_user_divinate", AsyncMock(return_value=(True, "free"))
-        ):
+        ), patch('main.database.delete_pending_question', AsyncMock()) as clear_pending:
             await common.new_divination_button(message, cursor)
 
         clear_webapp.assert_awaited_once_with(42)
+        clear_pending.assert_awaited_once_with(42)
         self.assertEqual(cursor.state, divination.STATE_WAITING_FOR_NEW_QUESTION)
         self.assertIsNone(cursor.data)
         message.reply.assert_awaited_once()
@@ -150,11 +168,12 @@ class MessageRoutingTests(unittest.IsolatedAsyncioTestCase):
             AsyncMock(return_value=True),
         ), patch.object(
             divination, "save_conversation_reply_message", AsyncMock()
-        ) as save_reply:
+        ) as save_reply, patch('main.database.delete_pending_question', AsyncMock()) as clear_pending:
             await divination.handle_new_divination_question(message, cursor)
 
         self.assertEqual(cursor.state, divination.STATE_CHOOSING_DIVINATION)
         self.assertEqual(cursor.data, {"question": "Что меня ждёт в работе?"})
+        clear_pending.assert_awaited_once_with(42)
         message.reply.assert_awaited_once()
         save_reply.assert_awaited_once()
         self.assertEqual(save_reply.await_args.args[:3], (42, 100, "message-1"))

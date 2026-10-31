@@ -119,12 +119,15 @@ async def send_daily_card_to_all_users(user_ids: Optional[List[int]] = None) -> 
 
 # ==================== Callback handlers ====================
 
-@router.on_button_callback(lambda data: data.payload.startswith('daily_card_') and not data.payload.startswith('daily_card_check') and not data.payload.startswith('daily_card_pay') and not data.payload.startswith('daily_card_unsub'))
+@router.on_button_callback(lambda data: data.payload.startswith('daily_card_') and not data.payload.startswith('daily_card_check') and not data.payload.startswith('daily_card_pay') and not data.payload.startswith('daily_card_unsub') and data.payload != 'daily_card_resubscribe')
 async def handle_daily_card_choice(cb: aiomax.Callback):
     """Обработка выбора карты дня"""
     card_id = cb.payload[len('daily_card_'):]
-    card_info = get_card_info(card_id)
     user_id = cb.user.user_id
+    from main.webapp_service import daily
+    saved = await daily(user_id, card_id=card_id)
+    card_id = saved['card_id']
+    card_info = get_card_info(card_id)
     chat_id = cb.message.recipient.chat_id
     
     logging.info(f"Daily card chosen: {card_id} ({card_info['name']}) by user {user_id}")

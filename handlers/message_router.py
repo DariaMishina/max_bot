@@ -50,6 +50,8 @@ def _claim_message(user_id: int, message_id: str | None) -> bool:
 
 
 NAVIGATION_HANDLERS = {
+    "Открыть приложение ✧": common.open_webapp_button,
+    "Мой баланс 💎": common.balance_menu_button,
     "Мои гадания 🔮": common.show_balance_button,
     "Новый расклад 🃏": common.new_divination_button,
     "Купить расклады 💎": common.buy_button,

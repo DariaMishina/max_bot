@@ -64,6 +64,16 @@ _aiomax_handle_update = bot.handle_update
 
 
 async def _handle_update_with_reply_context(self, update: dict):
+    import os
+    if os.getenv('WEBAPP_LOCAL') == 'true':
+        allowed = {int(x.strip()) for x in os.getenv('WEBAPP_ALLOWED_IDS', '').split(',') if x.strip()}
+        if update.get('update_type') == 'message_callback' or 'callback' in update:
+            user = (update.get('callback') or {}).get('user') or {}
+        else:
+            user = (update.get('message') or {}).get('sender') or update.get('user') or {}
+        user_id = user.get('user_id') or update.get('user_id')
+        if user_id not in allowed:
+            return
     from main.reply_updates import capture_reply_update
     await capture_reply_update(update)
     return await _aiomax_handle_update(update)

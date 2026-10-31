@@ -16,6 +16,7 @@ def make_main_menu() -> buttons.KeyboardBuilder:
     kb.row(buttons.MessageButton("Карта дня ✨"))
     kb.row(buttons.MessageButton("Мои гадания 🔮"))
     kb.row(buttons.MessageButton("Купить расклады 💎"))
+    kb.row(buttons.MessageButton("Открыть приложение ✧"))
     return kb
 
 

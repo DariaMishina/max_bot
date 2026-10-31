@@ -7,6 +7,9 @@ venv/*
 myenv/*
 htmlcov/*
 .env
+.env.webapp
+.venv-webapp/
+.local-webapp/
 # Local Android release credentials and signing keys.
 android/keystore.properties
 android/signing/

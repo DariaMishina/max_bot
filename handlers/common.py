@@ -382,8 +382,21 @@ async def show_balance_cmd(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     await _show_balance(ctx, cursor)
 
 
+async def open_webapp_button(message: aiomax.Message, cursor: fsm.FSMCursor):
+    from main.botdef import bot
+    me = await bot.get_me()
+    kb = buttons.KeyboardBuilder()
+    kb.row(buttons.WebAppButton("Открыть Сферу Таро", getattr(me, 'username', None) or me.user_id))
+    await message.reply("Ваша Сфера: расклады, карта дня, история и личные заметки.", keyboard=kb)
+
+
 async def show_balance_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     """Показать баланс по кнопке «Мои гадания 🔮»"""
+    cursor.clear()
+    await _show_balance(message, cursor)
+
+
+async def balance_menu_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     cursor.clear()
     await _show_balance(message, cursor)
 
@@ -395,8 +408,10 @@ async def new_divination_button(message: aiomax.Message, cursor: fsm.FSMCursor):
     # Новый расклад всегда отдельная сессия: не даём следующему
     # сообщению попасть в старый chatting/WebApp-контекст.
     from handlers.divination import STATE_WAITING_FOR_NEW_QUESTION
+    from main.database import delete_pending_question
 
     cursor.clear()
+    await delete_pending_question(user_id)
     await get_and_delete_webapp_follow_up_context(user_id)
 
     can_div, _ = await can_user_divinate(user_id)
@@ -484,6 +499,8 @@ async def handle_back_to_menu(cb: aiomax.Callback, cursor: fsm.FSMCursor):
     """Кнопка «◀ В меню» — показывает полное меню и сбрасывает контекст уточнений WebApp."""
     cursor.clear()
     user_id = cb.user.user_id
+    from main.database import delete_pending_question
+    await delete_pending_question(user_id)
     await get_and_delete_webapp_follow_up_context(user_id)
     await cb.send(
         "🪬 Выбери действие или просто напиши свой вопрос в чат 👇",

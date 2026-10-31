@@ -58,9 +58,8 @@ class Settings(BaseSettings):
             kwargs['test_mode'] = test_mode_str.lower() in ('true', '1', 'yes', 'on')
         
         if 'db_table_suffix' not in kwargs or not kwargs.get('db_table_suffix'):
-            db_suffix = os.environ.get('DB_TABLE_SUFFIX', '')
-            if db_suffix:
-                kwargs['db_table_suffix'] = db_suffix
+            if 'DB_TABLE_SUFFIX' in os.environ:
+                kwargs['db_table_suffix'] = os.environ.get('DB_TABLE_SUFFIX', '')
             else:
                 test_mode = kwargs.get('test_mode', False)
                 if isinstance(test_mode, str):

@@ -233,7 +233,8 @@ async def main():
         replace_existing=True,
     )
 
-    scheduler.start()
+    if os.environ.get('ENABLE_BACKGROUND_JOBS', 'true').lower() == 'true':
+        scheduler.start()
     if config.enable_daily_tip:
         logging.info(
             f"APScheduler started - daily card will be sent at "
@@ -268,12 +269,15 @@ async def main():
             logging.info(f"Health server started on port {port}; YooKassa is disabled")
     except Exception as e:
         logging.warning(f"Could not start webhook server: {e}")
+        if os.environ.get('WEBAPP_LOCAL') == 'true':
+            raise
 
     # Запускаем бота (long polling)
     try:
         await bot.start_polling()
     finally:
-        scheduler.shutdown()
+        if scheduler.running:
+            scheduler.shutdown()
         logging.info("APScheduler stopped")
         await health_runtime.stop()
         await Database.close_pool()

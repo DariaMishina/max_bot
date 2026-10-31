@@ -120,6 +120,8 @@ async def cmd_divination(ctx: aiomax.CommandContext, cursor: fsm.FSMCursor):
     logging.info(f"cmd_divination: user_id={user_id}")
 
     cursor.clear()
+    from main.database import delete_pending_question
+    await delete_pending_question(user_id)
     await get_and_delete_webapp_follow_up_context(user_id)
 
     if not await check_channel_subscription(user_id):
@@ -274,141 +276,9 @@ async def process_divination_internal(message: aiomax.Message, cursor: fsm.FSMCu
 # ==================== Ицзин ====================
 
 async def _do_iching_divination(message: aiomax.Message, cursor: fsm.FSMCursor, question: str, user_id: int):
-    """Гадание по Ицзин"""
-    from main.botdef import bot
-    
-    processing_msg = await message.reply("🔮 Провожу гадание...")
-    
-    try:
-        all_hexagrams = get_all_available_hexagrams()
-        random_hexagram_id = random.choice(all_hexagrams) if all_hexagrams else str(random.randint(1, 64))
-        
-        hexagram_info = get_hexagram_info(random_hexagram_id)
-        hexagram_name = hexagram_info['name']
-        hexagram_meaning = hexagram_info['meaning']
-        
-        # Отправляем изображение гексаграммы
-        try:
-            chat_id = message.recipient.chat_id
-            await send_hexagram_image(bot, chat_id, random_hexagram_id)
-        except Exception as e:
-            logging.warning(f"Не удалось отправить изображение гексаграммы: {e}")
-        
-        # Редактируем сообщение о процессе
-        try:
-            await bot.edit_message(processing_msg.body.mid, text="🔮 Толкую гексаграмму...")
-        except:
-            pass
-        
-        # ChatGPT толкование
-        system_prompt = ICHING_SYSTEM_PROMPT
-        chatgpt_question = (
-            f"Вопрос пользователя: {question}\n\n"
-            f"Выпавшая гексаграмма: {hexagram_name}\n"
-            f"Значение гексаграммы: {hexagram_meaning}\n\n"
-            f"{ICHING_USER_INSTRUCTION}"
-        )
-        
-        chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, system_prompt)
-        
-        # Списываем гадание
-        balance_before = await get_user_balance(user_id)
-        is_free = balance_before and balance_before['free_divinations_remaining'] > 0 if balance_before else True
-        
-        used = await use_divination(user_id)
-        if not used:
-            await message.reply("❌ Произошла ошибка при списании гадания.", keyboard=make_back_to_menu_kb())
-            cursor.clear()
-            return
+    from main.webapp_chat import iching
+    return await iching(message, cursor, question, user_id)
 
-        balance_after = await get_user_balance(user_id)
-        free_remaining_after = (
-            balance_after['free_divinations_remaining'] if balance_after else None
-        )
-        free_limit_reached = bool(is_free and free_remaining_after == 0)
-        if free_limit_reached:
-            try:
-                await mark_paywall_reached(user_id)
-                await save_paywall_conversion(
-                    user_id=user_id,
-                    paywall_source="last_free_divination",
-                    metadata={'divination_type': 'Ицзин'},
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
-            except Exception as e:
-                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
-        
-        # Сохраняем в БД
-        divination_id = await save_divination(
-            user_id=user_id,
-            divination_type="Ицзин",
-            question=question,
-            selected_cards=[random_hexagram_id],
-            interpretation=chatgpt_response,
-            is_free=is_free
-        )
-        
-        if divination_id:
-            try:
-                await save_conversion(
-                    user_id=user_id, conversion_type='service_usage',
-                    divination_type="Ицзин",
-                    metadata={'divination_id': divination_id, 'hexagram_id': random_hexagram_id, 'is_free': is_free}
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
-            except Exception as e:
-                logging.error(f"Error saving conversion: {e}", exc_info=True)
-
-        await update_user_activity_on_divination(user_id)
-        
-        follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
-        conversation_history = [
-            {"role": "user", "content": f"Мой вопрос: {question}"},
-            {"role": "assistant", "content": chatgpt_response}
-        ]
-        
-        data = cursor.get_data() or {}
-        data.update({
-            'divination_id': divination_id,
-            'is_free_divination': is_free,
-            'follow_up_count': 0,
-            'conversation_history': conversation_history,
-            'original_interpretation': chatgpt_response
-        })
-        cursor.change_data(data)
-
-        free_hint = _build_free_divinations_hint(free_remaining_after, was_free=is_free)
-        
-        await message.reply(
-            f"☯️ <b>Результат гадания по Ицзин</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{escape(question)}»</i>\n\n"
-            f"<b>Выпавшая гексаграмма:</b> {hexagram_name}\n\n"
-            f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
-            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню"
-            f"{free_hint}",
-            keyboard=_result_keyboard(free_limit_reached=free_limit_reached),
-            format='html'
-        )
-        
-    except Exception as e:
-        logging.error(f"Error in I-Ching divination: {e}", exc_info=True)
-        await message.reply("❌ Произошла ошибка при гадании. Попробуйте позже.", keyboard=make_back_to_menu_kb())
-        cursor.clear()
-        return
-    
-    finally:
-        try:
-            await bot.delete_message(processing_msg.body.mid)
-        except:
-            pass
-    
-    cursor.change_state(STATE_CHATTING)
-
-
-# ==================== Таро ====================
 
 async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, question: str, user_id: int):
     """Гадание на Таро — случайный расклад или WebApp для выбора карт"""
@@ -434,7 +304,7 @@ async def _do_tarot_divination(message: aiomax.Message, cursor: fsm.FSMCursor, q
         "Выберите способ гадания:\n"
         "• <b>🔮 Карты покажут сами</b> — случайный расклад\n"
         "• <b>✍️ Написать свои карты</b> — напишите названия трёх карт\n"
-        "• <b>🃏 Выбрать карты самой</b> — красивый интерфейс выбора",
+        "• <b>🃏 Выбрать карты самой</b> — выберите карты в приложении, ответ придёт в этот чат. В приложении нажмите «Выбрать карты для чата».",
         keyboard=kb,
         format='html'
     )
@@ -452,114 +322,8 @@ async def _finish_tarot_reading(
     data: dict,
     method: str = 'random',
 ) -> bool:
-    """Отправить карты, получить толкование, списать гадание."""
-    try:
-        await send_card_images(bot, chat_id, card_ids, as_media_group=True)
-
-        cards_info = []
-        positions = ["Прошлое", "Настоящее", "Будущее"]
-        for i, card_id in enumerate(card_ids):
-            card = get_card_info(card_id)
-            cards_info.append(f"{positions[i]}: {card['name']} — {card['meaning']}")
-
-        chatgpt_question = (
-            f"Вопрос пользователя: {question}\n\n"
-            f"Выпавшие карты:\n" + "\n".join(cards_info) + "\n\n"
-            f"{TAROT_USER_INSTRUCTION}"
-        )
-        chatgpt_response = await get_chatgpt_response_with_prompt(chatgpt_question, TAROT_SYSTEM_PROMPT)
-
-        balance_before = await get_user_balance(user_id)
-        is_free = balance_before and balance_before['free_divinations_remaining'] > 0 if balance_before else True
-
-        used = await use_divination(user_id)
-        if not used:
-            await bot.send_message(
-                "❌ Произошла ошибка при списании гадания.",
-                chat_id=chat_id,
-                keyboard=make_back_to_menu_kb(),
-            )
-            cursor.clear()
-            return False
-
-        balance_after = await get_user_balance(user_id)
-        free_remaining_after = (
-            balance_after['free_divinations_remaining'] if balance_after else None
-        )
-        free_limit_reached = bool(is_free and free_remaining_after == 0)
-        if free_limit_reached:
-            try:
-                await mark_paywall_reached(user_id)
-                await save_paywall_conversion(
-                    user_id=user_id,
-                    paywall_source="last_free_divination",
-                    metadata={'divination_type': 'Таро', 'method': method},
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
-            except Exception as e:
-                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
-
-        divination_id = await save_divination(
-            user_id=user_id, divination_type="Таро", question=question,
-            selected_cards=card_ids, interpretation=chatgpt_response, is_free=is_free
-        )
-
-        if divination_id:
-            try:
-                await save_conversion(
-                    user_id=user_id, conversion_type='service_usage', divination_type="Таро",
-                    metadata={
-                        'divination_id': divination_id,
-                        'card_ids': card_ids,
-                        'is_free': is_free,
-                        'method': method,
-                    }
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'service_usage'))
-            except Exception as e:
-                logging.error(f"Error saving conversion: {e}", exc_info=True)
-
-        await update_user_activity_on_divination(user_id)
-
-        conversation_history = [
-            {"role": "user", "content": f"Мой вопрос: {question}"},
-            {"role": "assistant", "content": chatgpt_response}
-        ]
-        data.update({
-            'divination_id': divination_id, 'is_free_divination': is_free,
-            'follow_up_count': 0, 'conversation_history': conversation_history,
-            'original_interpretation': chatgpt_response
-        })
-        cursor.change_data(data)
-
-        free_hint = _build_free_divinations_hint(free_remaining_after, was_free=is_free)
-        cards_names = [get_card_info(cid)['name'] for cid in card_ids]
-        await bot.send_message(
-            f"🃏 <b>Результат гадания на Таро</b>\n\n"
-            f"<b>Ваш вопрос:</b> <i>«{escape(question)}»</i>\n\n"
-            f"<b>Карты:</b> {', '.join(cards_names)}\n\n"
-            f"<b>Толкование:</b>\n{chatgpt_response}\n\n"
-            "💬 Хочешь уточнить расклад? Просто напиши свой вопрос.\n"
-            "🔮 Новый расклад — нажми ◀ В меню"
-            f"{free_hint}",
-            chat_id=chat_id,
-            keyboard=_result_keyboard(free_limit_reached=free_limit_reached),
-            format='html'
-        )
-
-        cursor.change_state(STATE_CHATTING)
-        return True
-
-    except Exception as e:
-        logging.error(f"Error in Tarot reading ({method}): {e}", exc_info=True)
-        await bot.send_message(
-            "❌ Произошла ошибка при гадании. Попробуйте ещё раз.",
-            chat_id=chat_id, keyboard=make_back_to_menu_kb()
-        )
-        cursor.clear()
-        return False
+    from main.webapp_chat import tarot
+    return await tarot(bot=bot, chat_id=chat_id, user_id=user_id, question=question, card_ids=card_ids, cursor=cursor, data=data, method=method)
 
 
 async def _safe_callback_answer(cb: aiomax.Callback, text: str) -> None:
@@ -868,94 +632,8 @@ async def handle_cancel_cards(cb: aiomax.Callback, cursor: fsm.FSMCursor):
 # ==================== Уточняющие вопросы (chatting) ====================
 
 async def _process_follow_up_message(message: aiomax.Message, cursor: fsm.FSMCursor):
-    """
-    Обработать одно сообщение как уточняющий вопрос по раскладу.
-    Используется из handle_follow_up и при первом уточнении после WebApp-гадания.
-    """
-    text = (message.content or "").strip()
-
-    # Defense in depth: menu labels are intents, never questions for the LLM.
-    if text in NAVIGATION_MESSAGES:
-        return
-    
-    if text.startswith("/"):
-        if text == "/cancel":
-            cursor.clear()
-            await message.reply("Вы вернулись в главное меню.", keyboard=make_back_to_menu_kb())
-        return
-
-    try:
-        text = validate_question_text(text)
-    except InvalidQuestionError as error:
-        await message.reply(str(error), keyboard=make_back_to_menu_kb())
-        return
-
-    await _save_question_reply_context(message)
-    
-    data = cursor.get_data() or {}
-    follow_up_count = data.get('follow_up_count', 0)
-    is_free = data.get('is_free_divination', True)
-    follow_up_limit = FOLLOW_UP_LIMIT_FREE if is_free else FOLLOW_UP_LIMIT_PAID
-    
-    if follow_up_count >= follow_up_limit:
-        user_id = message.sender.user_id
-        can_div, _ = await can_user_divinate(user_id)
-        if can_div:
-            await message.reply(
-                f"💬 Лимит уточняющих вопросов ({follow_up_limit}) исчерпан.\n\n"
-                "Нажми ◀ В меню, чтобы начать новый расклад.",
-                keyboard=make_back_to_menu_kb()
-            )
-        else:
-            try:
-                await mark_paywall_reached(user_id)
-                await save_paywall_conversion(
-                    user_id=user_id,
-                    paywall_source="follow_up_limit",
-                    metadata={'follow_up_limit': follow_up_limit},
-                )
-                import asyncio
-                asyncio.create_task(send_conversion_event(user_id, 'paywall'))
-            except Exception as e:
-                logging.error(f"Error saving paywall conversion: {e}", exc_info=True)
-            await message.reply(
-                f"💬 Лимит уточняющих вопросов ({follow_up_limit}) исчерпан.\n\n"
-                "Выбери пакет, чтобы сделать новый расклад 👇",
-                keyboard=make_payment_kb(),
-                format='html',
-            )
-        cursor.clear()
-        return
-    
-    conversation_history = data.get('conversation_history', [])
-    conversation_history.append({"role": "user", "content": text})
-    
-    system_prompt = FOLLOW_UP_SYSTEM_PROMPT
-    
-    try:
-        response = await get_chatgpt_response_with_history(conversation_history, system_prompt)
-        
-        conversation_history.append({"role": "assistant", "content": response})
-        data['conversation_history'] = conversation_history
-        data['follow_up_count'] = follow_up_count + 1
-        cursor.change_data(data)
-        
-        remaining = follow_up_limit - follow_up_count - 1
-        if remaining > 0:
-            footer = f"\n\n💬 Осталось уточняющих вопросов: {remaining}"
-        else:
-            footer = "\n\n⚠️ Это был последний уточняющий вопрос по раскладу."
-        
-        await message.reply(response + footer, keyboard=make_back_to_menu_kb(), format='html')
-        
-        divination_id = data.get('divination_id')
-        if divination_id:
-            full_interpretation = data.get('original_interpretation', '') + f"\n\n---\n💬 Уточнение: {text}\n{response}"
-            await update_divination_interpretation(divination_id, full_interpretation)
-        
-    except Exception as e:
-        logging.error(f"Error in follow-up question: {e}", exc_info=True)
-        await message.reply("❌ Ошибка при обработке вопроса. Попробуйте ещё раз.", keyboard=make_back_to_menu_kb())
+    from main.webapp_chat import followup
+    return await followup(message, cursor)
 
 
 async def handle_follow_up(message: aiomax.Message, cursor: fsm.FSMCursor):
@@ -980,6 +658,8 @@ async def _start_question_first_flow(
         return
 
     logging.info(f"New divination question from user {user_id}: {text[:50]}")
+    from main.database import delete_pending_question
+    await delete_pending_question(user_id)
     cursor.change_data({'question': text})
     cursor.change_state(STATE_CHOOSING_DIVINATION)
 
