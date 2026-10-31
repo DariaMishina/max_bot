@@ -210,7 +210,11 @@ async def perform(operation_id):
                     raise ServiceError('Расклады закончились. Выберите пакет в профиле.', 403)
                 cards = payload['cards']
                 if payload['kind'] == 'iching':
-                    cards = [str(random.randint(1, 64))]
+                    from handlers.hexagrams import get_all_available_hexagrams
+                    available = get_all_available_hexagrams()
+                    if not available:
+                        raise ServiceError('Сейчас нет гексаграмм с изображением.', 503)
+                    cards = [random.choice(available)]
                 elif payload['mode'] == 'random':
                     cards = random.sample(list(TAROT_CARDS), 3)
                 answer = await generate(payload, cards)

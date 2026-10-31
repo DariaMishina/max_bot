@@ -244,9 +244,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await get_user_balance(self.uid))['free_divinations_remaining'],3)
 
     async def test_iching(self):
+        from handlers.hexagrams import get_all_available_hexagrams
         result=await self.complete({'question':'Как поступить в этой ситуации?', 'kind':'iching'})
         self.assertEqual(result['divination_type'],'Ицзин')
         self.assertEqual(len(result['selected_cards']),1)
+        self.assertIn(result['selected_cards'][0], get_all_available_hexagrams())
 
     async def test_duplicate_or_unknown_cards(self):
         for cards in (['00-TheFool']*3, ['missing','00-TheFool','01-TheMagician']):
