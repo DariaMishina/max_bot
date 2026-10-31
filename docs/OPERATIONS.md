@@ -9,7 +9,7 @@ DeepSeek, оплатой через ЮKassa и отдельным Android-при
 |---|---|---|
 | MAX-бот | `bot.py` | polling, расклады, рассылки и локальный webhook-сервер |
 | Webhook/API бота | `webhook_server.py` | ЮKassa и `/api/webapp/*`, порт `8081` |
-| WebApp | `webapp/` | выбор карт в браузере |
+| WebApp | `webapp/`, `main/webapp_*.py` | мини-приложение бота в MAX |
 | Android API | `app_api_server.py` | отдельная авторизация, баланс, история и платежи, порт `8083` |
 | Android-клиент | `android/` | Kotlin + Jetpack Compose, пакет `ru.tarotsphere.app` |
 
@@ -59,12 +59,12 @@ git diff --check
 
 - `max-bot.service` запускает бота и локальный HTTP-сервер на `127.0.0.1:8081`.
 - `app-api.service` запускает Android API на `127.0.0.1:8083`.
-- nginx на `127.0.0.1:8084` маршрутизирует оба API через постоянный xTunnel.
-- WebApp и Android используют xTunnel; точная схема и команды проверки описаны
-  в [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md).
-- Внешний Render endpoint продолжает принимать уведомления ЮKassa и служит
-  резервным адресом WebApp. Настройка платежей описана в
-  [YOOKASSA_CHECKLIST.md](YOOKASSA_CHECKLIST.md).
+- nginx на `127.0.0.1:8084` отдаёт мини-приложение бота и staging API Android через один xTunnel.
+  Production API Android идёт через nginx `127.0.0.1:8094` и второй туннель.
+  Схема и проверки: [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md).
+- Сценарии и локальный запуск мини-приложения: [README-WEBAPP.md](../README-WEBAPP.md).
+- Render принимает уведомления ЮKassa. Адресом мини-приложения он не является.
+  Настройка платежей: [YOOKASSA_CHECKLIST.md](YOOKASSA_CHECKLIST.md).
 
 Не открывайте PostgreSQL в интернет по инструкции из старых документов. Доступ
 к БД должен быть ограничен фактически используемыми сервисами и сетями.
@@ -75,7 +75,7 @@ git diff --check
 
 - `.github/workflows/deploy.yml` — MAX-бот;
 - `.github/workflows/deploy-app-api.yml` — Android API;
-- `.github/workflows/pages.yml` — WebApp на GitHub Pages;
+- `.github/workflows/pages.yml` — копия `webapp/` на GitHub Pages; кабинет MAX указывает на xTunnel;
 - `.github/workflows/android.yml` — проверка Android debug build.
 
 Ручное изменение production-сервисов, миграции БД и переключение публичных URL

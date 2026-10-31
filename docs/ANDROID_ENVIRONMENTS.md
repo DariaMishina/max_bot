@@ -107,9 +107,13 @@ env-файлами и портами. Старый `app-api.service` выклю�
 Для production используется второй HTTPS origin:
 
 ```text
-https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com -> 127.0.0.1:8084 -> 127.0.0.1:8083 (staging)
+https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com -> 127.0.0.1:8084
+    /v1/ и /static/ (кроме /static/geks/) -> 127.0.0.1:8083 (staging)
+    / , /assets/ , /static/geks/ , /api/webapp/ -> бот 127.0.0.1:8081
 https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com -> 127.0.0.1:8094 -> 127.0.0.1:8093 (production)
 ```
+
+Первый адрес одновременно является мини-приложением бота MAX. Разбор маршрутов: [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md).
 
 Тестовые callback RuStore остаются на staging. Перед реальными продажами
 production callback указывает на production API. Его нельзя включать для

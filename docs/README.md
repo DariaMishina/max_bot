@@ -1,6 +1,6 @@
 # Карта проекта «Сфера Таро»
 
-Срез репозитория: 24 октября 2026. Начинать знакомство с этого файла.
+Срез репозитория: 24 октября 2026. Разделы WebApp обновлены 31 октября 2026. Начинать знакомство с этого файла.
 Основа: Python, Kotlin, WebApp, SQL, shell-скрипты, конфигурации развёртывания и существующие документы.
 Состояние серверов и RuStore приведено по датированным записям, без новой проверки VM/магазина.
 Все пути в тексте — от корня репозитория; ссылки открывают соответствующие файлы.
@@ -12,7 +12,7 @@
 | Часть | Что делает | Код / запуск | Данные и деньги |
 |---|---|---|---|
 | MAX-бот | Таро, Ицзин, карта дня, уточнения, консультации, рассылки | `bot.py`, `handlers/`, `main/`, `keyboards/` | `max_bot_db`, ЮKassa |
-| WebApp бота | Выбор карт в браузере внутри MAX | `webapp/` + `webhook_server.py` | Те же пользователи и баланс бота |
+| WebApp бота | Мини-приложение в MAX: расклады, история, карта дня, баланс | `webapp/`, `main/webapp_*.py`, `webhook_server.py` | Те же пользователи и баланс бота, `max_bot_db` |
 | Android | Самостоятельное приложение «Сфера Таро» из RuStore | `android/` + `app_api_server.py` + `app/` | Своя БД, аккаунты, баланс; RuStore Pay |
 | Backup | Архивирует БД с VM во внешнее хранилище | `scripts/backup_databases.sh`, systemd timer | VK Cloud S3, шифрование age |
 
@@ -49,13 +49,13 @@ WebApp — часть бота, а не Android-приложение и не е�
 
 ### WebApp и оплата бота
 
-`webapp/index.html`, `app.js`, `style.css`, `card-data.js` — статический интерфейс выбора карт.
-GitHub Pages публикует `webapp/`; выбранные карты уходят в `/api/webapp/*`, результат приходит в MAX.
-`webhook_server.py` обслуживает WebApp и `/webhook/yookassa`; может работать отдельным процессом на Render.
-Внутри `bot.py` HTTP-сервер запускается только при наличии обоих ключей ЮKassa.
-По [чек-листу ЮKassa](YOOKASSA_CHECKLIST.md), внешний платёжный callback остаётся на Render.
-`SERVICE_URL` нужен платёжному возврату; это не адрес Android API.
-Серверные изображения лежат в `static/`; `webapp/static/` содержит отдельную копию карт для Pages.
+Мини-приложение и его API открываются с одного адреса xTunnel. Интерфейс: `webapp/index.html`, `app.js`, `style.css`, `card-data.js`. Серверная логика: `main/webapp_api.py`, `main/webapp_service.py`.
+Три сценария: ответ целиком в чате, выбор карт в приложении с ответом в чате, вопрос и ответ только в приложении. В чат сначала уходит картинка карт, затем текст.
+Как запустить локально и что уже работает в боте: [README-WEBAPP.md](../README-WEBAPP.md).
+`webhook_server.py` отдаёт страницу, `/api/webapp/*` и `/webhook/yookassa`. Тот же процесс на Render принимает только внешний callback ЮKassa.
+По [чек-листу ЮKassa](YOOKASSA_CHECKLIST.md) этот callback остаётся на Render. Открытая страница оплаты баланс не меняет.
+`SERVICE_URL` — адрес возврата после оплаты, не адрес мини-приложения и не адрес Android API.
+Картинки чата и гексаграммы лежат в `static/`. Каталог карт интерфейса — в `webapp/card-data.js`.
 
 ## 3. Android: клиент и собственный сервер
 
@@ -100,15 +100,18 @@ Android API импортирует каталог `handlers/tarot_cards.py`, п�
 Текущая схема из конфигураций и записи о внедрении 20 октября:
 
 ```text
-Android / WebApp → постоянный xTunnel → nginx 127.0.0.1:8084
-                                      ├─ /v1/*, /static/* → App API :8083 → app_bot_db
-                                      └─ /api/webapp/*    → бот HTTP :8081 → max_bot_db
+Мини-приложение и staging Android
+  → https://01a0ba9c-….tunnel4.com → nginx 127.0.0.1:8084
+      ├─ / , /assets/ , /static/geks/ , /api/webapp/ → бот :8081 → max_bot_db
+      └─ /v1/ , остальной /static/                 → App API :8083 → app_bot_db
+Production Android
+  → https://01a16ef9-….tunnel4.com → nginx 127.0.0.1:8094 → API :8093
 ЮKassa → Render /webhook/yookassa → max_bot_db
 MAX → polling bot.py → max_bot_db
 ```
 
 Подробности: [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md), [nginx](../deploy/nginx-tarot-api-gateway.conf).
-Cloudflare — сохранённый резервный вариант; основной WebApp уже использует xTunnel.
+Cloudflare Quick Tunnel нужен только для телефона при локальной проверке тестового бота. Рабочее мини-приложение открывается с xTunnel.
 Python-серверы в коде слушают `0.0.0.0`, nginx — только loopback; сетевые ограничения на VM надо проверять отдельно.
 Наличие `127.0.0.1` в схеме upstream само по себе не закрывает порты Python-процессов снаружи.
 
@@ -208,7 +211,8 @@ Shell-скрипты не имеют единого загрузчика env: ba
 | `OLD_HOST`, `NEW_HOST`, `OLD_DB_*`, `NEW_DB_*`, `PSY_DB_*`, `SSH_KEY`, `PROJECT_DIR`, `DUMP_FILE` | Разовый `scripts/migrate_max_db.sh`; не повседневная конфигурация |
 | `MAXSTAT_API_TOKEN` | Присутствует локально; потребителя в исполняемом коде репозитория не найдено |
 
-`WEBAPP_API_URL` задаётся в HTML как JS-настройка, не env; fallback в `app.js` — Render.
+Мини-приложение вызывает относительный `/api/webapp/` на том же хосте. Отдельной настройки `WEBAPP_API_URL` нет.
+`WEBAPP_LOCAL`, `WEBAPP_ALLOWED_IDS`, `WEBAPP_DEMO` и `PUBLIC_BASE_URL` читает только локальный запускатель. В рабочем `.env` их не задают.
 Модель DeepSeek, тарифы, интервалы рассылок и часть URL заданы в коде: не вся конфигурация вынесена в env.
 
 ## 8. Что важно закрыть перед production Android
@@ -232,7 +236,7 @@ Shell-скрипты не имеют единого загрузчика env: ba
 - `scripts/test_app_api.sh` — старый гостевой smoke; при `APP_ALLOW_GUEST_AUTH=false` не годится для production-приёмки.
 - `scripts/test_app_stage1.py` и `test_deepseek_level0.py` — интеграционные прогоны, могут обращаться к БД/платному API.
 - В backup-runbook ранняя фраза «до включения timer» устарела; датированный статус ниже фиксирует внедрение.
-- WebApp API пока доверяет `user_id` без проверки подписи MAX; это отдельный долг бота, не авторизация Android.
+- Новые методы `/api/webapp/*` определяют пользователя по подписи initData. Старые `/api/webapp/cards` и `/api/webapp/pending-question` подпись не проверяют; текущий интерфейс их не вызывает. Это контур бота, не авторизация Android.
 - Комментарии ссылаются на отсутствующие `MIGRATION_TO_46.16.36.243.md` и `CONVERSIONS.md`; таких документов в рабочем дереве нет.
 
 ## 9. Как проверять и обновлять
@@ -247,7 +251,7 @@ Shell-скрипты не имеют единого загрузчика env: ba
 | Статистика бота | `internal_reports.sh`: пользователи, воронка, оплаты, баланс, reply-доставка |
 | Обновление бота | `.github/workflows/deploy.yml`: push подходящих файлов в main, restart `max-bot` |
 | Обновление App API | `deploy-app-api.yml`: Python-тесты, deploy staging; новые миграции требуют ручного применения |
-| Публикация WebApp | `pages.yml`: только `webapp/` на GitHub Pages |
+| Публикация WebApp | Рабочий адрес — xTunnel, деплой вместе с ботом. `pages.yml` ещё копирует `webapp/` на GitHub Pages, кабинет MAX этот адрес не использует |
 | Проверка Android в CI | `android.yml`: debug APK, unit-тесты, lint; не публикация release в RuStore |
 
 Оба серверных workflow используют один checkout на VM и общую очередь деплоя.
@@ -268,7 +272,9 @@ Shell-скрипты не имеют единого загрузчика env: ba
 | [OFFER_ANDROID_DRAFT.md](OFFER_ANDROID_DRAFT.md), [PRIVACY_POLICY_ANDROID_DRAFT.md](PRIVACY_POLICY_ANDROID_DRAFT.md) | Неопубликованные юридические черновики |
 | [DATABASE_BACKUP_PLAN.md](DATABASE_BACKUP_PLAN.md) | Backup/restore; актуальный зафиксированный статус — раздел от 18 октября |
 | [BROADCASTS.md](BROADCASTS.md) | Рассылки MAX-бота |
-| [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md) | Текущая схема gateway/xTunnel/WebApp |
+| [WEBAPP-BACKEND-FIX.md](WEBAPP-BACKEND-FIX.md) | Адреса xTunnel, nginx и граница с Android |
+| [README-WEBAPP.md](../README-WEBAPP.md) | Сценарии мини-приложения и локальный запуск |
+| [TEST_CHAT_AND_WEBAPP.md](TEST_CHAT_AND_WEBAPP.md) | Ручная проверка чата и приложения |
 | [YOOKASSA_CHECKLIST.md](YOOKASSA_CHECKLIST.md) | Платежи MAX-бота и Render |
 | [LANDING_METRIKA_README.md](LANDING_METRIKA_README.md) | Скрипт для внешнего лендинга `docs/landing_metrika_script.js` |
 | [PLAN_PHOTO_READING.md](PLAN_PHOTO_READING.md) | Будущая функция распознавания карт по фото, не готовая возможность |

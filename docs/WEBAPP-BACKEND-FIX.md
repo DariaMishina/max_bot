@@ -1,140 +1,85 @@
-# WebApp и Android API через xTunnel gateway
+# WebApp и Android API через xTunnel
 
-## Решение
-
-Используем уже оплаченный постоянный xTunnel и один локальный nginx-gateway.
-Основной публичный адрес — постоянный xTunnel. Cloudflare Quick Tunnel нельзя
-использовать как адрес клиента: его URL меняется при перезапуске. Служба
-Cloudflare пока сохранена как резервная и не входит в основной маршрут.
+Мини-приложение бота и staging API Android открываются с одного постоянного адреса. Production API Android идёт через другой туннель. Webhook ЮKassa остаётся на Render.
 
 ```text
-GitHub Pages / Android
-          |
-          v
 https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com
-          |
-          v
-      xTunnel 4.0.0
-          |
-          v
- nginx 127.0.0.1:8084
-      |              |
-      |              +-- /api/webapp/* --> max-bot 127.0.0.1:8081
-      |
-      +-- /v1/*, /static/* --> app-api 127.0.0.1:8083
+        |
+        v
+   xTunnel -> nginx 127.0.0.1:8084
+        |
+        +-- / , /assets/ , /static/geks/ , /api/webapp/
+        |       -> max-bot 127.0.0.1:8081 -> max_bot_db
+        |
+        +-- /v1/ , остальной /static/
+                -> app-api 127.0.0.1:8083 -> app_bot_db
+
+https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com
+        |
+        v
+   xTunnel -> nginx 127.0.0.1:8094
+        |
+        +-- /v1/ , /static/
+                -> production API 127.0.0.1:8093 -> app_bot_prod_db
+
+ЮKassa -> https://max-bot-awtw.onrender.com/webhook/yookassa -> max_bot_db
 ```
 
-Почему выбран gateway:
+Конфиг staging-шлюза: `deploy/nginx-tarot-api-gateway.conf`. Production Android: `deploy/nginx-tarot-api-production.conf`. Порты nginx слушают только loopback.
 
-- одна лицензия xTunnel обслуживает только один активный локальный порт;
-- Android API и бот остаются независимыми процессами со своими портами;
-- nginx выполняет только статическую маршрутизацию и работает под systemd;
-- порт gateway слушает только loopback и не открывается в firewall;
-- постоянный URL xTunnel не меняется после перезапуска VM или сервиса.
+Один процесс xTunnel с одной лицензией занимает один локальный порт, поэтому бот и staging API сходятся на nginx, а не на двух туннелях с одним ключом. Обработчики WebApp не переносятся в `app_api_server.py`: у приложения другие пользователи, база и оплата.
 
-Не переносим обработчики WebApp в `app_api_server.py`: WebApp использует БД и
-контекст бота, а Android API имеет отдельную авторизацию и жизненный цикл.
-Не запускаем второй xTunnel с той же лицензией: опция `--force` заменит уже
-активный туннель (`last launch wins`) и отключит Android API.
-
-## Текущий статус (проверено 20 октября 2026)
-
-- nginx установлен и включён в автозапуск на VM;
-- gateway слушает только `127.0.0.1:8084`;
-- xTunnel переключён с `127.0.0.1:8083` на gateway `127.0.0.1:8084`;
-- публичные `/v1/docs`, `/api/webapp/pending-question` и CORS preflight работают;
-- неизвестные публичные пути возвращают `404`;
-- `webapp/index.html` использует постоянный xTunnel URL;
-- WebApp публикуется отдельным GitHub Pages workflow;
-- `cloudflared-tunnel.service` остаётся активным как legacy/fallback, но клиент
-  на его временный URL не настроен;
-- Render остаётся endpoint ЮKassa и fallback WebApp, его нельзя отключать вместе
-  с Cloudflare или xTunnel.
-
-## Порты и ответственность
+## Кто что обслуживает
 
 | Компонент | Адрес | Назначение |
 |---|---|---|
-| `max-bot.service` | `127.0.0.1:8081` | `/api/webapp/*`, webhook ЮKassa |
-| `app-api.service` | `127.0.0.1:8083` | `/v1/*`, `/static/*` |
-| nginx gateway | `127.0.0.1:8084` | маршрутизация двух API |
-| `xtunnel-app.service` | постоянный HTTPS URL | туннель до `127.0.0.1:8084` |
+| `max-bot.service` | `127.0.0.1:8081` | страница WebApp, `/api/webapp/*`, локальная копия webhook ЮKassa |
+| `app-api` staging | `127.0.0.1:8083` | `/v1/*`, картинки приложения |
+| nginx | `127.0.0.1:8084` | общий вход бота и staging API |
+| nginx production | `127.0.0.1:8094` | только production API Android |
+| Render | `max-bot-awtw.onrender.com` | внешний webhook ЮKassa |
 
-Webhook ЮKassa не переносим автоматически. Его действующий URL и настройку в
-ЮKassa меняют только отдельной задачей после проверки платежей.
+Внешний callback ЮKassa на xTunnel не переносят. `SERVICE_URL` в `.env` бота остаётся адресом Render: это адрес возврата после оплаты. Страница мини-приложения им не задаётся.
 
-## Исторический порядок внедрения
+GitHub Pages публикует копию `webapp/`, но кабинет MAX указывает на адрес `01a0ba9c-…`. Интерфейс запрашивает API на том же хосте.
 
-1. Установить nginx, не меняя работающий xTunnel.
-2. Установить `deploy/nginx-tarot-api-gateway.conf` и запустить gateway на 8084.
-3. Проверить локально все маршруты через `http://127.0.0.1:8084`.
-4. Изменить цель `xtunnel-app.service` с 8083 на 8084 и перезапустить только
-   `xtunnel-app`.
-5. Проверить Android API через постоянный публичный URL.
-6. Проверить WebApp API через тот же URL, не создавая гадание.
-7. В `webapp/index.html` заменить временный Cloudflare URL на постоянный xTunnel.
-8. Опубликовать WebApp через GitHub Pages.
-9. Отключать `cloudflared-tunnel.service` только отдельной задачей после проверки,
-   что ни один клиент не использует его текущий URL.
-
-Эти шаги уже выполнены до публикации WebApp. Раздел оставлен как схема повторного
-развёртывания и отката, а не как список незавершённых работ.
+Cloudflare Quick Tunnel используется только чтобы открыть локальный порт `8091` с телефона при проверке тестового бота. Рабочий адрес мини-приложения он не заменяет.
 
 ## Проверки
 
-Локально на VM:
+На VM:
 
 ```bash
 curl -fsS http://127.0.0.1:8081/health
 curl -fsS http://127.0.0.1:8083/v1/docs
 curl -fsS http://127.0.0.1:8084/gateway-health
 curl -fsS http://127.0.0.1:8084/v1/docs
-curl -sS -i 'http://127.0.0.1:8084/api/webapp/pending-question?user_id=0'
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8084/
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8084/api/webapp/catalog
 ```
 
-Через xTunnel после переключения:
+Ожидается: `/` отдаёт HTML мини-приложения, `/api/webapp/catalog` без заголовка `X-Max-Init-Data` отвечает `401`, `/v1/docs` — JSON Android API.
+
+Снаружи:
 
 ```bash
 PUBLIC_URL='https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com'
+curl -fsS -o /dev/null -w '%{http_code}\n' "$PUBLIC_URL/"
 curl -fsS "$PUBLIC_URL/v1/docs"
-curl -sS -i "$PUBLIC_URL/api/webapp/pending-question?user_id=0"
+curl -fsS https://max-bot-awtw.onrender.com/health
 ```
 
-Ожидается:
+Последняя команда проверяет webhook ЮKassa, а не мини-приложение. Ответ — `OK`.
 
-- `/v1/docs` возвращает JSON Android API;
-- `/api/webapp/pending-question` возвращает JSON, а не `404`/HTML;
-- CORS-заголовок WebApp API содержит `Access-Control-Allow-Origin: *`;
-- `app-api`, `max-bot`, nginx и `xtunnel-app` имеют статус `active`.
+Новые методы `/api/webapp/*` требуют подпись initData. Старые `/api/webapp/cards` и `/api/webapp/pending-question` подпись не проверяют и текущим интерфейсом не вызываются. Меняющие данные запросы дополнительно сверяют заголовок `Origin` с тем же хостом.
 
-## Откат
+## Откат шлюза
 
-Если после переключения публичные проверки не проходят:
+Если после смены цели туннеля staging API перестал открываться:
 
-1. вернуть `xtunnel-app.service` на `127.0.0.1:8083`;
-2. выполнить `systemctl daemon-reload` и перезапустить `xtunnel-app`;
-3. убедиться, что публичный `/v1/docs` снова работает;
-4. не менять URL опубликованного WebApp;
-5. nginx оставить для диагностики или остановить отдельно.
+1. Вернуть `xtunnel-app.service` на прежний локальный адрес.
+2. Выполнить `systemctl daemon-reload` и перезапустить только эту службу.
+3. Проверить публичный `/v1/docs`.
+4. Адрес в кабинете MAX и webhook ЮKassa этой операцией не менять.
 
-Откат не требует изменений БД и не затрагивает процессы `max-bot` и `app-api`.
-
-## Безопасность WebApp API
-
-Текущие `/api/webapp/*` принимают `user_id`, а подпись `init_data` пока не
-проверяют. Переход на постоянный URL не должен расширять набор маршрутов: nginx
-пропускает только `/api/webapp/*`, `/v1/*` и `/static/*`. Проверку подписи MAX
-нужно реализовать отдельным изменением до дальнейшего расширения WebApp API.
-
-## Эксплуатация
-
-```bash
-systemctl is-active max-bot app-api nginx xtunnel-app
-sudo nginx -t
-sudo journalctl -u nginx -u xtunnel-app --since '15 minutes ago' --no-pager
-```
-
-Срок и состояние лицензии xTunnel нужно контролировать вместе с внешним health
-endpoint. Ключ остаётся только в
-`/home/dariamishina/.local/share/xtunnel/license.env` и не добавляется в
-репозиторий.
+Откат не трогает базы и процессы `max-bot` и `app-api`.
