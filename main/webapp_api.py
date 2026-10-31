@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from contextlib import suppress
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -264,9 +265,22 @@ async def index(request):
     return web.FileResponse(ROOT / 'webapp/index.html', headers={'Cache-Control': 'no-cache'})
 
 
+async def _serve_operations():
+    """Schema init must not block the YooKassa port. Render marks the deploy
+    failed when Postgres is slow, so retry in the background."""
+    while True:
+        try:
+            await service.initialize()
+            await service.worker()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception('WebApp schema init failed; retrying')
+            await asyncio.sleep(5)
+
+
 async def lifecycle(app):
-    await service.initialize()
-    task = asyncio.create_task(service.worker())
+    task = asyncio.create_task(_serve_operations())
     yield
     task.cancel()
     with suppress(asyncio.CancelledError):

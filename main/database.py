@@ -1,6 +1,7 @@
 """
 Модуль для работы с базой данных PostgreSQL
 """
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 import asyncpg
@@ -28,11 +29,19 @@ class Database:
     """Класс для работы с базой данных"""
     
     _pool: Optional[asyncpg.Pool] = None
+    _pool_lock: Optional[asyncio.Lock] = None
     
     @classmethod
     async def get_pool(cls) -> asyncpg.Pool:
         """Получить пул подключений к БД"""
-        if cls._pool is None:
+        if cls._pool is not None:
+            return cls._pool
+        loop = asyncio.get_running_loop()
+        if cls._pool_lock is None or getattr(cls._pool_lock, '_loop', None) is not loop:
+            cls._pool_lock = asyncio.Lock()
+        async with cls._pool_lock:
+            if cls._pool is not None:
+                return cls._pool
             try:
                 # Получаем значения с защитой (SecretStr требует явного вызова get_secret_value)
                 db_user = config.db_user.get_secret_value() if hasattr(config.db_user, 'get_secret_value') else config.db_user
@@ -41,14 +50,19 @@ class Database:
                 # Логируем параметры подключения (без пароля и пользователя для безопасности)
                 logging.info(f"Connecting to database: host={config.db_host}, port={config.db_port}, database={config.db_name}")
                 
+                # Python 3.14 on Render rejects the server certificate (unknown ca)
+                # and the deploy dies before the port opens. Non-SSL is allowed by
+                # pg_hba; the password is still sent via SCRAM.
                 cls._pool = await asyncpg.create_pool(
                     host=config.db_host,
                     port=config.db_port,
                     database=config.db_name,
                     user=db_user,
                     password=db_password,
+                    ssl=False,
                     min_size=2,
                     max_size=10,
+                    timeout=20,
                     command_timeout=60
                 )
                 logging.info("Database connection pool created successfully")
@@ -66,6 +80,7 @@ class Database:
         if cls._pool:
             await cls._pool.close()
             cls._pool = None
+            cls._pool_lock = None
             logging.info("Database connection pool closed")
     
     @classmethod

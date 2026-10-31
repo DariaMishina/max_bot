@@ -521,16 +521,8 @@ async def start_webhook_server(port: int = None):
 
     logging.info(f"Starting webhook server on port {port}")
 
-    try:
-        pool = await Database.get_pool()
-        if pool:
-            logging.info("Database connection pool initialized successfully")
-        else:
-            logging.warning("Database connection pool is None")
-    except Exception as e:
-        logging.error(f"Failed to initialize database pool: {e}", exc_info=True)
-        logging.warning("Continuing without database pool - will retry on first request")
-
+    # Listen first. A database timeout used to exit the process before the
+    # port opened, so Render kept the YooKassa webhook on the previous deploy.
     app = create_webhook_app()
 
     @web.middleware
