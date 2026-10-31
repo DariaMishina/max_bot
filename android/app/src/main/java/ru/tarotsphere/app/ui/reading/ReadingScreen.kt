@@ -18,6 +18,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.core.text.HtmlCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.ui.components.*
@@ -29,7 +31,7 @@ private fun ReadingText(value: String) {
         val plain = HtmlCompat.fromHtml(value.replace("\n", "<br>"), HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
         emphasizeReadingSections(plain)
     }
-    SelectionContainer { Text(formatted, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface) }
+    SelectionContainer { Text(formatted, fontFamily = ReadingSerif, fontSize = 22.sp, lineHeight = 29.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface) }
 }
 
 private val ReadingSectionHeader = Regex(
@@ -59,49 +61,54 @@ fun ReadingScreen(viewModel: ReadingViewModel, onBack: () -> Unit, onNew: () -> 
 }
 
 @Composable
-private fun ReadingContent(
+internal fun ReadingContent(
     state: ReadingUiState, onBack: () -> Unit, onNew: () -> Unit, onShop: () -> Unit,
     onRefresh: () -> Unit, onQuestion: (String) -> Unit, onSend: () -> Unit,
 ) {
     val focus = LocalFocusManager.current
     val colors = MaterialTheme.colorScheme
-    SphereScreen {
-        TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp)) {
+    ReadingPage {
+        TextButton(onClick = onBack, colors = ButtonDefaults.textButtonColors(containerColor = colors.surface.copy(alpha = .92f)), modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Назад")
         }
-        SphereHeader("Ваше толкование", "Три карты — один взгляд на вашу ситуацию", "Время прислушаться к себе")
+        ReadingHero()
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
         state.error?.let { StatusPanel("Не удалось обновить расклад", it, StatusTone.Error, onRefresh) }
         if (state.offline) StatusPanel("Сохранённый расклад", "Для новых уточняющих вопросов понадобится интернет.", onRetry = onRefresh)
         state.reading?.let { reading ->
-            WorkshopSheet {
-                Text("Ваш вопрос", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
-                Text(reading.question, style = MaterialTheme.typography.titleLarge)
-            }
-            WorkshopSheet {
+            ReadingPaper {
+                Text("ВАШ ВОПРОС", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMedium, letterSpacing = 1.4.sp, color = colors.secondary)
+                Text(reading.question, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    fontFamily = ReadingSerif, fontWeight = FontWeight.SemiBold, fontSize = 26.sp,
+                    lineHeight = 30.sp, color = ReadingWine)
                 ReadingCards(reading.cards)
-                WorkshopDivider()
-                SectionHeading("Что говорят карты", "Персональная ИИ-интерпретация")
+                ReadingRule()
+                ReadingSectionTitle("Что говорят карты")
+                Text("Персональная ИИ-интерпретация", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall, color = colors.secondary)
                 ReadingText(reading.interpretation)
-                Text("Решения остаются за вами.", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                ReadingRule()
+                Text("Решения остаются за вами.", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    fontFamily = ReadingSerif, fontSize = 21.sp, lineHeight = 26.sp, color = colors.secondary)
             }
-            SphereHeader("Продолжим диалог?", "Уточните то, что важно именно вам", "Уточнения к раскладу")
+            ReadingSectionTitle("Уточнения к раскладу")
             Text("Доступно вопросов: ${reading.followUpsRemaining}", style = MaterialTheme.typography.labelLarge, color = colors.secondary)
             reading.followUps.forEachIndexed { index, followUp ->
-                WorkshopSheet {
+                ReadingPaper {
                     Text("Ваш вопрос · ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                     Text(followUp.question, style = MaterialTheme.typography.titleLarge, color = colors.primary)
                 }
-                WorkshopSheet(olive = true) {
+                ReadingPaper(olive = true) {
                     Text("Ответ к раскладу", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                     ReadingText(followUp.answer)
                 }
             }
             if (reading.followUpsRemaining > 0 || state.retryPending) {
-                WorkshopSheet(olive = true) {
-                    SectionHeading("Что ещё хочется понять?")
+                ReadingPaper(olive = true) {
+                    ReadingSectionTitle("Продолжим диалог?")
                     QuestionField(state.question, onQuestion, label = "Ваш уточняющий вопрос", minLines = 2,
                         enabled = !state.sending && !state.retryPending)
                     if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {

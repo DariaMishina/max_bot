@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
+        <activity android:name=".ReadingReviewActivity" android:exported="true"
+            android:label="Проверка дизайна — демо" />
         <!-- No production OAuth callback registration or payment SDK initialization. -->
         <activity android:name="com.vk.id.internal.auth.RedirectUriReceiverActivity"
             tools:node="remove" />
