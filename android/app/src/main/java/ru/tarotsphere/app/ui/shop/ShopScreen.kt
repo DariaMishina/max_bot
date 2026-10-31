@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.BuildConfig
@@ -57,7 +58,7 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                     ) { selectedId = pack.id; consultation = false }
                 }
                 if (BuildConfig.DEBUG) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    WorkshopDivider()
                     SectionHeading("Лично с Дианой", "Индивидуальная консультация с тарологом и вниманием к вашей ситуации.")
                     catalog.consultations.forEach { pack ->
                         PackageCard(
@@ -68,13 +69,13 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                             emphasized = true,
                         ) { selectedId = pack.id; consultation = true }
                     }
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Только для проверки", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                    WorkshopSheet {
+                            Text("Только для проверки", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                             Text(
                                 "В debug-сборке контакт открывается без оплаты. В обычной версии он появится только после подтверждённой покупки консультации.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary,
                             )
                             SecondaryAction("Написать Диане — тест", onClick = {
                                 val url = catalog.tarologistUrl
@@ -84,7 +85,6 @@ fun ShopScreen(viewModel: ShopViewModel, exhausted: Boolean = false) {
                                     runCatching { uriHandler.openUri(url) }.exceptionOrNull()?.let { "Не удалось открыть контакт. Попробуйте позже." }
                                 }
                             })
-                        }
                     }
                 }
             }

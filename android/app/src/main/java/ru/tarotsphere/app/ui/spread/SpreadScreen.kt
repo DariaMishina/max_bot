@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.tooling.preview.Preview
@@ -23,6 +24,7 @@ import ru.tarotsphere.app.domain.model.CardSelectionMode
 import ru.tarotsphere.app.domain.model.TarotCard
 import ru.tarotsphere.app.domain.validation.isMeaningfulQuestion
 import ru.tarotsphere.app.ui.components.*
+import ru.tarotsphere.app.ui.theme.InkWine
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 
 @Composable
@@ -111,38 +113,42 @@ private fun SpreadContent(
         }
         if (editingSetup || !isMeaningfulQuestion(state.question)) {
             SphereHeader("О чём спросим карты?", "Один вопрос. Три карты. Новый взгляд.", "Ваш личный расклад")
-            WorkshopStep("01", "Ваш вопрос")
-            QuestionField(
-                state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
-                placeholder = "На что обратить внимание в отношениях?",
-                onImeDone = {
-                    focus.clearFocus()
-                    keyboard?.hide()
-                    scope.launch { delay(120); modeRequester.bringIntoView() }
-                },
-            )
-            if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
-                Text(
-                    "Напишите вопрос или тему словами.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.error,
+            WorkshopSheet {
+                WorkshopStep("01", "Ваш вопрос")
+                QuestionField(
+                    state.question, onQuestion, label = "Ваш вопрос", enabled = editable, minLines = 2, maxLines = 5,
+                    placeholder = "На что обратить внимание в отношениях?",
+                    onImeDone = {
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        scope.launch { delay(120); modeRequester.bringIntoView() }
+                    },
                 )
-            }
-            Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                WorkshopStep("02", "Как откроем карты?")
-                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ChoiceOption("Довериться колоде", "Три случайные карты для вашего вопроса", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM); editingSetup = true }, editable)
-                    ChoiceOption("Выбрать интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
-                    ChoiceOption("Указать свои карты", "Выберите названия карт вашей колоды", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
+                if (state.question.isNotBlank() && !isMeaningfulQuestion(state.question)) {
+                    Text(
+                        "Напишите вопрос или тему словами.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.error,
+                    )
+                }
+                Column(Modifier.bringIntoViewRequester(modeRequester), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    WorkshopStep("02", "Как откроем карты?")
+                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ChoiceOption("Довериться колоде", "Три случайные карты для вашего вопроса", state.mode == CardSelectionMode.RANDOM, { onMode(CardSelectionMode.RANDOM); editingSetup = true }, editable)
+                        ChoiceOption("Выбрать интуитивно", "Откройте три из девяти закрытых карт", state.mode == CardSelectionMode.INTUITIVE, { onMode(CardSelectionMode.INTUITIVE); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
+                        ChoiceOption("Указать свои карты", "Выберите названия карт вашей колоды", state.mode == CardSelectionMode.NAMED, { onMode(CardSelectionMode.NAMED); editingSetup = !isMeaningfulQuestion(state.question) }, editable)
+                    }
                 }
             }
         } else {
             SphereHeader(if (state.mode == CardSelectionMode.INTUITIVE) "Откройте три карты" else "Ваша колода",
                 "Прошлое, настоящее и будущее вашего вопроса", "Ваш личный расклад")
             WorkshopSheet {
-                Text("Ваш вопрос", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
-                Text(state.question, style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = { editingSetup = true }, enabled = editable) { Text("Изменить вопрос или способ выбора") }
+                Text("Ваш вопрос", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+                Text(state.question, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.titleLarge, color = InkWine)
+                TextButton(onClick = { editingSetup = true }, enabled = editable, modifier = Modifier.fillMaxWidth()) { Text("Изменить вопрос или способ выбора") }
             }
         }
         if (state.mode == CardSelectionMode.INTUITIVE) {
@@ -169,7 +175,7 @@ private fun SpreadContent(
         }
         if (state.mode == CardSelectionMode.NAMED) {
             WorkshopSheet {
-                SphereHeader("Карты вашего расклада", "Начните вводить название и выберите карту из подсказок.")
+                SectionHeading("Карты вашего расклада", "Начните вводить название и выберите карту из подсказок.")
                 if (state.loadingCatalog) LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.secondary)
                 listOf("Прошлое", "Настоящее", "Будущее").forEachIndexed { index, position ->
                     NamedCardField(
@@ -216,6 +222,7 @@ private fun NamedCardField(
             supportingText = { if (selectedId != null) Text("Карта выбрана") else Text("Выберите карту из подсказок") },
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
             shape = MaterialTheme.shapes.medium,
+            colors = workshopFieldColors(),
         )
         DropdownMenu(expanded = focused && enabled && suggestions.isNotEmpty(), onDismissRequest = { focused = false }) {
             suggestions.forEach { card ->

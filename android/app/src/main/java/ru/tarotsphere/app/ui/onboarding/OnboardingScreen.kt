@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.contentDescription
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.R
 import ru.tarotsphere.app.ui.components.*
+import ru.tarotsphere.app.ui.theme.InkWine
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 
 private data class OnboardingPage(val title: String, val body: String)
@@ -61,8 +62,8 @@ fun OnboardingScreen(onFinished: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { Pages.size })
     val scope = rememberCoroutineScope()
     val last = pagerState.currentPage == Pages.lastIndex
-    Box(Modifier.fillMaxSize().workshopPaper().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize().padding(horizontal = 24.dp)) {
+    BotanicalBackdrop {
+        Column(Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 WorkshopBrand(Modifier.size(44.dp))
                 Spacer(Modifier.width(8.dp))
@@ -75,10 +76,10 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                     WorkshopDivider()
                     Spacer(Modifier.height(20.dp))
                     Text(Pages[index].title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.displaySmall,
-                        textAlign = TextAlign.Center)
+                        color = InkWine, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(16.dp))
                     Text(Pages[index].body, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                        color = MaterialTheme.colorScheme.secondary, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                 }
             }

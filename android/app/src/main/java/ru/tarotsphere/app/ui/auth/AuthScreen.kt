@@ -36,6 +36,7 @@ import ru.tarotsphere.app.ui.components.SphereHeader
 import ru.tarotsphere.app.ui.components.SphereScreen
 import ru.tarotsphere.app.ui.components.StatusPanel
 import ru.tarotsphere.app.ui.components.StatusTone
+import ru.tarotsphere.app.ui.components.workshopFieldColors
 import ru.tarotsphere.app.ui.session.SessionUiState
 import ru.tarotsphere.app.ui.theme.TarotSphereTheme
 import ru.tarotsphere.app.BuildConfig
@@ -107,6 +108,7 @@ fun AuthScreen(
                 }
                 OutlinedTextField(value = state.login, onValueChange = onLoginChange,
                     shape = MaterialTheme.shapes.medium,
+                    colors = workshopFieldColors(),
                     label = { Text("Логин") },
                     supportingText = {
                         Text("3–64: латинские буквы, цифры, _ . @ -; регистр не важен")
@@ -140,6 +142,7 @@ fun AuthScreen(
                     Text("Или продолжите по email", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(
                         shape = MaterialTheme.shapes.medium,
+                        colors = workshopFieldColors(),
                         value = state.email,
                         onValueChange = onEmailChange,
                         label = { Text("Электронная почта") },
@@ -157,6 +160,7 @@ fun AuthScreen(
             } else {
                 OutlinedTextField(
                     shape = MaterialTheme.shapes.medium,
+                    colors = workshopFieldColors(),
                     value = state.code,
                     onValueChange = onCodeChange,
                     label = { Text("Код из письма") },
@@ -189,6 +193,7 @@ fun PasswordField(value: String, onChange: (String) -> Unit, label: String, enab
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
         shape = MaterialTheme.shapes.medium,
+        colors = workshopFieldColors(),
         singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),

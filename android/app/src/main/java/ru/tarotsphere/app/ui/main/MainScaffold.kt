@@ -43,6 +43,7 @@ import ru.tarotsphere.app.ui.shop.RuStorePurchaseLauncher
 import ru.tarotsphere.app.ui.spread.SpreadScreen
 import ru.tarotsphere.app.ui.spread.SpreadViewModel
 import ru.tarotsphere.app.ui.theme.CreamMuted
+import ru.tarotsphere.app.ui.theme.FrameGold
 import ru.tarotsphere.app.ui.theme.Gold
 import ru.tarotsphere.app.ui.theme.Night
 import ru.tarotsphere.app.ui.theme.NightElevated
@@ -69,7 +70,7 @@ fun MainScaffold(container: AppContainer, onSessionEnded: () -> Unit) {
         bottomBar = {
             if (!WindowInsets.isImeVisible) {
                 Column {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(color = FrameGold.copy(alpha = .45f), thickness = .7.dp)
                     NavigationBar(containerColor = NightElevated, tonalElevation = 0.dp) {
                         Tabs.forEachIndexed { index, tab ->
                             NavigationBarItem(

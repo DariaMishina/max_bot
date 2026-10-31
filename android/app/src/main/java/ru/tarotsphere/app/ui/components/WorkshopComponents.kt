@@ -2,7 +2,6 @@ package ru.tarotsphere.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -20,6 +19,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.semantics.Role
@@ -30,20 +30,26 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import ru.tarotsphere.app.ui.theme.FrameGold
+import ru.tarotsphere.app.ui.theme.InkWine
+import ru.tarotsphere.app.ui.theme.WorkshopSerif
+import java.util.Locale
 
 object WorkshopSpacing {
-    val screen = 20.dp
-    val section = 24.dp
-    val item = 12.dp
+    val screen = 16.dp
+    val section = 20.dp
+    val item = 16.dp
     val maxWidth = 600.dp
 }
 
 @Composable
 fun SphereScreen(scrollState: ScrollState = rememberScrollState(), content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().workshopPaper().imePadding(), contentAlignment = Alignment.TopCenter) {
+    BotanicalBackdrop {
         Column(
             Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxWidth().fillMaxHeight()
-                .verticalScroll(scrollState).padding(WorkshopSpacing.screen),
+                .verticalScroll(scrollState)
+                .padding(horizontal = WorkshopSpacing.screen)
+                .padding(top = 8.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(WorkshopSpacing.section),
             content = content,
         )
@@ -55,13 +61,10 @@ fun SphereLazyScreen(
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(WorkshopSpacing.item),
     content: LazyListScope.() -> Unit,
 ) {
-    Box(
-        Modifier.fillMaxSize().workshopPaper().imePadding(),
-        contentAlignment = Alignment.TopCenter,
-    ) {
+    BotanicalBackdrop {
         LazyColumn(
             modifier = Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize(),
-            contentPadding = PaddingValues(WorkshopSpacing.screen),
+            contentPadding = PaddingValues(start = WorkshopSpacing.screen, end = WorkshopSpacing.screen, top = 8.dp, bottom = 28.dp),
             verticalArrangement = verticalArrangement,
             content = content,
         )
@@ -70,30 +73,75 @@ fun SphereLazyScreen(
 
 @Composable
 fun SphereHeader(title: String, subtitle: String? = null, eyebrow: String? = null) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            WorkshopBranch(Modifier.size(54.dp, 38.dp))
-            Text(eyebrow ?: "Сфера Таро", Modifier.weight(1f), textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMedium, letterSpacing = 1.sp,
-                color = MaterialTheme.colorScheme.secondary)
-            WorkshopBranch(Modifier.size(54.dp, 38.dp))
+    val colors = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            (eyebrow ?: "Сфера Таро").uppercase(Locale.forLanguageTag("ru")),
+            letterSpacing = 2.sp,
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.secondary,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            title,
+            Modifier.fillMaxWidth().semantics { heading() },
+            fontFamily = WorkshopSerif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 40.sp,
+            lineHeight = 44.sp,
+            letterSpacing = (-.5).sp,
+            color = InkWine,
+            textAlign = TextAlign.Center,
+        )
+        subtitle?.let {
+            Text(
+                it,
+                Modifier.fillMaxWidth(),
+                fontFamily = WorkshopSerif,
+                fontWeight = FontWeight.Medium,
+                fontSize = 20.sp,
+                lineHeight = 26.sp,
+                textAlign = TextAlign.Center,
+                color = colors.secondary,
+            )
         }
-        Text(title, Modifier.fillMaxWidth().semantics { heading() }, textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
-        subtitle?.let { Text(it, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        WorkshopDivider(Modifier.padding(horizontal = 36.dp))
+        WorkshopDivider(Modifier.padding(horizontal = 16.dp))
     }
 }
 
 @Composable
-fun SectionHeading(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+fun SectionHeading(title: String, subtitle: String? = null, modifier: Modifier = Modifier, centered: Boolean = true) {
+    val align = if (centered) TextAlign.Center else TextAlign.Start
+    Column(
+        modifier.fillMaxWidth(),
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            title,
+            Modifier.fillMaxWidth().semantics { heading() },
+            textAlign = align,
+            fontFamily = WorkshopSerif,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 28.sp,
+            lineHeight = 32.sp,
+            color = InkWine,
+        )
         subtitle?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                it,
+                Modifier.fillMaxWidth(),
+                textAlign = align,
+                fontFamily = WorkshopSerif,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
+                lineHeight = 24.sp,
+                color = MaterialTheme.colorScheme.secondary,
+            )
         }
     }
 }
@@ -127,20 +175,27 @@ fun ChoiceOption(title: String, description: String, selected: Boolean, onClick:
     val colors = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth().selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
-        color = if (selected) colors.primaryContainer else colors.surface,
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) colors.primary else colors.outlineVariant),
+        color = Color(0xFFFFF9EE),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) FrameGold else FrameGold.copy(alpha = .35f)),
     ) {
         Row(Modifier.heightIn(min = 72.dp).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = if (enabled) colors.onSurface else colors.onSurfaceVariant)
-                Text(description, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = if (enabled) InkWine else colors.onSurfaceVariant)
+                Text(description, style = MaterialTheme.typography.bodyMedium, color = colors.secondary)
             }
             Spacer(Modifier.width(12.dp))
             RadioButton(selected = selected, onClick = null, enabled = enabled)
         }
     }
 }
+
+@Composable
+fun workshopFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surface,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+)
 
 @Composable
 fun QuestionField(
@@ -156,11 +211,7 @@ fun QuestionField(
         keyboardOptions = KeyboardOptions(imeAction = if (onImeDone != null) ImeAction.Done else ImeAction.Default),
         keyboardActions = KeyboardActions(onDone = { onImeDone?.invoke() }),
         shape = MaterialTheme.shapes.medium,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+        colors = workshopFieldColors(),
     )
 }
 
@@ -192,32 +243,37 @@ fun BalanceSummary(
     onRefresh: () -> Unit,
     actionsEnabled: Boolean = true,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Surface(color = colors.secondaryContainer, shape = MaterialTheme.shapes.large) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Ваш запас", style = MaterialTheme.typography.labelMedium, color = colors.onSecondaryContainer)
-                Text(
-                    if (unlimitedText != null) "Безлимит активен" else "Расклады на новые вопросы",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colors.onSecondaryContainer,
-                )
-                unlimitedText?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSecondaryContainer) }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BalanceMetric("В подарок", freeRemaining.toString(), Modifier.weight(1f))
-                BalanceMetric("Куплено", paidRemaining.toString(), Modifier.weight(1f))
-            }
-            Text("Всего сделано раскладов: $totalUsed", style = MaterialTheme.typography.bodySmall, color = colors.onSecondaryContainer)
-            if (offline) Text(
-                "Показан сохранённый баланс. Он обновится после подключения к интернету.",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSecondaryContainer,
-            )
-            PrimaryAction("Выбрать расклады", onShop, enabled = actionsEnabled)
-            TextButton(onClick = onRefresh, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("Обновить баланс")
-            }
+    WorkshopSheet(olive = true) {
+        Text("Ваш запас", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+        Text(
+            if (unlimitedText != null) "Безлимит активен" else "Расклады на новые вопросы",
+            Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleLarge,
+            color = InkWine,
+        )
+        unlimitedText?.let {
+            Text(it, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BalanceMetric("В подарок", freeRemaining.toString(), Modifier.weight(1f))
+            BalanceMetric("Куплено", paidRemaining.toString(), Modifier.weight(1f))
+        }
+        Text(
+            "Всего сделано раскладов: $totalUsed",
+            Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (offline) Text(
+            "Показан сохранённый баланс. Он обновится после подключения к интернету.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PrimaryAction("Выбрать расклады", onShop, enabled = actionsEnabled)
+        TextButton(onClick = onRefresh, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Обновить баланс")
         }
     }
 }
@@ -243,23 +299,14 @@ fun PackageCard(
     onChoose: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val container = if (emphasized) colors.primaryContainer else colors.surface
-    val foreground = if (emphasized) colors.onPrimaryContainer else colors.onSurface
-    Surface(
-        color = container,
-        contentColor = foreground,
-        shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, if (emphasized) colors.primary.copy(alpha = 0.35f) else colors.outlineVariant),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SphereEmblem(Modifier.size(38.dp), colors.tertiary)
-                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            }
-            description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
-            Text(price, style = MaterialTheme.typography.headlineMedium, color = colors.primary)
-            if (emphasized) PrimaryAction(action, onChoose) else SecondaryAction(action, onChoose)
+    WorkshopSheet(olive = emphasized) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SphereEmblem(Modifier.size(38.dp), FrameGold)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = InkWine)
         }
+        description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.secondary) }
+        Text(price, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineMedium, color = InkWine)
+        if (emphasized) PrimaryAction(action, onChoose) else SecondaryAction(action, onChoose)
     }
 }
 

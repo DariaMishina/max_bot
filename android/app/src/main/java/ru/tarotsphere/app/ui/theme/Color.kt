@@ -14,6 +14,8 @@ val OliveSoft = Color(0xFFE5E9DD)
 val PaperOutline = Color(0xFF88796F)
 val PaperDivider = Color(0xFFDCD1C5)
 val WorkshopError = Color(0xFFAA2938)
+val InkWine = Color(0xFF581D2B)
+val FrameGold = Color(0xFFB18C54)
 
 // Compatibility roles for the remaining MVP screens while their layouts are redesigned.
 val Night = Paper

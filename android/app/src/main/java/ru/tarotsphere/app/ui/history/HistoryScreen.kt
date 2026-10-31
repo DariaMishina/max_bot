@@ -1,20 +1,19 @@
 package ru.tarotsphere.app.ui.history
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.tarotsphere.app.domain.model.HistoryItem
 import ru.tarotsphere.app.ui.components.*
+import ru.tarotsphere.app.ui.theme.InkWine
 
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel, onOpen: (Long) -> Unit, onNew: () -> Unit) {
@@ -45,18 +44,20 @@ fun HistoryScreen(viewModel: HistoryViewModel, onOpen: (Long) -> Unit, onNew: ()
             )
         } }
         if (!state.loading && state.items.isEmpty()) item {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.large) {
+            WorkshopSheet(olive = true) {
                 Column(
-                    Modifier.fillMaxWidth().padding(24.dp),
+                    Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SphereEmblem(Modifier.size(72.dp), MaterialTheme.colorScheme.secondary)
-                    Text("Здесь соберутся ваши расклады", style = MaterialTheme.typography.titleLarge)
+                    Text("Здесь соберутся ваши расклады", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleLarge, color = InkWine)
                     Text(
                         "Первый вопрос станет началом личной истории наблюдений.",
+                        Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.secondary,
                     )
                     PrimaryAction("Сделать первый расклад", onNew)
                 }
@@ -78,29 +79,22 @@ fun HistoryScreen(viewModel: HistoryViewModel, onOpen: (Long) -> Unit, onNew: ()
 @Composable
 private fun HistoryRow(item: HistoryItem, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Открыть расклад", onClick = onOpen),
-        color = colors.surface,
-        shape = MaterialTheme.shapes.small,
-        border = BorderStroke(1.dp, colors.outlineVariant),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(displayDate(item.createdAt), style = MaterialTheme.typography.labelMedium, color = colors.secondary)
-                Surface(color = colors.surfaceVariant, shape = MaterialTheme.shapes.small) {
-                    Text(
-                        if (item.isFree) "Подарочный" else item.type,
-                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                    )
-                }
+    WorkshopSheet(Modifier.padding(vertical = 6.dp), onClick = onOpen, onClickLabel = "Открыть расклад") {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(displayDate(item.createdAt), style = MaterialTheme.typography.labelMedium, color = colors.secondary)
+            Surface(color = colors.surfaceVariant, shape = MaterialTheme.shapes.small) {
+                Text(
+                    if (item.isFree) "Подарочный" else item.type,
+                    Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
             }
-            Text(item.question, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Открыть толкование", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = colors.primary)
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.primary)
-            }
+        }
+        Text(item.question, style = MaterialTheme.typography.titleLarge, color = InkWine)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Открыть толкование", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = colors.primary)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.primary)
         }
     }
 }

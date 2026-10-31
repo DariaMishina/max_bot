@@ -11,6 +11,8 @@ import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import ru.tarotsphere.app.ui.components.userMessage
+import ru.tarotsphere.app.ui.components.workshopFieldColors
+import ru.tarotsphere.app.ui.theme.InkWine
 
 @Composable
 fun RecoveryForm(binding: Boolean, start: suspend (String, String, String) -> String,
@@ -26,23 +28,27 @@ fun RecoveryForm(binding: Boolean, start: suspend (String, String, String) -> St
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     Dialog(onDismissRequest = { if (!busy) close() }) {
-        Surface(shape = MaterialTheme.shapes.large) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (binding) "Почта для восстановления" else "Восстановление пароля", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (binding) "Почта для восстановления" else "Восстановление пароля",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = InkWine,
+                )
                 if (done) {
                     Text(if (binding) "Почта подтверждена. Теперь через неё можно восстановить пароль."
                          else "Пароль изменён. Все прежние сессии завершены. Войдите с новым паролем.")
                 } else if (challenge.isEmpty()) {
                     Text(if (binding) "Укажите почту и текущий пароль. Затем подтвердите адрес кодом из письма."
                          else "Введите логин и почту, которую ранее подтвердили в профиле. Без привязанной почты сброс недоступен.")
-                    if (!binding) OutlinedTextField(login, { login = it.take(64) }, label = { Text("Логин") }, enabled = !busy, singleLine = true)
-                    OutlinedTextField(email, { email = it.take(320) }, label = { Text("Почта") }, enabled = !busy, singleLine = true)
+                    if (!binding) OutlinedTextField(login, { login = it.take(64) }, label = { Text("Логин") }, enabled = !busy, singleLine = true, shape = MaterialTheme.shapes.medium, colors = workshopFieldColors())
+                    OutlinedTextField(email, { email = it.take(320) }, label = { Text("Почта") }, enabled = !busy, singleLine = true, shape = MaterialTheme.shapes.medium, colors = workshopFieldColors())
                     if (binding) PasswordField(password, { password = it.take(128) }, "Текущий пароль", !busy)
                 } else {
                     Text(if (binding) "Введите код из письма. Он действует 10 минут."
                          else "Если логин и подтверждённая почта совпадают, письмо отправлено. Код действует 10 минут.")
-                    OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("Код из письма") }, enabled = !busy, singleLine = true)
+                    OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("Код из письма") }, enabled = !busy, singleLine = true, shape = MaterialTheme.shapes.medium, colors = workshopFieldColors())
                     if (!binding) {
                         PasswordField(password, { password = it.take(128) }, "Новый пароль (8–128 символов)", !busy)
                         PasswordField(repeated, { repeated = it.take(128) }, "Повторите пароль", !busy)

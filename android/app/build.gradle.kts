@@ -80,8 +80,8 @@ android {
         applicationId = "ru.tarotsphere.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.9.1"
+        versionCode = 12
+        versionName = "0.9.2"
         manifestPlaceholders["rustoreConsoleAppId"] = rustoreConsoleAppId
         buildConfigField("boolean", "RUSTORE_BILLING_CONFIGURED", (rustoreConsoleAppId != "0").toString())
         buildConfigField("boolean", "VK_AUTH_ENABLED", "true")

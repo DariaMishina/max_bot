@@ -110,10 +110,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 supportingText = { Text("${state.feedback.length}/2000") }, minLines = 3, maxLines = 6,
                 modifier = Modifier.fillMaxWidth(), enabled = !state.sending && !state.deleting,
                 shape = MaterialTheme.shapes.medium,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                ),
+                colors = workshopFieldColors(),
             )
             state.feedbackMessage?.let { StatusPanel("Обратная связь", it) }
             PrimaryAction(
@@ -124,8 +121,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
             )
         }
         if (legalDocumentsEnabled) {
-            WorkshopDivider()
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            WorkshopSheet {
                 SectionHeading("Документы", "Откроются в браузере на сайте Teletype.")
                 LegalDocumentButton("Пользовательское соглашение (публичная оферта)") {
                     uriHandler.openUri(legalOfferUrl)
@@ -138,8 +134,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 }
             }
         }
-        WorkshopDivider()
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        WorkshopSheet {
             SectionHeading("Управление данными", "Удаление затронет аккаунт, историю, сообщения и оставшиеся расклады.")
             state.deleteError?.let { StatusPanel("Не удалось удалить данные", it, StatusTone.Error) }
             OutlinedButton(
