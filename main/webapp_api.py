@@ -91,9 +91,13 @@ async def catalog(request):
     from handlers.tarot_cards import TAROT_CARDS
     from handlers.hexagrams import HEXAGRAMS, get_hexagram_image_path
     from handlers.pay import PACKAGES
-    return response({'cards': TAROT_CARDS, 'hexagrams': {key: {**value, 'image': '/' + get_hexagram_image_path(key)} for key,value in HEXAGRAMS.items()},
+    hexagrams = {}
+    for key, value in HEXAGRAMS.items():
+        image = get_hexagram_image_path(key)
+        hexagrams[key] = {**value, 'image': f"/static/geks/{Path(image).name}" if image else None}
+    return response({'cards': TAROT_CARDS, 'hexagrams': hexagrams,
         'themes': service.THEMES, 'packages': list(PACKAGES.values()), 'demo': os.getenv('WEBAPP_DEMO') == 'true',
-        'payments_enabled': bool(config.yookassa_shop_id and config.yookassa_secret_key),
+        'payments_enabled': bool(_shop_secret()),
         'consultation': {'name': config.tarologist_name, 'hours': config.tarologist_work_hours}})
 
 
@@ -200,11 +204,19 @@ async def event(request):
     return response({'ok': True})
 
 
+def _shop_secret():
+    if not config.yookassa_shop_id or not config.yookassa_secret_key:
+        return ''
+    shop = config.yookassa_shop_id.get_secret_value().strip()
+    secret = config.yookassa_secret_key.get_secret_value().strip()
+    return secret if shop and secret else ''
+
+
 async def purchase(request):
     from handlers.pay import PACKAGES_BY_ID, create_yookassa_payment
     from main.database import create_payment
-    if not config.yookassa_secret_key or not config.yookassa_secret_key.get_secret_value().startswith('test_'):
-        raise service.ServiceError('Тестовая оплата пока не подключена.', 503)
+    if not _shop_secret():
+        raise service.ServiceError('Оплата пока не подключена.', 503)
     data = await body(request)
     request_id = uuid.UUID(str(data.get('request_id')))
     package = PACKAGES_BY_ID.get(data.get('package'))
@@ -223,8 +235,6 @@ async def purchase(request):
         if (datetime.now(timezone.utc) - saved['created_at']).total_seconds() > 23 * 3600:
             raise service.ServiceError('Срок повторного создания платежа истёк. Обратитесь к администратору теста для сверки.', 409)
         result = await create_yookassa_payment(package['amount_rub'], package['name'], email, uid(request), package['id'], idempotence_key=str(request_id))
-        if not result.get('test'):
-            raise service.ServiceError('Ожидался тестовый платёж.', 502)
         url = result['confirmation']['confirmation_url']
         if not url.startswith('https://'):
             raise service.ServiceError('Некорректная ссылка оплаты.', 502)
@@ -242,7 +252,7 @@ async def payment_status(request):
         raise service.ServiceError('Платёж не найден.', 404)
     data = await check_payment_status(row['payment_id'])
     from decimal import Decimal
-    if not data.get('test') or data.get('id') != row['payment_id'] or data.get('metadata', {}).get('user_id') != str(uid(request)) or data.get('metadata', {}).get('package_id') != row['package_id'] or Decimal(data['amount']['value']) != row['amount_rub'] or data['amount'].get('currency') != 'RUB':
+    if data.get('id') != row['payment_id'] or data.get('metadata', {}).get('user_id') != str(uid(request)) or data.get('metadata', {}).get('package_id') != row['package_id'] or Decimal(data['amount']['value']) != row['amount_rub'] or data['amount'].get('currency') != 'RUB':
         raise service.ServiceError('Данные платежа не совпадают.', 502)
     if data['status'] == 'succeeded':
         if not await process_successful_payment(row['payment_id']):

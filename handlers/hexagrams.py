@@ -4,7 +4,8 @@
 import random
 import os
 import logging
-from typing import List, Dict
+from pathlib import Path
+from typing import List, Dict, Optional
 
 import aiomax
 
@@ -77,12 +78,14 @@ HEXAGRAMS = {
 }
 
 
+GEKS_DIR = Path(__file__).resolve().parents[1] / "static" / "geks"
+
+
 def get_all_available_hexagrams() -> List[str]:
     """Получить список всех доступных гексаграмм из папки static/geks/"""
     hexagrams = []
-    geks_dir = "static/geks"
-    if os.path.exists(geks_dir):
-        for filename in os.listdir(geks_dir):
+    if GEKS_DIR.is_dir():
+        for filename in os.listdir(GEKS_DIR):
             if filename.endswith(('.png', '.jpg', '.jpeg')):
                 hexagram_id = filename.rsplit('.', 1)[0]
                 if hexagram_id.isdigit() and 1 <= int(hexagram_id) <= 64:
@@ -90,14 +93,13 @@ def get_all_available_hexagrams() -> List[str]:
     return sorted(hexagrams, key=int)
 
 
-def get_hexagram_image_path(hexagram_id: str) -> str:
-    """Получить путь к изображению гексаграммы"""
-    geks_dir = "static/geks"
-    for ext in ['.png', '.jpg', '.jpeg']:
-        path = f"{geks_dir}/{hexagram_id}{ext}"
-        if os.path.exists(path):
-            return path
-    return f"{geks_dir}/{hexagram_id}.png"
+def get_hexagram_image_path(hexagram_id: str) -> Optional[str]:
+    """Абсолютный путь к картинке гексаграммы. None, если файла нет."""
+    for ext in ('.png', '.jpg', '.jpeg'):
+        path = GEKS_DIR / f"{hexagram_id}{ext}"
+        if path.is_file():
+            return str(path)
+    return None
 
 
 def get_hexagram_info(hexagram_id: str) -> Dict:
@@ -117,9 +119,8 @@ async def send_hexagram_image(bot: aiomax.Bot, chat_id: int, hexagram_id: str) -
         hexagram_id: ID гексаграммы (номер от 1 до 64)
     """
     image_path = get_hexagram_image_path(hexagram_id)
-    
-    if not os.path.exists(image_path):
-        logging.warning(f"Изображение гексаграммы {hexagram_id} не найдено по пути {image_path}")
+    if not image_path:
+        logging.warning(f"Изображение гексаграммы {hexagram_id} не найдено")
         return
     
     try:

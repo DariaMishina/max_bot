@@ -157,6 +157,20 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             result=await self.client.get('/api/webapp/me',headers=headers(self.uid))
             self.assertEqual((await result.json())['balance']['paid_divinations_remaining'],3)
 
+    async def test_live_payment_is_accepted(self):
+        payment_id = str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
+        payload = {'request_id':request_id,'package':'3_spreads','email':'test@example.com'}
+        provider = {'id':payment_id,'test':False,'confirmation':{'confirmation_url':'https://yoomoney.ru/checkout'},
+            'metadata':{'user_id':str(self.uid),'package_id':'3_spreads'},
+            'amount':{'value':'99.00','currency':'RUB'},'status':'succeeded'}
+        with patch.object(config,'yookassa_shop_id',SecretStr('shop')), patch.object(config,'yookassa_secret_key',SecretStr('live_secret')), patch('handlers.pay.create_yookassa_payment',AsyncMock(return_value=provider)), patch('handlers.pay.check_payment_status',AsyncMock(return_value=provider)):
+            created=await self.client.post('/api/webapp/payments',headers=headers(self.uid),json=payload)
+            self.assertEqual(created.status,200,await created.text())
+            checked=await self.client.get('/api/webapp/payments/'+payment_id,headers=headers(self.uid))
+            self.assertEqual(checked.status,200,await checked.text())
+            self.assertEqual((await checked.json())['status'],'succeeded')
+
     async def test_payment_wrong_amount_not_credited(self):
         from main.database import create_payment
         from main.webapp_service import ensure_user

@@ -533,7 +533,9 @@ async function reading(id, version) {
     `<div class="reading-question">${e(value.question)}</div>` +
     (value.divination_type === "Таро"
       ? `<div class="cards-grid">${value.selected_cards.map((id, i) => `<div>${card(id, i, { zoom: true })}<div class="card-label">${e(value.positions[i])}<br>${e(catalog.cards[id]?.name || id)}</div></div>`).join("")}</div>`
-      : `<img class="hexagram-image" src="${e(catalog.hexagrams[value.selected_cards[0]]?.image || "")}" alt="${e(catalog.hexagrams[value.selected_cards[0]]?.name || "Гексаграмма")}">`) +
+      : (catalog.hexagrams[value.selected_cards[0]]?.image
+          ? `<img class="hexagram-image" src="${e(catalog.hexagrams[value.selected_cards[0]].image)}" alt="${e(catalog.hexagrams[value.selected_cards[0]]?.name || "Гексаграмма")}">`
+          : "")) +
     `<article class="reading-body">${readingMarkup(value.interpretation, value)}</article><div class="reading-end" aria-hidden="true">— ✧ —</div><p class="hint" style="text-align:center">Карты помогают увидеть варианты.<br>Решение всегда остаётся за вами.</p><section class="section"><h2>Уточним ваш расклад</h2>${value.followups.map((item) => `<div class="followup"><strong>${e(item.question)}</strong><div class="reading-body">${readingMarkup(item.answer, value)}</div></div>`).join("")}${value.remaining ? `<label class="field" for="followup">Что хочется понять глубже?</label><textarea id="followup" maxlength="1000" placeholder="Задайте уточняющий вопрос"></textarea><p class="hint">Осталось уточнений: ${value.remaining}</p><button id="ask" class="primary wide">Задать уточнение</button>` : '<p class="muted">Все уточнения использованы. Вы можете начать новый расклад.</p>'}</section>
  <section class="section"><h2>Сохранить для себя</h2><label class="form-check"><input type="checkbox" id="favorite" ${value.favorite ? "checked" : ""}> В избранное</label><label class="field" for="note">Личная заметка</label><textarea id="note" maxlength="4000" placeholder="Что произошло потом?">${e(value.note)}</textarea><button id="save-note" class="secondary wide">Сохранить заметку</button></section><div class="actions"><a class="primary" href="#spread">Новый расклад</a><a class="secondary" href="#history">В историю</a></div>`;
   bind("#back", () => go("history"));
@@ -687,7 +689,7 @@ function shop(consultation = false) {
 function checkout(packageId) {
   const p = catalog.packages.find((p) => p.id === packageId);
   $("#checkout").innerHTML =
-    `<section class="section"><h2>${e(p.name)}</h2><p>${p.amount_rub} ₽</p><label class="field" for="email">Email для чека</label><input id="email" type="email" autocomplete="email" placeholder="you@example.ru"><p class="hint">Оплата откроется на защищённой странице ЮKassa.</p><button id="pay" class="primary wide" ${catalog.payments_enabled ? "" : "disabled"}>Перейти к тестовой оплате</button></section>`;
+    `<section class="section"><h2>${e(p.name)}</h2><p>${p.amount_rub} ₽</p><label class="field" for="email">Email для чека</label><input id="email" type="email" autocomplete="email" placeholder="you@example.ru"><p class="hint">Оплата откроется на защищённой странице ЮKassa.</p><button id="pay" class="primary wide" ${catalog.payments_enabled ? "" : "disabled"}>Перейти к оплате</button></section>`;
   $("#checkout").scrollIntoView({ behavior: "smooth" });
   bind("#pay", async () => {
     if (!$("#email").reportValidity() || !$("#email").value)

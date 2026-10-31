@@ -542,6 +542,9 @@ async def start_webhook_server(port: int = None):
             process_time = time.time() - start_time
             logging.info(f"{request.method} {request.path} - {response.status} ({process_time:.3f}s)")
         except Exception as e:
+            from main.webapp_service import ServiceError
+            if isinstance(e, ServiceError):
+                raise
             process_time = time.time() - start_time
             logging.error(f"{request.method} {request.path} - ERROR after {process_time:.3f}s: {e}", exc_info=True)
             response = web.json_response({"error": "Internal server error"}, status=500)
