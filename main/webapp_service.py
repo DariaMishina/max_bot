@@ -193,6 +193,12 @@ async def _deliver_to_chat(completed, cards):
     except Exception:
         logging.exception('Reply target unavailable for user %s', uid)
     keyboard = make_back_to_menu_kb()
+    if payload['kind'] == 'tarot' and cards:
+        from handlers.tarot_cards import send_card_images
+        try:
+            await send_card_images(bot, None, cards, user_id=uid, as_media_group=True)
+        except Exception:
+            logging.exception('Card images not delivered; text result remains available')
     try:
         for chunk in chunks:
             try:
@@ -206,12 +212,6 @@ async def _deliver_to_chat(completed, cards):
     except Exception:
         logging.exception('Reading saved; MAX delivery unavailable for user %s reading %s', uid, reading_id)
         return
-    if payload['kind'] == 'tarot' and cards:
-        from handlers.tarot_cards import send_card_images
-        try:
-            await send_card_images(bot, None, cards, user_id=uid, as_media_group=True)
-        except Exception:
-            logging.exception('Card images not delivered; text result remains available')
     if payload['kind'] != 'followup':
         try:
             bot.storage.clear(uid)

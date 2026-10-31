@@ -49,7 +49,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
              patch.object(service, 'generate', AsyncMock(return_value='Совет\n\nСделайте первый шаг.')), \
              patch.object(bot, 'send_message', AsyncMock()) as send, \
              patch('handlers.tarot_cards.send_card_images', AsyncMock()) as images:
+            order = []
+            images.side_effect = lambda *args, **kwargs: order.append('cards')
+            send.side_effect = lambda *args, **kwargs: order.append('text')
             reading = await self.complete(source='chat')
+            self.assertEqual(order, ['cards', 'text'])
             images.assert_awaited_once()
             self.assertTrue(images.call_args.kwargs['as_media_group'])
             self.assertIn('Ваш расклад', send.call_args.args[0])
