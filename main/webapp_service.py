@@ -175,10 +175,55 @@ async def generate(payload, cards, history=None):
     return await call_deepseek([{'role': 'user', 'content': prompt}], system, format_output=False)
 
 
+async def _deliver_to_chat(completed, cards):
+    """Put a finished chat reading into the dialog the question came from."""
+    from main.botdef import bot
+    from keyboards.main_menu import make_back_to_menu_kb
+    from main.outbound_messages import choose_reply_target
+    from main.send_errors import is_invalid_reply_error
+    from main.webapp_chat_format import chat_message_chunks
+
+    uid, reading_id, payload, answer = completed
+    title = 'Уточнение' if payload['kind'] == 'followup' else 'Ваш расклад'
+    text = f"{title}\n\n{payload['question']}\n\n{answer}"
+    chunks = chat_message_chunks(text, [position for positions in THEMES.values() for position in positions])
+    reply_to = None
+    try:
+        reply_to = (await choose_reply_target(uid, 'reading')).message_id
+    except Exception:
+        logging.exception('Reply target unavailable for user %s', uid)
+    keyboard = make_back_to_menu_kb()
+    try:
+        for chunk in chunks:
+            try:
+                await bot.send_message(chunk, user_id=uid, keyboard=keyboard, format='html', reply_to=reply_to)
+            except Exception as exc:
+                if not reply_to or not is_invalid_reply_error(exc):
+                    raise
+                reply_to = None
+                await bot.send_message(chunk, user_id=uid, keyboard=keyboard, format='html')
+        logging.info('Reading delivered to chat for user %s reading %s', uid, reading_id)
+    except Exception:
+        logging.exception('Reading saved; MAX delivery unavailable for user %s reading %s', uid, reading_id)
+        return
+    if payload['kind'] == 'tarot' and cards:
+        from handlers.tarot_cards import send_card_images
+        try:
+            await send_card_images(bot, None, cards, user_id=uid, as_media_group=True)
+        except Exception:
+            logging.exception('Card images not delivered; text result remains available')
+    if payload['kind'] != 'followup':
+        try:
+            bot.storage.clear(uid)
+        except Exception:
+            logging.exception('Could not clear chat state for user %s', uid)
+
+
 async def perform(operation_id):
     from handlers.tarot_cards import TAROT_CARDS
     pool = await Database.get_pool()
     completed = None
+    cards = None
     try:
         async with pool.acquire() as conn, conn.transaction():
             op = await conn.fetchrow(f"SELECT * FROM {table('webapp_operations')} WHERE id=$1 FOR UPDATE SKIP LOCKED", operation_id)
@@ -244,25 +289,8 @@ async def perform(operation_id):
         logging.exception('WebApp operation failed: %s', operation_id)
         await Database.execute_query(f"UPDATE {table('webapp_operations')} SET status='failed',error=$2,completed_at=now() WHERE id=$1 AND status='queued'", operation_id, message)
     if completed and completed[2].get('delivery') == 'chat' and os.getenv('WEBAPP_DEMO') != 'true':
-        # Sending to MAX must never roll back a completed reading or debit.
-        try:
-            from main.botdef import bot
-            from keyboards.main_menu import make_back_to_menu_kb
-            uid, rid, payload, answer = completed
-            if payload['kind'] != 'followup':
-                bot.storage.clear(uid)
-            from main.webapp_chat_format import chat_message_chunks
-            if payload['kind'] == 'tarot':
-                from handlers.tarot_cards import send_card_images
-                try:
-                    await send_card_images(bot, None, cards, user_id=uid, as_media_group=True)
-                except Exception:
-                    logging.warning('Card images not delivered; text result remains available')
-            text = f"{'Уточнение' if payload['kind'] == 'followup' else 'Ваш расклад'}\n\n{payload['question']}\n\n{answer}"
-            for chunk in chat_message_chunks(text, [position for positions in THEMES.values() for position in positions]):
-                await bot.send_message(chunk, user_id=uid, keyboard=make_back_to_menu_kb(), format='html')
-        except Exception:
-            logging.warning('Reading saved; MAX delivery unavailable', exc_info=True)
+        # The reading is already committed. Deliver it into the same dialog as the question.
+        await _deliver_to_chat(completed, cards)
 
 
 async def worker():
