@@ -39,7 +39,11 @@ async def security(request, handler):
     try:
         if request.method not in ('GET', 'HEAD') and request.headers.get('Origin'):
             origin = request.headers['Origin'].rstrip('/')
-            allowed = {config.service_url.rstrip('/'), 'http://127.0.0.1:8091', 'http://localhost:8091'}
+            proto = (request.headers.get('X-Forwarded-Proto') or request.scheme or 'http').split(',')[0].strip()
+            host = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
+            allowed = {f'{proto}://{host}'.rstrip('/'), 'http://127.0.0.1:8091', 'http://localhost:8091'}
+            if config.service_url:
+                allowed.add(config.service_url.rstrip('/'))
             if origin not in allowed:
                 raise service.ServiceError('Недопустимый источник запроса.', 403)
         if os.getenv('WEBAPP_DEMO') == 'true':
@@ -52,9 +56,10 @@ async def security(request, handler):
                 user = validate_init_data(request.headers.get('X-Max-Init-Data', ''), config.effective_bot_token.get_secret_value())
             except (ValueError, TypeError, KeyError):
                 raise service.ServiceError('Откройте приложение заново через MAX.', 401)
-            ids = {int(x.strip()) for x in os.getenv('WEBAPP_ALLOWED_IDS', '').split(',') if x.strip()}
-            if user['id'] not in ids:
-                raise service.ServiceError('Этот тест доступен только участникам проверки.', 403)
+            if os.getenv('WEBAPP_LOCAL') == 'true':
+                ids = {int(x.strip()) for x in os.getenv('WEBAPP_ALLOWED_IDS', '').split(',') if x.strip()}
+                if user['id'] not in ids:
+                    raise service.ServiceError('Этот тест доступен только участникам проверки.', 403)
         request['user'] = user
         await service.ensure_user(user)
         return await handler(request)

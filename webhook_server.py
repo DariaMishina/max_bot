@@ -491,14 +491,9 @@ async def cors_preflight(request: Request) -> Response:
 
 def create_webhook_app() -> web.Application:
     """Создание приложения для webhook"""
-    import os
     from main.webapp_api import install
 
     app = web.Application()
-    local_webapp = os.environ.get('WEBAPP_LOCAL') == 'true'
-    if local_webapp:
-        install(app, include_index=True)
-
     app.router.add_post('/webhook/yookassa', yookassa_webhook_handler)
     app.router.add_get('/api/webapp/pending-question', webapp_pending_question_handler)
     app.router.add_options('/api/webapp/pending-question', cors_preflight)
@@ -509,9 +504,8 @@ def create_webhook_app() -> web.Application:
     app.router.add_get('/ready', ready_handler)
     app.router.add_get('/health/details', details_handler)
     app.router.add_post('/', root_handler)
-    if not local_webapp:
-        app.router.add_get('/', root_handler)
-        install(app, include_index=False)
+    # Page and /api/webapp share the xTunnel host. GitHub Pages stays the old card picker.
+    install(app, include_index=True)
 
     return app
 

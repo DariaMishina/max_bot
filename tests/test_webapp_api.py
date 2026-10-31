@@ -53,6 +53,23 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/api/webapp/me',headers=headers(self.uid+1))
         self.assertEqual(response.status,403)
 
+    async def test_production_accepts_any_signed_user(self):
+        with patch.dict(os.environ, {'WEBAPP_LOCAL': ''}):
+            response=await self.client.get('/api/webapp/me',headers=headers(self.uid+1))
+        self.assertEqual(response.status,200)
+
+    async def test_index_is_served_with_the_api(self):
+        page=await self.client.get('/')
+        script=await self.client.get('/assets/app.js')
+        self.assertEqual(page.status,200)
+        self.assertIn('Сфера Таро', await page.text())
+        self.assertEqual(script.status,200)
+
+    async def test_xtunnel_origin_is_accepted(self):
+        origin='https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com'
+        response=await self.client.post('/api/webapp/daily',headers={**headers(self.uid),'Origin':origin,'X-Forwarded-Proto':'https','X-Forwarded-Host':'01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com'},json={'choice':0})
+        self.assertEqual(response.status,200)
+
     async def test_verified_user_wins_over_query(self):
         response=await self.client.get('/api/webapp/me?user_id=123',headers=headers(self.uid))
         self.assertEqual(response.status,200)
