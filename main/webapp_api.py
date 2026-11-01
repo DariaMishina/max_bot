@@ -110,7 +110,9 @@ async def me(request):
     last = await Database.fetch_one(f"SELECT id,question FROM {table('divinations')} WHERE user_id=$1 ORDER BY id DESC LIMIT 1", uid(request))
     pending = await Database.fetch_one(f"SELECT question,created_at FROM {table('pending_questions')} WHERE user_id=$1", uid(request))
     return response({'user': request['user'], 'balance': balance, 'access': service.access(balance),
-        'daily_subscribed': bool(user['daily_card_subscribed']), 'pending_question': await get_pending_question(uid(request)),
+        'daily_subscribed': bool(user['daily_card_subscribed']),
+        'daily_delivery_enabled': config.enable_daily_tip,
+        'pending_question': await get_pending_question(uid(request)),
         'chat_selection': {'question': pending['question'], 'version': pending['created_at'].isoformat()} if pending else None,
         'active_operation': active['id'] if active else None, 'last_reading': dict(last) if last else None})
 
@@ -185,7 +187,33 @@ async def settings(request):
     if type(data.get('daily_subscribed')) is not bool:
         raise service.ServiceError('Неверная настройка.')
     await Database.execute_query(f"UPDATE {table('users')} SET daily_card_subscribed=$2 WHERE user_id=$1", uid(request), data['daily_subscribed'])
-    return response({'ok': True, 'background_delivery_enabled': os.getenv('ENABLE_BACKGROUND_JOBS') == 'true'})
+    return response({'ok': True, 'daily_delivery_enabled': config.enable_daily_tip})
+
+
+async def notify_webapp_feedback(user: dict, text: str) -> bool:
+    """Forward a saved WebApp review to the same admin chat as /feedback."""
+    admin_id = config.admin_chat_id
+    if not admin_id:
+        logging.info('WebApp feedback stored without admin forward: admin_chat_id is empty')
+        return False
+    from html import escape
+    first = user.get('first_name') if isinstance(user.get('first_name'), str) else ''
+    last = user.get('last_name') if isinstance(user.get('last_name'), str) else ''
+    name = escape(' '.join(part.strip() for part in (first, last) if part.strip()) or '—')
+    username = user.get('username')
+    who = f"@{escape(username)}" if isinstance(username, str) and username.strip() else '—'
+    message = (
+        "📩 <b>Обратная связь из приложения</b>\n"
+        f"👤 {name} ({who}, id={int(user['id'])})\n\n"
+        f"<b>Отзыв:</b>\n{escape(text)}"
+    )
+    from main.botdef import bot
+    try:
+        await bot.send_message(message, user_id=admin_id, format='html')
+    except Exception:
+        logging.exception('WebApp feedback was saved but not forwarded')
+        return False
+    return True
 
 
 async def feedback(request):
@@ -193,8 +221,10 @@ async def feedback(request):
     text = data.get('text')
     if not isinstance(text, str) or not 3 <= len(text.strip()) <= 2000:
         raise service.ServiceError('Напишите от 3 до 2000 символов.')
-    await Database.execute_query(f"INSERT INTO {table('webapp_feedback')}(user_id,text) VALUES($1,$2)", uid(request), text.strip())
-    return response({'ok': True})
+    text = text.strip()
+    await Database.execute_query(f"INSERT INTO {table('webapp_feedback')}(user_id,text) VALUES($1,$2)", uid(request), text)
+    delivered = await notify_webapp_feedback(request['user'], text)
+    return response({'ok': True, 'delivered': delivered})
 
 
 async def event(request):

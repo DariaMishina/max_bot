@@ -569,7 +569,7 @@ function historyShell() {
       "История раскладов",
       "К некоторым ответам хочется возвращаться.",
     ) +
-    `<a href="#spread" class="primary wide">✧ Новый расклад</a>${profile.active_operation || activeRequest ? '<a href="#waiting" class="pending-history"><span class="pending-dot" aria-hidden="true"></span><span><strong>Ваш ответ готовится</strong><small>Вернуться к ожиданию →</small></span></a>' : ""}<label class="field" for="history-search">Поиск по вопросам</label><input type="search" id="history-search" placeholder="О чём вы спрашивали?"><div class="actions"><select id="history-kind" aria-label="Тип расклада"><option value="">Все расклады</option><option>Таро</option><option>Ицзин</option></select><button id="search" class="secondary">Найти</button></div><label class="form-check"><input type="checkbox" id="favorites">Только избранное</label><div id="history-list"></div><button class="secondary wide section" id="more" hidden>Более ранние расклады</button>`;
+    `<a href="#spread" class="primary wide">✧ Новый расклад</a>${profile.active_operation || activeRequest ? '<a href="#waiting" class="pending-history"><span class="pending-dot" aria-hidden="true"></span><span><strong>Ваш ответ готовится</strong><small>Вернуться к ожиданию →</small></span></a>' : ""}<label class="field" for="history-search">Поиск по вопросам</label><input type="search" id="history-search" placeholder="О чём вы спрашивали?"><div class="actions history-filters"><select id="history-kind" aria-label="Тип расклада"><option value="">Все расклады</option><option>Таро</option><option>Ицзин</option></select><button id="search" class="secondary">Найти</button></div><label class="form-check"><input type="checkbox" id="favorites">Только избранное</label><div id="history-list"></div><button class="secondary wide section" id="more" hidden>Более ранние расклады</button>`;
   bind("#search", () => loadHistory(false));
   bind("#favorites", () => loadHistory(false), "change");
   bind("#history-kind", () => loadHistory(false), "change");
@@ -603,9 +603,12 @@ async function loadHistory(more) {
 }
 function profileScreen() {
   const b = profile.balance;
+  const dailyReminder = profile.daily_delivery_enabled
+    ? `<h2>В своём ритме</h2><label class="form-check"><input type="checkbox" id="daily-sub" ${profile.daily_subscribed ? "checked" : ""}> Напоминание о карте дня</label><p class="hint">Утром бот пришлёт карту дня в чат. Галочку можно снять.</p>`
+    : "";
   screen.innerHTML =
     heading("Личное пространство", profile.user.first_name || "Ваш профиль") +
-    `<section class="summary"><p class="eyebrow">Ваш баланс</p><div class="balance-grid"><div><div class="number">${b.free_divinations_remaining}</div><small>подарочных</small></div><div><div class="number">${b.paid_divinations_remaining}</div><small>оплаченных</small></div></div>${b.unlimited_until ? `<p>Безлимит ${profile.access === "unlimited" ? "до" : "истёк"} ${new Date(b.unlimited_until).toLocaleDateString("ru-RU")}</p>` : ""}<a href="#shop" class="primary wide">Выбрать пакет</a></section>${consultationOverview()}<section class="section"><h2>В своём ритме</h2><label class="form-check"><input type="checkbox" id="daily-sub" ${profile.daily_subscribed ? "checked" : ""}> Напоминание о карте дня</label><p class="hint">В локальной тестовой версии автоматические рассылки отключены. Настройка сохранится.</p><a class="row-button" href="#history">Мои расклады <span>→</span></a></section><section class="section"><h2>Обратная связь</h2><label class="field" for="feedback">Что можно улучшить?</label><textarea id="feedback" maxlength="2000" placeholder="Поделитесь впечатлениями"></textarea><button class="secondary wide" id="send-feedback">Отправить отзыв</button></section>`;
+    `<section class="summary"><p class="eyebrow">Ваш баланс</p><div class="balance-grid"><div><div class="number">${b.free_divinations_remaining}</div><small>подарочных</small></div><div><div class="number">${b.paid_divinations_remaining}</div><small>оплаченных</small></div></div>${b.unlimited_until ? `<p>Безлимит ${profile.access === "unlimited" ? "до" : "истёк"} ${new Date(b.unlimited_until).toLocaleDateString("ru-RU")}</p>` : ""}<a href="#shop" class="primary wide">Выбрать пакет</a></section>${consultationOverview()}<section class="section">${dailyReminder}<a class="row-button" href="#history">Мои расклады <span>→</span></a></section><section class="section"><h2>Обратная связь</h2><label class="field" for="feedback">Что можно улучшить?</label><textarea id="feedback" maxlength="2000" placeholder="Поделитесь впечатлениями"></textarea><button class="secondary wide" id="send-feedback">Отправить отзыв</button></section>`;
   bind(
     "#daily-sub",
     async (ev) => {
@@ -621,9 +624,9 @@ function profileScreen() {
     "change",
   );
   bind("#send-feedback", async () => {
-    await api("feedback", { text: $("#feedback").value });
+    const result = await api("feedback", { text: $("#feedback").value });
     $("#feedback").value = "";
-    notify("Спасибо! Отзыв сохранён для команды.");
+    notify(result.delivered ? "Спасибо! Отзыв отправлен." : "Спасибо! Отзыв сохранён.");
   });
 }
 async function dailyScreen(version) {

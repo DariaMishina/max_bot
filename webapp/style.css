@@ -456,6 +456,26 @@ input[type="checkbox"] {
   height: 22px;
   accent-color: var(--lavender);
 }
+.history-filters {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.history-filters > select {
+  flex: 1 1 10.5rem;
+  width: auto;
+  max-width: 100%;
+  padding-right: 2.75rem;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #21192f;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23bfb0d3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 0.75rem 0.5rem;
+}
+.history-filters > .secondary {
+  flex: 0 0 auto;
+}
 .counter {
   text-align: right;
   color: var(--muted);

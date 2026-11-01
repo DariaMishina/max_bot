@@ -6,7 +6,8 @@
 #   ./internal_reports.sh
 # ssh -i ~/.ssh/id_ed25519_deploy dariamishina@46.16.36.243
 # psql -U max_bot_user -d max_bot_db -h 46.16.36.243
-#
+# psql -U app_bot_user -d app_bot_db -h 46.16.36.243
+
 # Требует переменные окружения:
 #   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 #

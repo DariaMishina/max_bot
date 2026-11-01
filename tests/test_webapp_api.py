@@ -38,6 +38,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.client.close()
+        await Database.execute_query('DELETE FROM max_webapp_feedback WHERE user_id=$1',self.uid)
         await Database.execute_query('DELETE FROM max_webapp_operations WHERE user_id=$1',self.uid)
         await Database.execute_query('DELETE FROM max_webapp_daily WHERE user_id=$1',self.uid)
         await Database.execute_query('DELETE FROM max_webapp_purchases WHERE user_id=$1',self.uid)
@@ -128,6 +129,27 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_yookassa_webhook_rejects_get(self):
         response=await self.client.get('/webhook/yookassa')
         self.assertEqual(response.status,405)
+
+    async def test_feedback_is_stored_and_forwarded(self):
+        from main.botdef import bot
+        with patch.object(config, 'admin_chat_id', self.uid), patch.object(bot, 'send_message', AsyncMock()) as send:
+            response = await self.client.post('/api/webapp/feedback', headers=headers(self.uid), json={'text': '  Хочу <b>яснее</b>  '})
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertTrue((await response.json())['delivered'])
+        message = send.await_args.args[0]
+        self.assertIn('Обратная связь из приложения', message)
+        self.assertIn('Хочу &lt;b&gt;яснее&lt;/b&gt;', message)
+        self.assertEqual(send.await_args.kwargs['user_id'], self.uid)
+        row = await Database.fetch_one('SELECT text FROM max_webapp_feedback WHERE user_id=$1', self.uid)
+        self.assertEqual(row['text'], 'Хочу <b>яснее</b>')
+
+    async def test_feedback_stays_saved_without_admin(self):
+        from main.botdef import bot
+        with patch.object(config, 'admin_chat_id', None), patch.object(bot, 'send_message', AsyncMock()) as send:
+            response = await self.client.post('/api/webapp/feedback', headers=headers(self.uid), json={'text': 'Только в базу'})
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertFalse((await response.json())['delivered'])
+            send.assert_not_awaited()
 
     async def test_settings_requires_boolean(self):
         response=await self.client.post('/api/webapp/settings',headers=headers(self.uid),json={'daily_subscribed':'false'})
