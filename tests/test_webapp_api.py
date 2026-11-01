@@ -8,12 +8,13 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlencode
 import uuid
-from aiohttp.test_utils import TestClient, TestServer
 
+if os.getenv('WEBAPP_UNITTEST_DB') != 'max_webapp_unittest':
+    raise unittest.SkipTest('Use scripts/test_webapp.py')
+
+from aiohttp.test_utils import TestClient, TestServer
 from scripts.webapp_local import configure
 configure(demo=True)
-if os.getenv('WEBAPP_UNITTEST_DB') != 'max_webapp_unittest':
-    raise RuntimeError('Use scripts/test_webapp.py')
 os.environ['DB_NAME']='max_webapp_unittest'
 from main.database import Database
 from main.config_reader import config

@@ -11,10 +11,10 @@ from types import SimpleNamespace
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+if os.getenv("WEBAPP_UNITTEST_DB") != "max_webapp_unittest":
+    raise unittest.SkipTest("Use scripts/test_webapp.py for the isolated test database")
 from scripts.webapp_local import configure
 configure(demo=True)
-if os.getenv("WEBAPP_UNITTEST_DB") != "max_webapp_unittest":
-    raise RuntimeError("Use scripts/test_webapp.py for the isolated test database")
 os.environ["DB_NAME"] = "max_webapp_unittest"
 from main import webapp_service as service
 from main.database import Database, get_user_balance
