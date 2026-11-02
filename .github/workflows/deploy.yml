@@ -12,6 +12,7 @@ on:
       - "handlers/**"
       - "keyboards/**"
       - "static/**"
+      - "webapp/**"
       - "requirements.txt"
       - ".github/workflows/deploy.yml"
 
