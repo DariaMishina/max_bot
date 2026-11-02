@@ -193,7 +193,7 @@ function go(route) {
   else location.hash = route;
 }
 function imageFor(id) {
-  return typeof CARD_DATA !== "undefined" ? CARD_DATA[id] || "" : "";
+  return "/assets/cards/" + encodeURIComponent(id) + ".webp";
 }
 function card(
   id,

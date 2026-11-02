@@ -49,13 +49,13 @@ WebApp — часть бота, а не Android-приложение и не е�
 
 ### WebApp и оплата бота
 
-Мини-приложение и его API открываются с одного адреса xTunnel. Интерфейс: `webapp/index.html`, `app.js`, `style.css`, `card-data.js`. Серверная логика: `main/webapp_api.py`, `main/webapp_service.py`.
+Мини-приложение и его API открываются с одного адреса xTunnel. Интерфейс: `webapp/index.html`, `app.js`, `style.css`, картинки карт в `webapp/cards/`. Серверная логика: `main/webapp_api.py`, `main/webapp_service.py`.
 Три сценария: ответ целиком в чате, выбор карт в приложении с ответом в чате, вопрос и ответ только в приложении. В чат сначала уходит картинка карт, затем текст.
 Как запустить локально и что уже работает в боте: [README-WEBAPP.md](../README-WEBAPP.md).
 `webhook_server.py` отдаёт страницу, `/api/webapp/*` и `/webhook/yookassa`. Тот же процесс на Render принимает только внешний callback ЮKassa.
 По [чек-листу ЮKassa](YOOKASSA_CHECKLIST.md) этот callback остаётся на Render. Открытая страница оплаты баланс не меняет.
 `SERVICE_URL` — адрес возврата после оплаты, не адрес мини-приложения и не адрес Android API.
-Картинки чата и гексаграммы лежат в `static/`. Каталог карт интерфейса — в `webapp/card-data.js`.
+Картинки чата и гексаграммы лежат в `static/`. В мини-приложении карты отдаются из `webapp/cards/`.
 
 ## 3. Android: клиент и собственный сервер
 

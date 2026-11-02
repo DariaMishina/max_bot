@@ -9,13 +9,20 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page(viewport={'width':390,'height':844})
-        await page.route('https://review.local/**', lambda route: route.fulfill(content_type='text/html',body='<div class="app-shell"><main id="screen"></main></div><button id="balance" hidden></button><button id="close-dialog" hidden></button>'))
+        async def fulfill(route):
+            name = route.request.url.rsplit('/', 1)[-1].split('?', 1)[0]
+            image = ROOT / 'webapp' / 'cards' / name
+            if image.is_file():
+                await route.fulfill(path=str(image), content_type='image/webp')
+                return
+            await route.fulfill(content_type='text/html', body='<div class="app-shell"><main id="screen"></main></div><button id="balance" hidden></button><button id="close-dialog" hidden></button>')
+        await page.route('https://review.local/**', fulfill)
         await page.goto('https://review.local/')
         await page.add_style_tag(content=(ROOT/'webapp/style.css').read_text())
-        await page.add_script_tag(content=(ROOT/'webapp/card-data.js').read_text())
         await page.add_script_tag(content=(ROOT/'webapp/app.js').read_text().rsplit('init();',1)[0])
         await page.evaluate('''() => {
-          catalog = {cards:Object.fromEntries(Object.keys(CARD_DATA).slice(0,9).map(id=>[id,{name:id}])),themes:{timeline:['Прошлое','Настоящее','Будущее']},consultation:{name:'Тест'}};
+          const ids = ['00-TheFool','01-TheMagician','02-TheHighPriestess','03-TheEmpress','04-TheEmperor','05-TheHierophant','06-TheLovers','07-TheChariot','08-Strength'];
+          catalog = {cards:Object.fromEntries(ids.map(id=>[id,{name:id}])),themes:{timeline:['Прошлое','Настоящее','Будущее']},consultation:{name:'Тест'}};
           profile = {access:'free',balance:{free_divinations_remaining:3,paid_divinations_remaining:0}};
           draft = defaultDraft(); cards();
         }''')

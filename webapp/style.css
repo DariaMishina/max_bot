@@ -626,7 +626,7 @@ input[type="checkbox"] {
 .card {
   width: 100%;
   min-width: 0;
-  aspect-ratio: 2/3;
+  aspect-ratio: 300 / 527;
   border: 1px solid #a88bbd;
   border-radius: 10px;
   position: relative;
@@ -781,7 +781,8 @@ input[type="checkbox"] {
 }
 .tiny-cards img {
   width: 29px;
-  height: 44px;
+  height: auto;
+  aspect-ratio: 300 / 527;
   object-fit: cover;
   border-radius: 3px;
 }
