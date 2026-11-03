@@ -47,7 +47,7 @@ fun SplashScreen(
                         state.error,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = InkWine,
                     )
                     Spacer(Modifier.height(16.dp))
                     Button(

@@ -40,6 +40,8 @@ object WorkshopSpacing {
     val section = 20.dp
     val item = 16.dp
     val maxWidth = 600.dp
+    /** Clears the fixed floral corners and the tab bar when the list is scrolled to the end. */
+    val scrollEnd = 72.dp
 }
 
 @Composable
@@ -49,7 +51,7 @@ fun SphereScreen(scrollState: ScrollState = rememberScrollState(), content: @Com
             Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxWidth().fillMaxHeight()
                 .verticalScroll(scrollState)
                 .padding(horizontal = WorkshopSpacing.screen)
-                .padding(top = 8.dp, bottom = 28.dp),
+                .padding(top = 8.dp, bottom = WorkshopSpacing.scrollEnd),
             verticalArrangement = Arrangement.spacedBy(WorkshopSpacing.section),
             content = content,
         )
@@ -64,7 +66,7 @@ fun SphereLazyScreen(
     BotanicalBackdrop {
         LazyColumn(
             modifier = Modifier.widthIn(max = WorkshopSpacing.maxWidth).fillMaxSize(),
-            contentPadding = PaddingValues(start = WorkshopSpacing.screen, end = WorkshopSpacing.screen, top = 8.dp, bottom = 28.dp),
+            contentPadding = PaddingValues(start = WorkshopSpacing.screen, end = WorkshopSpacing.screen, top = 8.dp, bottom = WorkshopSpacing.scrollEnd),
             verticalArrangement = verticalArrangement,
             content = content,
         )
@@ -160,6 +162,25 @@ fun PrimaryAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     ) { Text(text, textAlign = TextAlign.Center) }
+}
+
+/** Short note on the botanical paper. A cream plate keeps the line off the flowers and the tab bar. */
+@Composable
+fun PaperNote(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier.fillMaxWidth(),
+        color = Color(0xFFFFF9EE),
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 0.dp,
+    ) {
+        Text(
+            text,
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium,
+            color = InkWine,
+        )
+    }
 }
 
 @Composable

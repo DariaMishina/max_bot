@@ -96,7 +96,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onSessionEnded: () -> Unit, onSho
                 ) { Text(if (state.linkingVk) "Подключаем VK ID…" else "Привязать VK ID") }
             }
             if (profile.identities.any { it.provider == "password" }) {
-                Text("Подтвердите почту, чтобы можно было восстановить забытый пароль.")
+                PaperNote("Подтвердите почту, чтобы можно было восстановить забытый пароль.")
                 OutlinedButton(onClick = { recoveryEmail = true }, enabled = !state.loading && !state.deleting && !state.offline) {
                     Text("Привязать / изменить почту восстановления")
                 }

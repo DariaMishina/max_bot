@@ -92,10 +92,16 @@ internal fun ReadingContent(
                 ReadingText(reading.interpretation)
                 ReadingRule()
                 Text("Решения остаются за вами.", Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                    fontFamily = ReadingSerif, fontSize = 21.sp, lineHeight = 26.sp, color = colors.secondary)
+                    fontFamily = ReadingSerif, fontSize = 21.sp, lineHeight = 26.sp, color = ReadingWine)
             }
             ReadingSectionTitle("Уточнения к раскладу")
-            Text("Доступно вопросов: ${reading.followUpsRemaining}", style = MaterialTheme.typography.labelLarge, color = colors.secondary)
+            Text(
+                "Доступно вопросов: ${reading.followUpsRemaining}",
+                Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelLarge,
+                color = ReadingWine,
+            )
             reading.followUps.forEachIndexed { index, followUp ->
                 ReadingPaper {
                     Text("Ваш вопрос · ${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.secondary)

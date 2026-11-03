@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import ru.tarotsphere.app.ui.components.BotanicalBackdrop
 import ru.tarotsphere.app.ui.components.WorkshopDivider
 import ru.tarotsphere.app.ui.components.WorkshopSheet
+import ru.tarotsphere.app.ui.components.WorkshopSpacing
 import ru.tarotsphere.app.ui.theme.InkWine
 import ru.tarotsphere.app.ui.theme.WorkshopSerif
 
@@ -28,7 +29,7 @@ internal fun ReadingPage(content: @Composable ColumnScope.() -> Unit) {
     BotanicalBackdrop {
         Column(
             Modifier.widthIn(max = 600.dp).fillMaxWidth().fillMaxHeight()
-                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 28.dp),
+                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = WorkshopSpacing.scrollEnd),
             verticalArrangement = Arrangement.spacedBy(20.dp), content = content,
         )
     }

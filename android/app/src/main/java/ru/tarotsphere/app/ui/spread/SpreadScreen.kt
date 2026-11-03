@@ -100,13 +100,11 @@ private fun SpreadContent(
                 val message = emptyBalanceMessage(state.balance)
                 SphereHeader(message.first, message.second, "Сфера Таро")
                 if (state.question.isNotBlank()) {
-                    Text("Ваш вопрос и выбранные карты сохранены. После покупки вернитесь во вкладку «Расклад».",
-                        color = colors.onSurfaceVariant)
+                    PaperNote("Ваш вопрос и выбранные карты сохранены. После покупки вернитесь во вкладку «Расклад».")
                 }
                 PrimaryAction("Выбрать пакет", onShop)
                 SecondaryAction("Открыть профиль и сменить аккаунт", onAccount)
-                Text("Если расклады остались в другом аккаунте, войдите в него через профиль.",
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                PaperNote("Если расклады остались в другом аккаунте, войдите в него через профиль.")
                 SecondaryAction("Обновить баланс", onRefresh)
                 return@SphereScreen
             }
@@ -198,7 +196,7 @@ private fun SpreadContent(
                 onClick = onSubmit,
                 enabled = !state.submitting && readyForAction,
             )
-            Text("Карты подскажут направление, но выбор всегда остаётся за вами.", color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            PaperNote("Карты подскажут направление, но выбор всегда остаётся за вами.")
         }
     }
 }

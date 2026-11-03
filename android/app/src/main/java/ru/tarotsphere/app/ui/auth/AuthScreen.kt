@@ -29,6 +29,7 @@ import com.vk.id.AccessToken
 import com.vk.id.VKID
 import com.vk.id.VKIDAuthFail
 import com.vk.id.auth.VKIDAuthCallback
+import ru.tarotsphere.app.ui.components.PaperNote
 import ru.tarotsphere.app.ui.components.WorkshopSheet
 import ru.tarotsphere.app.ui.components.PrimaryAction
 import ru.tarotsphere.app.ui.components.SecondaryAction
@@ -180,11 +181,7 @@ fun AuthScreen(
             state.error?.let { StatusPanel("Не получилось", it, StatusTone.Error) }
         }
         if (BuildConfig.DEBUG) StatusPanel("Тестовая версия", "Отдельный тестовый аккаунт. Данные основной версии здесь не отображаются.")
-        Text(
-            "Продолжая, вы соглашаетесь с обработкой данных для создания аккаунта.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        PaperNote("Продолжая, вы соглашаетесь с обработкой данных для создания аккаунта.")
     }
 }
 
