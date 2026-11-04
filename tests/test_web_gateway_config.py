@@ -15,6 +15,8 @@ class WebGatewayConfigTests(unittest.TestCase):
         self.assertIn("location ^~ /v1/", config)
         self.assertIn("location ^~ /static/", config)
         self.assertGreaterEqual(config.count("proxy_pass http://127.0.0.1:8083;"), 2)
+        self.assertIn("location = /webhook/max", config)
+        self.assertIn("proxy_pass http://127.0.0.1:8080/webhook/max;", config)
         self.assertIn("location / {\n        return 404;", config)
 
     def test_xtunnel_targets_gateway_and_waits_for_nginx(self):
@@ -30,6 +32,7 @@ class WebGatewayConfigTests(unittest.TestCase):
 
         self.assertIn("listen 127.0.0.1:8094;", config)
         self.assertNotIn("location ^~ /api/webapp/", config)
+        self.assertNotIn("/webhook/max", config)
         self.assertGreaterEqual(config.count("proxy_pass http://127.0.0.1:8093;"), 2)
         self.assertIn("location / {\n        return 404;", config)
         self.assertIn("production-license.env", service)

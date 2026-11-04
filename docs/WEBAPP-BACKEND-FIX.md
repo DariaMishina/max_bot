@@ -12,7 +12,10 @@ https://01a0ba9c-b091-79dc-9a97-07e3b1eba847.tunnel4.com
         |       -> max-bot 127.0.0.1:8081 -> max_bot_db
         |
         +-- /v1/ , остальной /static/
-                -> app-api 127.0.0.1:8083 -> app_bot_db
+        |       -> app-api 127.0.0.1:8083 -> app_bot_db
+        |
+        +-- /webhook/max
+                -> psy_max 127.0.0.1:8080
 
 https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com
         |
@@ -26,6 +29,8 @@ https://01a16ef9-d30d-71a7-ace3-0c86e758ccd0.tunnel4.com
 ```
 
 Конфиг staging-шлюза: `deploy/nginx-tarot-api-gateway.conf`. Production Android: `deploy/nginx-tarot-api-production.conf`. Порты nginx слушают только loopback.
+
+Путь `/webhook/max` временный: позже у бота психолога будет свой xTunnel, чтобы сбой этого адреса не останавливал её чат. Туннель и остальные пути из-за этого не переносятся.
 
 Один процесс xTunnel с одной лицензией занимает один локальный порт, поэтому бот и staging API сходятся на nginx, а не на двух туннелях с одним ключом. Обработчики WebApp не переносятся в `app_api_server.py`: у приложения другие пользователи, база и оплата.
 
